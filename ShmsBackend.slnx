@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ShmsBackend.Api/ShmsBackend.Api.csproj" />
+    <Project Path="src/ShmsBackend.Data/ShmsBackend.Data.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ShmsBackend.Tests/ShmsBackend.Tests.csproj" />
+  </Folder>
+</Solution>
