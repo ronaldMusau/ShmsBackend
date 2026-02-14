@@ -1,10 +1,12 @@
-﻿namespace ShmsBackend.Tests;
+﻿using Xunit;
+
+namespace ShmsBackend.Tests;
 
 public class UnitTest1
 {
     [Fact]
     public void Test1()
     {
-
+        Assert.True(true);
     }
 }
