@@ -1,11 +1,41 @@
-﻿USE shms_database;
+﻿-- =====================================================
+-- Smart Housing Management System - Super Admin Seed
+-- =====================================================
+-- Email: musauronald02@gmail.com
+-- Password: Ronald123!
+-- UserType: 0 (SuperAdmin)
+-- =====================================================
+
+USE [shms_database];
 GO
 
+-- Check if database exists, if not create it
+IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = N'shms_database')
+BEGIN
+    CREATE DATABASE [shms_database];
+    PRINT '✅ Database created: shms_database';
+END
+GO
+
+USE [shms_database];
+GO
+
+-- Check if Admins table exists
+IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Admins')
+BEGIN
+    PRINT '❌ Admins table does not exist. Please run migrations first:';
+    PRINT '   dotnet ef database update --project src/ShmsBackend.Data';
+    RETURN;
+END
+GO
+
+-- Seed Super Admin
 DECLARE @UserId uniqueidentifier = NEWID();
 DECLARE @Now datetime = GETUTCDATE();
+DECLARE @Email nvarchar(255) = 'musauronald02@gmail.com';
 
 -- Check if user already exists
-IF NOT EXISTS (SELECT 1 FROM Admins WHERE Email = 'musauronald02@gmail.com')
+IF NOT EXISTS (SELECT 1 FROM Admins WHERE Email = @Email)
 BEGIN
     BEGIN TRANSACTION;
 
@@ -26,14 +56,14 @@ BEGIN
     )
     VALUES (
         @UserId, 
-        'musauronald02@gmail.com', 
-        '/HqwfFYz1zfeZjqTqbgbNIXR2457pPS3ChQ2mDefO6C', 
+        @Email, 
+        '/HqwfFYz1zfeZjqTqbgbNIXR2457pPS3ChQ2mDefO6C', -- Password: Ronald123!
         'Ronald', 
         'Musau', 
         '+254700000000', 
-        1, 
-        1, 
-        0, -- 0 = SuperAdmin (UserType.SuperAdmin)
+        1, -- IsActive
+        1, -- IsEmailVerified
+        0, -- 0 = SuperAdmin
         @Now, 
         @Now, 
         NULL
@@ -45,47 +75,62 @@ BEGIN
 
     COMMIT TRANSACTION;
 
-    PRINT 'Super Admin created successfully!';
+    PRINT '✅ Super Admin created successfully!';
     
     -- Show the created user
     SELECT 
         a.Id,
         a.Email,
-        a.FirstName,
-        a.LastName,
-        a.UserType,
-        'SuperAdmin' as RoleType,
+        a.FirstName + ' ' + a.LastName AS FullName,
+        CASE a.UserType 
+            WHEN 0 THEN 'SuperAdmin'
+            WHEN 1 THEN 'Admin'
+            WHEN 2 THEN 'Manager'
+            WHEN 3 THEN 'Accountant'
+            WHEN 4 THEN 'Secretary'
+        END AS Role,
         a.IsActive,
         a.CreatedAt
     FROM Admins a
-    WHERE a.Email = 'musauronald02@gmail.com';
+    WHERE a.Email = @Email;
 END
 ELSE
 BEGIN
-    PRINT 'Super Admin already exists!';
+    PRINT '⚠️ Super Admin already exists!';
     
     -- Show existing user
     SELECT 
         a.Id,
         a.Email,
-        a.FirstName,
-        a.LastName,
-        a.UserType,
-        CASE 
-            WHEN sa.Id IS NOT NULL THEN 'SuperAdmin'
-            WHEN au.Id IS NOT NULL THEN 'Admin'
-            WHEN m.Id IS NOT NULL THEN 'Manager'
-            WHEN acc.Id IS NOT NULL THEN 'Accountant'
-            WHEN sec.Id IS NOT NULL THEN 'Secretary'
-        END as RoleType,
+        a.FirstName + ' ' + a.LastName AS FullName,
+        CASE a.UserType 
+            WHEN 0 THEN 'SuperAdmin'
+            WHEN 1 THEN 'Admin'
+            WHEN 2 THEN 'Manager'
+            WHEN 3 THEN 'Accountant'
+            WHEN 4 THEN 'Secretary'
+        END AS Role,
         a.IsActive,
         a.CreatedAt
     FROM Admins a
-    LEFT JOIN SuperAdmins sa ON a.Id = sa.Id
-    LEFT JOIN AdminUsers au ON a.Id = au.Id
-    LEFT JOIN Managers m ON a.Id = m.Id
-    LEFT JOIN Accountants acc ON a.Id = acc.Id
-    LEFT JOIN Secretaries sec ON a.Id = sec.Id
-    WHERE a.Email = 'musauronald02@gmail.com';
+    WHERE a.Email = @Email;
 END
+GO
+
+-- Show all admins in the system
+PRINT '
+📊 Current Admins in System:';
+SELECT 
+    Email,
+    CASE UserType 
+        WHEN 0 THEN 'SuperAdmin'
+        WHEN 1 THEN 'Admin'
+        WHEN 2 THEN 'Manager'
+        WHEN 3 THEN 'Accountant'
+        WHEN 4 THEN 'Secretary'
+    END AS Role,
+    IsActive,
+    CreatedAt
+FROM Admins
+ORDER BY UserType, Email;
 GO
