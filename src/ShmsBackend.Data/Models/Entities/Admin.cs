@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using ShmsBackend.Data.Enums;
+using ShmsBackend.Data.Enums;  // Remove the ForeignKey using
 
 namespace ShmsBackend.Data.Models.Entities;
 

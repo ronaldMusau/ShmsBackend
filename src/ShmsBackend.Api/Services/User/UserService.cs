@@ -31,12 +31,17 @@ public class UserService : IUserService
 
     public async Task<AdminEntity> CreateUserAsync(CreateUserDto createUserDto, Guid createdBy)
     {
-        // Check if email already exists
-        var emailExists = await _unitOfWork.Admins.EmailExistsAsync(createUserDto.Email);
-        if (emailExists)
+        // Check if this email + userType combination already exists
+        var existingUser = await _unitOfWork.Admins.GetByEmailAndTypeAsync(
+            createUserDto.Email,
+            createUserDto.UserType);
+
+        if (existingUser != null)
         {
-            throw new InvalidOperationException("User with this email already exists");
+            throw new InvalidOperationException($"User with email {createUserDto.Email} and role {createUserDto.UserType} already exists");
         }
+
+        // Allow same email for different roles - so don't check email uniqueness globally
 
         // Hash password
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(createUserDto.Password);
@@ -172,14 +177,19 @@ public class UserService : IUserService
             throw new InvalidOperationException("User not found");
         }
 
-        // Email uniqueness check
-        if (!string.IsNullOrEmpty(updateUserDto.Email))
+        // Email uniqueness check - only check if email is being updated
+        if (!string.IsNullOrEmpty(updateUserDto.Email) && updateUserDto.Email.ToLower() != user.Email.ToLower())
         {
-            var emailExists = await _unitOfWork.Admins
-                .ExistsAsync(a => a.Email.ToLower() == updateUserDto.Email.ToLower() && a.Id != id);
-            if (emailExists)
+            // Check if this email + userType combination exists for another user
+            var existingUser = await _unitOfWork.Admins.ExistsAsync(
+                a => a.Email.ToLower() == updateUserDto.Email.ToLower()
+                     && a.UserType == user.UserType
+                     && a.Id != id);
+
+            if (existingUser)
             {
-                throw new InvalidOperationException("Email already in use by another user");
+                throw new InvalidOperationException(
+                    $"Email {updateUserDto.Email} is already in use for role {user.UserType}");
             }
             user.Email = updateUserDto.Email.ToLower();
         }
