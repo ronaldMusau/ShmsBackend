@@ -64,6 +64,14 @@ public class AuthService : IAuthService
                     "Account is inactive. Please contact support.");
             }
 
+            // CHECK EMAIL VERIFICATION
+            if (!admin.IsEmailVerified)
+            {
+                _logger.LogWarning("Login attempt for unverified email: {Email}", loginDto.Email);
+                return ApiResponse<PreAuthResponseDto>.FailureResponse(
+                    "Email not verified. Please check your email for verification link or contact your administrator.");
+            }
+
             // Generate OTP
             var otp = await _otpService.GenerateOtpAsync($"{loginDto.Email}:{loginDto.SelectedUserType}");
 

@@ -264,6 +264,52 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
+    /// DELETE UNVERIFIED USER - Only SuperAdmin and Admin can delete unverified users
+    /// </summary>
+    [HttpDelete("unverified/{id}")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> DeleteUnverifiedUser(Guid id)
+    {
+        try
+        {
+            var currentUserId = GetCurrentUserId();
+            var currentUserRole = GetCurrentUserRole();
+            var userToDelete = await _userService.GetUserByIdAsync(id);
+
+            if (userToDelete == null)
+            {
+                return NotFound(ApiResponse<object>.FailureResponse("User not found"));
+            }
+
+            // Only allow deletion if:
+            // 1. User is not verified
+            // 2. Current user is the creator OR is SuperAdmin
+            if (userToDelete.IsEmailVerified)
+            {
+                return BadRequest(ApiResponse<object>.FailureResponse("Cannot delete verified users"));
+            }
+
+            if (currentUserRole != UserType.SuperAdmin && userToDelete.CreatedBy != currentUserId)
+            {
+                return Forbid();
+            }
+
+            var result = await _userService.DeleteUserAsync(id);
+            if (!result)
+            {
+                return NotFound(ApiResponse<object>.FailureResponse("User not found"));
+            }
+
+            return Ok(ApiResponse<object?>.SuccessResponse(null, "Unverified user deleted successfully"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting unverified user: {Id}", id);
+            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred"));
+        }
+    }
+
+    /// <summary>
     /// TOGGLE USER STATUS - Only SuperAdmin can toggle
     /// </summary>
     [HttpPatch("{id}/toggle-status")]

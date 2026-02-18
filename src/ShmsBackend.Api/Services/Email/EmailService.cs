@@ -116,6 +116,36 @@ public class EmailService : IEmailService
         }
     }
 
+    public async Task<bool> SendEmailVerificationEmailAsync(string toEmail, string firstName, string verificationLink)
+    {
+        try
+        {
+            var htmlContent = GetEmailVerificationTemplate(firstName, verificationLink);
+
+            var emailRequest = new
+            {
+                from = $"{_emailOptions.FromName} <{_emailOptions.FromEmail}>",
+                to = new[] { toEmail },
+                subject = "Smart Housing - Verify Your Email Address",
+                html = htmlContent
+            };
+
+            var json = JsonSerializer.Serialize(emailRequest);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await _httpClient.PostAsync("/emails", content);
+
+            response.EnsureSuccessStatusCode();
+
+            _logger.LogInformation("Email verification sent successfully to {Email}", toEmail);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send email verification to {Email}", toEmail);
+            return false;
+        }
+    }
+
     private string GetOtpEmailTemplate(EmailTemplateDto emailData)
     {
         return $@"
@@ -266,6 +296,63 @@ public class EmailService : IEmailService
                         <td style='background-color: #f8f9fa; padding: 20px 30px; text-align: center;'>
                             <p style='color: #999999; margin: 0; font-size: 12px;'>
                                 © 2026 Romah Estates. All rights reserved.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>";
+    }
+
+    private string GetEmailVerificationTemplate(string firstName, string verificationLink)
+    {
+        return $@"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Verify Your Email</title>
+</head>
+<body style='margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;'>
+    <table width='100%' cellpadding='0' cellspacing='0' style='background-color: #f4f4f4; padding: 20px;'>
+        <tr>
+            <td align='center'>
+                <table width='600' cellpadding='0' cellspacing='0' style='background-color: #ffffff; border-radius: 8px; overflow: hidden;'>
+                    <tr>
+                        <td style='background-color: #2563eb; padding: 30px; text-align: center;'>
+                            <h1 style='color: #ffffff; margin: 0; font-size: 28px;'>Smart Housing Management</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style='padding: 40px 30px;'>
+                            <h2 style='color: #333333; margin: 0 0 20px 0;'>Hello {firstName},</h2>
+                            <p style='color: #666666; line-height: 1.6; margin: 0 0 20px 0;'>
+                                An account has been created for you in the Smart Housing Management System.
+                            </p>
+                            <p style='color: #666666; line-height: 1.6; margin: 0 0 20px 0;'>
+                                To activate your account and set your password, please click the button below:
+                            </p>
+                            <div style='text-align: center; margin: 30px 0;'>
+                                <a href='{verificationLink}' style='background-color: #2563eb; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;'>
+                                    Verify Email & Set Password
+                                </a>
+                            </div>
+                            <p style='color: #666666; line-height: 1.6; margin: 0 0 20px 0;'>
+                                This link will expire in <strong>24 hours</strong>.
+                            </p>
+                            <p style='color: #666666; line-height: 1.6; margin: 0;'>
+                                If you didn't expect this email, please ignore it or contact your system administrator.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style='background-color: #f8f9fa; padding: 20px 30px; text-align: center;'>
+                            <p style='color: #999999; margin: 0; font-size: 12px;'>
+                                © 2026 Smart Housing Management System. All rights reserved.
                             </p>
                         </td>
                     </tr>

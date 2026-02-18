@@ -41,10 +41,12 @@ public class UserService : IUserService
             throw new InvalidOperationException($"User with email {createUserDto.Email} and role {createUserDto.UserType} already exists");
         }
 
-        // Allow same email for different roles - so don't check email uniqueness globally
+        // Generate a temporary password (not sent via email)
+        var temporaryPassword = GenerateTemporaryPassword();
+        var passwordHash = BCrypt.Net.BCrypt.HashPassword(temporaryPassword);
 
-        // Hash password
-        var passwordHash = BCrypt.Net.BCrypt.HashPassword(createUserDto.Password);
+        // Generate email verification token
+        var verificationToken = GenerateVerificationToken();
 
         // Create the appropriate admin type based on UserType
         AdminEntity admin = createUserDto.UserType switch
@@ -59,6 +61,8 @@ public class UserService : IUserService
                 PhoneNumber = createUserDto.PhoneNumber,
                 IsActive = true,
                 IsEmailVerified = false,
+                EmailVerificationToken = verificationToken,
+                EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24),
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -76,6 +80,8 @@ public class UserService : IUserService
                 PhoneNumber = createUserDto.PhoneNumber,
                 IsActive = true,
                 IsEmailVerified = false,
+                EmailVerificationToken = verificationToken,
+                EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24),
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -93,6 +99,8 @@ public class UserService : IUserService
                 PhoneNumber = createUserDto.PhoneNumber,
                 IsActive = true,
                 IsEmailVerified = false,
+                EmailVerificationToken = verificationToken,
+                EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24),
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -111,6 +119,8 @@ public class UserService : IUserService
                 PhoneNumber = createUserDto.PhoneNumber,
                 IsActive = true,
                 IsEmailVerified = false,
+                EmailVerificationToken = verificationToken,
+                EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24),
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -128,6 +138,8 @@ public class UserService : IUserService
                 PhoneNumber = createUserDto.PhoneNumber,
                 IsActive = true,
                 IsEmailVerified = false,
+                EmailVerificationToken = verificationToken,
+                EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24),
                 CreatedBy = createdBy,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -141,14 +153,15 @@ public class UserService : IUserService
         await _unitOfWork.Admins.AddAsync(admin);
         await _unitOfWork.SaveChangesAsync();
 
-        // Send welcome email
-        await _emailService.SendWelcomeEmailAsync(
+        // Send verification email (not the password!)
+        var verificationLink = $"https://your-frontend.com/verify-email?token={verificationToken}&email={admin.Email}";
+        await _emailService.SendEmailVerificationEmailAsync(
             admin.Email,
             admin.FirstName,
-            createUserDto.Password
+            verificationLink
         );
 
-        _logger.LogInformation("User created successfully: {Email} as {UserType}",
+        _logger.LogInformation("User created successfully: {Email} as {UserType}. Verification email sent.",
             admin.Email, admin.UserType);
 
         return admin;
@@ -422,5 +435,13 @@ public class UserService : IUserService
         var random = new Random();
         return new string(Enumerable.Repeat(chars, 12)
             .Select(s => s[random.Next(s.Length)]).ToArray());
+    }
+
+    private string GenerateVerificationToken()
+    {
+        return Convert.ToBase64String(Guid.NewGuid().ToByteArray())
+            .Replace("/", "_")
+            .Replace("+", "-")
+            .TrimEnd('=');
     }
 }

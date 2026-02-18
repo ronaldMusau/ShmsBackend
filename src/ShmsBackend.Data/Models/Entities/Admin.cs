@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using ShmsBackend.Data.Enums;  // Remove the ForeignKey using
+using System.ComponentModel.DataAnnotations.Schema;
+using ShmsBackend.Data.Enums;
 
 namespace ShmsBackend.Data.Models.Entities;
 
@@ -14,6 +15,8 @@ public abstract class Admin
     public string? PhoneNumber { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsEmailVerified { get; set; } = false;
+    public string? EmailVerificationToken { get; set; }
+    public DateTime? EmailVerificationTokenExpiry { get; set; }
     public string? RefreshToken { get; set; }
     public DateTime? RefreshTokenExpiryTime { get; set; }
     public string? PasswordResetToken { get; set; }
@@ -26,5 +29,6 @@ public abstract class Admin
     public UserType UserType { get; set; }
 
     // Navigation property for who created this user
+    [ForeignKey("CreatedBy")]
     public Admin? Creator { get; set; }
 }
