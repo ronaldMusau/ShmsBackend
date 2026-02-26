@@ -26,26 +26,29 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// CREATE USER - Only SuperAdmin can create Admin and above
+    /// CREATE USER
+    /// - SuperAdmin can create: Admin, Manager, Accountant, Secretary
+    /// - Admin can create:      Manager, Accountant, Secretary ONLY
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin")] // ONLY SuperAdmin can create users
+    [Authorize(Roles = "SuperAdmin,Admin")]  
     public async Task<IActionResult> CreateUser([FromBody] CreateUserDto createUserDto)
     {
         if (!ModelState.IsValid)
-        {
             return BadRequest(ModelState);
-        }
 
         try
         {
             var createdBy = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+            var currentUserRole = GetCurrentUserRole();
 
-            // Verify SuperAdmin is not creating another SuperAdmin (optional)
+            // Nobody can create a SuperAdmin
             if (createUserDto.UserType == UserType.SuperAdmin)
-            {
-                return BadRequest(ApiResponse<object>.FailureResponse("Cannot create another Super Admin"));
-            }
+                return BadRequest(ApiResponse<object>.FailureResponse("Cannot create a Super Admin account"));
+
+            // Admin cannot create another Admin — only SuperAdmin can do that
+            if (currentUserRole == UserType.Admin && createUserDto.UserType == UserType.Admin)
+                return Forbid();
 
             var user = await _userService.CreateUserAsync(createUserDto, createdBy);
 
@@ -86,15 +89,10 @@ public class UserController : ControllerBase
 
             var user = await _userService.GetUserByIdAsync(id);
             if (user == null)
-            {
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
-            }
 
-            // Role-based access control
             if (!CanAccessUser(currentUserRole, currentUserId, user))
-            {
                 return Forbid();
-            }
 
             return Ok(ApiResponse<object>.SuccessResponse(new
             {
@@ -132,15 +130,12 @@ public class UserController : ControllerBase
 
             foreach (var user in users)
             {
-                // Filter based on role
                 if (currentUserRole == UserType.SuperAdmin)
                 {
-                    // SuperAdmin sees all
                     userList.Add(MapUserToResponse(user));
                 }
                 else if (currentUserRole == UserType.Admin)
                 {
-                    // Admin sees only Manager, Accountant, Secretary
                     if (user.UserType == UserType.Manager ||
                         user.UserType == UserType.Accountant ||
                         user.UserType == UserType.Secretary)
@@ -167,9 +162,7 @@ public class UserController : ControllerBase
     public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserDto updateUserDto)
     {
         if (!ModelState.IsValid)
-        {
             return BadRequest(ModelState);
-        }
 
         try
         {
@@ -177,23 +170,16 @@ public class UserController : ControllerBase
             var userToUpdate = await _userService.GetUserByIdAsync(id);
 
             if (userToUpdate == null)
-            {
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
-            }
 
-            // Role-based update restrictions
             if (currentUserRole == UserType.Admin)
             {
-                // Admin can only update Manager, Accountant, Secretary
                 if (userToUpdate.UserType != UserType.Manager &&
                     userToUpdate.UserType != UserType.Accountant &&
                     userToUpdate.UserType != UserType.Secretary)
-                {
                     return Forbid();
-                }
 
-                // Admin cannot update role or critical fields
-                updateUserDto.UserType = null; // Prevent role change
+                updateUserDto.UserType = null;
             }
 
             var user = await _userService.UpdateUserAsync(id, updateUserDto);
@@ -226,28 +212,21 @@ public class UserController : ControllerBase
     /// DELETE USER - Only SuperAdmin can delete
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperAdmin")] // ONLY SuperAdmin can delete
+    [Authorize(Roles = "SuperAdmin")]
     public async Task<IActionResult> DeleteUser(Guid id)
     {
         try
         {
             var userToDelete = await _userService.GetUserByIdAsync(id);
             if (userToDelete == null)
-            {
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
-            }
 
-            // Prevent deleting self
             if (userToDelete.Id == GetCurrentUserId())
-            {
                 return BadRequest(ApiResponse<object>.FailureResponse("Cannot delete yourself"));
-            }
 
             var result = await _userService.DeleteUserAsync(id);
             if (!result)
-            {
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
-            }
 
             return Ok(ApiResponse<object?>.SuccessResponse(null, "User deleted successfully"));
         }
@@ -277,28 +256,17 @@ public class UserController : ControllerBase
             var userToDelete = await _userService.GetUserByIdAsync(id);
 
             if (userToDelete == null)
-            {
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
-            }
 
-            // Only allow deletion if:
-            // 1. User is not verified
-            // 2. Current user is the creator OR is SuperAdmin
             if (userToDelete.IsEmailVerified)
-            {
                 return BadRequest(ApiResponse<object>.FailureResponse("Cannot delete verified users"));
-            }
 
             if (currentUserRole != UserType.SuperAdmin && userToDelete.CreatedBy != currentUserId)
-            {
                 return Forbid();
-            }
 
             var result = await _userService.DeleteUserAsync(id);
             if (!result)
-            {
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
-            }
 
             return Ok(ApiResponse<object?>.SuccessResponse(null, "Unverified user deleted successfully"));
         }
@@ -313,28 +281,21 @@ public class UserController : ControllerBase
     /// TOGGLE USER STATUS - Only SuperAdmin can toggle
     /// </summary>
     [HttpPatch("{id}/toggle-status")]
-    [Authorize(Roles = "SuperAdmin")] // ONLY SuperAdmin can toggle status
+    [Authorize(Roles = "SuperAdmin")]
     public async Task<IActionResult> ToggleUserStatus(Guid id)
     {
         try
         {
             var userToToggle = await _userService.GetUserByIdAsync(id);
             if (userToToggle == null)
-            {
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
-            }
 
-            // Prevent toggling self
             if (userToToggle.Id == GetCurrentUserId())
-            {
                 return BadRequest(ApiResponse<object>.FailureResponse("Cannot toggle your own status"));
-            }
 
             var result = await _userService.ToggleUserStatusAsync(id);
             if (!result)
-            {
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
-            }
 
             return Ok(ApiResponse<object?>.SuccessResponse(null, "User status updated successfully"));
         }
@@ -390,13 +351,13 @@ public class UserController : ControllerBase
     {
         return currentUserRole switch
         {
-            UserType.SuperAdmin => true, // SuperAdmin can access all
+            UserType.SuperAdmin => true,
             UserType.Admin => targetUser.UserType == UserType.Manager ||
-                             targetUser.UserType == UserType.Accountant ||
-                             targetUser.UserType == UserType.Secretary, // Admin can only access lower roles
-            UserType.Manager => targetUser.Id == currentUserId, // Can only access self
-            UserType.Accountant => targetUser.Id == currentUserId, // Can only access self
-            UserType.Secretary => targetUser.Id == currentUserId, // Can only access self
+                              targetUser.UserType == UserType.Accountant ||
+                              targetUser.UserType == UserType.Secretary,
+            UserType.Manager => targetUser.Id == currentUserId,
+            UserType.Accountant => targetUser.Id == currentUserId,
+            UserType.Secretary => targetUser.Id == currentUserId,
             _ => false
         };
     }
