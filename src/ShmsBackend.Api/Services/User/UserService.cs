@@ -6,6 +6,7 @@ using BCrypt.Net;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.User;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -18,15 +19,18 @@ public class UserService : IUserService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IEmailService _emailService;
     private readonly ILogger<UserService> _logger;
+    private readonly IFrontendUrlService _frontendUrlService;
 
     public UserService(
         IUnitOfWork unitOfWork,
         IEmailService emailService,
-        ILogger<UserService> logger)
+        ILogger<UserService> logger,
+        IFrontendUrlService frontendUrlService) // ADD THIS
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _logger = logger;
+        _frontendUrlService = frontendUrlService; // ADD THIS
     }
 
     public async Task<AdminEntity> CreateUserAsync(CreateUserDto createUserDto, Guid createdBy)
@@ -153,8 +157,12 @@ public class UserService : IUserService
         await _unitOfWork.Admins.AddAsync(admin);
         await _unitOfWork.SaveChangesAsync();
 
-        // Send verification email (not the password!)
-        var verificationLink = $"https://your-frontend.com/verify-email?token={verificationToken}&email={admin.Email}";
+        // Send verification email using the FrontendUrlService
+        var verificationLink = _frontendUrlService.GetEmailVerificationUrl(verificationToken, admin.Email);
+
+        _logger.LogInformation("Sending verification email to {Email} with link: {VerificationLink}",
+            admin.Email, verificationLink);
+
         await _emailService.SendEmailVerificationEmailAsync(
             admin.Email,
             admin.FirstName,

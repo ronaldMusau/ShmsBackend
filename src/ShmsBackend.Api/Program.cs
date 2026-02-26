@@ -9,6 +9,7 @@ using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.OTP;
 using ShmsBackend.Api.Services.User;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Repositories;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -44,6 +45,7 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IPreAuthCacheService, PreAuthCacheService>();
+builder.Services.AddScoped<IFrontendUrlService, FrontendUrlService>(); // NEW
 
 // Register HttpClient factory and EmailService
 builder.Services.AddHttpClient();

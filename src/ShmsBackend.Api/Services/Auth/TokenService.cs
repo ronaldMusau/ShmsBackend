@@ -23,14 +23,14 @@ public class TokenService : ITokenService
         _logger = logger;
     }
 
-    public string GenerateAccessToken(Guid userId, string email, UserType userType)  // Changed parameter
+    public string GenerateAccessToken(Guid userId, string email, UserType userType)
     {
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
             new Claim(ClaimTypes.Email, email),
-            new Claim(ClaimTypes.Role, userType.ToString()), // Single role claim
-            new Claim("user_type", userType.ToString()), // Custom claim for clarity
+            new Claim(ClaimTypes.Role, userType.ToString()),
+            new Claim("user_type", userType.ToString()),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
@@ -44,6 +44,9 @@ public class TokenService : ITokenService
             expires: DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes),
             signingCredentials: credentials
         );
+
+        _logger.LogInformation("Generated access token for user {Email} with expiration: {Expiration} minutes",
+            email, _jwtOptions.AccessTokenExpirationMinutes);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }

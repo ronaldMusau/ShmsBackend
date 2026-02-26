@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using ShmsBackend.Api.Configuration;
 using ShmsBackend.Api.Models.DTOs.Email;
+using ShmsBackend.Api.Services.Common;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -12,24 +13,32 @@ public class EmailService : IEmailService
     private readonly HttpClient _httpClient;
     private readonly ResendEmailOptions _emailOptions;
     private readonly ILogger<EmailService> _logger;
+    private readonly IFrontendUrlService _frontendUrlService;
 
     public EmailService(
         IOptions<ResendEmailOptions> emailOptions,
         ILogger<EmailService> logger,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        IFrontendUrlService frontendUrlService)
     {
         _emailOptions = emailOptions.Value;
         _logger = logger;
+        _frontendUrlService = frontendUrlService;
 
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://api.resend.com");
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _emailOptions.ApiKey);
+
+        _logger.LogInformation("EmailService initialized with FromEmail: {FromEmail}, FromName: {FromName}",
+            _emailOptions.FromEmail, _emailOptions.FromName);
     }
 
     public async Task<bool> SendOtpEmailAsync(EmailTemplateDto emailData)
     {
         try
         {
+            _logger.LogInformation("Sending OTP email to: {Email}", emailData.To);
+
             var htmlContent = GetOtpEmailTemplate(emailData);
 
             var emailRequest = new
@@ -44,10 +53,19 @@ public class EmailService : IEmailService
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var response = await _httpClient.PostAsync("/emails", content);
-            response.EnsureSuccessStatusCode();
 
-            _logger.LogInformation("OTP email sent successfully to {Email}", emailData.To);
-            return true;
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("OTP email sent successfully to {Email}", emailData.To);
+                return true;
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Failed to send OTP email to {Email}. Status: {StatusCode}, Error: {Error}",
+                    emailData.To, response.StatusCode, errorContent);
+                return false;
+            }
         }
         catch (Exception ex)
         {
@@ -60,6 +78,8 @@ public class EmailService : IEmailService
     {
         try
         {
+            _logger.LogInformation("Sending welcome email to: {Email}", toEmail);
+
             var htmlContent = GetWelcomeEmailTemplate(firstName, temporaryPassword);
 
             var emailRequest = new
@@ -74,10 +94,19 @@ public class EmailService : IEmailService
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var response = await _httpClient.PostAsync("/emails", content);
-            response.EnsureSuccessStatusCode();
 
-            _logger.LogInformation("Welcome email sent successfully to {Email}", toEmail);
-            return true;
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Welcome email sent successfully to {Email}", toEmail);
+                return true;
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Failed to send welcome email to {Email}. Status: {StatusCode}, Error: {Error}",
+                    toEmail, response.StatusCode, errorContent);
+                return false;
+            }
         }
         catch (Exception ex)
         {
@@ -90,6 +119,8 @@ public class EmailService : IEmailService
     {
         try
         {
+            _logger.LogInformation("Sending password reset email to: {Email}", toEmail);
+
             var htmlContent = GetPasswordResetEmailTemplate(firstName, resetLink);
 
             var emailRequest = new
@@ -104,10 +135,19 @@ public class EmailService : IEmailService
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var response = await _httpClient.PostAsync("/emails", content);
-            response.EnsureSuccessStatusCode();
 
-            _logger.LogInformation("Password reset email sent successfully to {Email}", toEmail);
-            return true;
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Password reset email sent successfully to {Email}", toEmail);
+                return true;
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Failed to send password reset email to {Email}. Status: {StatusCode}, Error: {Error}",
+                    toEmail, response.StatusCode, errorContent);
+                return false;
+            }
         }
         catch (Exception ex)
         {
@@ -120,6 +160,9 @@ public class EmailService : IEmailService
     {
         try
         {
+            _logger.LogInformation("Sending email verification to: {Email} with link: {VerificationLink}",
+                toEmail, verificationLink);
+
             var htmlContent = GetEmailVerificationTemplate(firstName, verificationLink);
 
             var emailRequest = new
@@ -134,10 +177,18 @@ public class EmailService : IEmailService
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             var response = await _httpClient.PostAsync("/emails", content);
 
-            response.EnsureSuccessStatusCode();
-
-            _logger.LogInformation("Email verification sent successfully to {Email}", toEmail);
-            return true;
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Email verification sent successfully to {Email}", toEmail);
+                return true;
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Failed to send email verification to {Email}. Status: {StatusCode}, Error: {Error}",
+                    toEmail, response.StatusCode, errorContent);
+                return false;
+            }
         }
         catch (Exception ex)
         {
@@ -148,6 +199,8 @@ public class EmailService : IEmailService
 
     private string GetOtpEmailTemplate(EmailTemplateDto emailData)
     {
+        var loginUrl = _frontendUrlService.GetLoginUrl();
+
         return $@"
 <!DOCTYPE html>
 <html>
@@ -181,6 +234,9 @@ public class EmailService : IEmailService
                             <p style='color: #666666; line-height: 1.6; margin: 0;'>
                                 If you didn't request this code, please ignore this email.
                             </p>
+                            <p style='color: #666666; line-height: 1.6; margin: 20px 0 0 0; font-size: 12px;'>
+                                <a href='{loginUrl}' style='color: #2563eb;'>Login to your account</a>
+                            </p>
                         </td>
                     </tr>
                     <tr>
@@ -200,6 +256,8 @@ public class EmailService : IEmailService
 
     private string GetWelcomeEmailTemplate(string firstName, string temporaryPassword)
     {
+        var loginUrl = _frontendUrlService.GetLoginUrl();
+
         return $@"
 <!DOCTYPE html>
 <html>
@@ -232,7 +290,7 @@ public class EmailService : IEmailService
                                 Please change this password after your first login for security purposes.
                             </p>
                             <div style='text-align: center; margin: 30px 0;'>
-                                <a href='#' style='background-color: #2563eb; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;'>
+                                <a href='{loginUrl}' style='background-color: #2563eb; color: #ffffff; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;'>
                                     Login to Your Account
                                 </a>
                             </div>
@@ -309,6 +367,8 @@ public class EmailService : IEmailService
 
     private string GetEmailVerificationTemplate(string firstName, string verificationLink)
     {
+        var loginUrl = _frontendUrlService.GetLoginUrl();
+
         return $@"
 <!DOCTYPE html>
 <html>
@@ -343,6 +403,9 @@ public class EmailService : IEmailService
                             </div>
                             <p style='color: #666666; line-height: 1.6; margin: 0 0 20px 0;'>
                                 This link will expire in <strong>24 hours</strong>.
+                            </p>
+                            <p style='color: #666666; line-height: 1.6; margin: 0 0 20px 0;'>
+                                After verification, you can login at: <a href='{loginUrl}' style='color: #2563eb;'>{loginUrl}</a>
                             </p>
                             <p style='color: #666666; line-height: 1.6; margin: 0;'>
                                 If you didn't expect this email, please ignore it or contact your system administrator.

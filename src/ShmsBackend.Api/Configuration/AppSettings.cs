@@ -8,4 +8,5 @@ public class AppSettings
     public int OtpExpirationMinutes { get; set; } = 10;
     public int MaxLoginAttempts { get; set; } = 5;
     public int LockoutDurationMinutes { get; set; } = 30;
+    public string FrontendUrl { get; set; } = "http://localhost:4200";
 }

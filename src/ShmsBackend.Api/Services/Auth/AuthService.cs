@@ -3,11 +3,14 @@ using System.Linq;
 using System.Threading.Tasks;
 using BCrypt.Net;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using ShmsBackend.Api.Configuration;
 using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Models.DTOs.Email;
 using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.OTP;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Repositories.Interfaces;
 
 namespace ShmsBackend.Api.Services.Auth;
@@ -21,6 +24,8 @@ public class AuthService : IAuthService
     private readonly ITokenBlacklistService _tokenBlacklistService;
     private readonly ILogger<AuthService> _logger;
     private readonly IPreAuthCacheService _preAuthCache;
+    private readonly IFrontendUrlService _frontendUrlService;
+    private readonly JwtOptions _jwtOptions;
 
     public AuthService(
         IUnitOfWork unitOfWork,
@@ -29,7 +34,9 @@ public class AuthService : IAuthService
         IEmailService emailService,
         ITokenBlacklistService tokenBlacklistService,
         IPreAuthCacheService preAuthCache,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger,
+        IFrontendUrlService frontendUrlService,
+        IOptions<JwtOptions> jwtOptions)
     {
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
@@ -38,6 +45,8 @@ public class AuthService : IAuthService
         _tokenBlacklistService = tokenBlacklistService;
         _preAuthCache = preAuthCache;
         _logger = logger;
+        _frontendUrlService = frontendUrlService;
+        _jwtOptions = jwtOptions.Value;
     }
 
     public async Task<ApiResponse<PreAuthResponseDto>> PreLoginAsync(LoginDto loginDto)
@@ -177,7 +186,7 @@ public class AuthService : IAuthService
 
             // Save refresh token
             admin.RefreshToken = refreshToken;
-            admin.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+            admin.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenExpirationDays);
             await _unitOfWork.Admins.UpdateAsync(admin);
             await _unitOfWork.SaveChangesAsync();
 
@@ -193,11 +202,11 @@ public class AuthService : IAuthService
                 FirstName = admin.FirstName,
                 LastName = admin.LastName,
                 UserType = admin.UserType,
-                ExpiresAt = DateTime.UtcNow.AddHours(1)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
             };
 
-            _logger.LogInformation("User logged in successfully: {Email} as {UserType}",
-                admin.Email, admin.UserType);
+            _logger.LogInformation("User logged in successfully: {Email} as {UserType}. Token expires in {ExpirationMinutes} minutes",
+                admin.Email, admin.UserType, _jwtOptions.AccessTokenExpirationMinutes);
 
             return ApiResponse<AuthResponse>.SuccessResponse(authResponse, "Login successful");
         }
@@ -233,7 +242,7 @@ public class AuthService : IAuthService
             var newRefreshToken = _tokenService.GenerateRefreshToken();
 
             admin.RefreshToken = newRefreshToken;
-            admin.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+            admin.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenExpirationDays);
             await _unitOfWork.Admins.UpdateAsync(admin);
             await _unitOfWork.SaveChangesAsync();
 
@@ -246,10 +255,12 @@ public class AuthService : IAuthService
                 FirstName = admin.FirstName,
                 LastName = admin.LastName,
                 UserType = admin.UserType,
-                ExpiresAt = DateTime.UtcNow.AddHours(1)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
             };
 
-            _logger.LogInformation("Token refreshed successfully for user: {Email}", admin.Email);
+            _logger.LogInformation("Token refreshed successfully for user: {Email}. New token expires in {ExpirationMinutes} minutes",
+                admin.Email, _jwtOptions.AccessTokenExpirationMinutes);
+
             return ApiResponse<AuthResponse>.SuccessResponse(authResponse, "Token refreshed successfully");
         }
         catch (Exception ex)
@@ -264,7 +275,7 @@ public class AuthService : IAuthService
     {
         try
         {
-            await _tokenBlacklistService.BlacklistTokenAsync(token, TimeSpan.FromHours(1));
+            await _tokenBlacklistService.BlacklistTokenAsync(token, TimeSpan.FromHours(24));
             _logger.LogInformation("User logged out successfully");
             return ApiResponse<string>.SuccessResponse("Logged out successfully", "Logout successful");
         }
@@ -297,7 +308,12 @@ public class AuthService : IAuthService
             await _unitOfWork.Admins.UpdateAsync(admin);
             await _unitOfWork.SaveChangesAsync();
 
-            var resetLink = $"https://your-frontend-url.com/reset-password?token={resetToken}";
+            // Use FrontendUrlService to generate the reset link
+            var resetLink = _frontendUrlService.GetPasswordResetUrl(resetToken, admin.Email);
+
+            _logger.LogInformation("Sending password reset email to {Email} with link: {ResetLink}",
+                admin.Email, resetLink);
+
             await _emailService.SendPasswordResetEmailAsync(admin.Email, admin.FirstName, resetLink);
 
             _logger.LogInformation("Password reset requested for: {Email}", admin.Email);
