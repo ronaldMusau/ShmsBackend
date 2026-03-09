@@ -4,7 +4,6 @@ using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Repositories.Interfaces;
-using BCrypt.Net;
 using Microsoft.Extensions.Options;
 using ShmsBackend.Api.Configuration;
 
@@ -38,10 +37,7 @@ public class EmailVerificationController : ControllerBase
     }
 
     /// <summary>
-    /// Verify email.
-    /// Looks up by TOKEN (unique per user row), NOT by email — because
-    /// multiple roles can share the same email address in this system.
-    /// Uses the existing IRepository.GetFirstOrDefaultAsync method.
+    /// Verify email. Looks up by TOKEN (unique per row) not email (not unique across roles).
     /// </summary>
     [HttpPost("verify")]
     public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailDto verifyEmailDto)
@@ -50,7 +46,6 @@ public class EmailVerificationController : ControllerBase
         {
             _logger.LogInformation("Verifying email for: {Email}", verifyEmailDto.Email);
 
-            // KEY FIX: look up by token (unique) not email (not unique across roles)
             var user = await _unitOfWork.Admins.GetFirstOrDefaultAsync(
                 a => a.EmailVerificationToken == verifyEmailDto.Token);
 
@@ -60,7 +55,6 @@ public class EmailVerificationController : ControllerBase
                 return NotFound(ApiResponse<object>.FailureResponse("Invalid verification token"));
             }
 
-            // Confirm the token belongs to the email in the request
             if (!string.Equals(user.Email, verifyEmailDto.Email, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Token/email mismatch. Token owner: {TokenEmail}, Requested: {Email}",
@@ -100,39 +94,62 @@ public class EmailVerificationController : ControllerBase
 
     /// <summary>
     /// Set password.
-    /// Also looks up by TOKEN for the same reason.
+    /// - Flow "new-user":       CurrentPassword is REQUIRED (proves they received the email
+    ///                          and know the temporary password — security check).
+    /// - Flow "forgot-password": CurrentPassword is NOT required (that's the whole point of forgot password).
+    /// Looks up by TOKEN not email, since multiple roles can share the same email.
     /// </summary>
     [HttpPost("set-password")]
     public async Task<IActionResult> SetPassword([FromBody] SetPasswordDto setPasswordDto)
     {
         try
         {
-            _logger.LogInformation("Setting password for: {Email}", setPasswordDto.Email);
+            _logger.LogInformation("Setting password for: {Email}, Flow: {Flow}",
+                setPasswordDto.Email, setPasswordDto.Flow);
 
-            // KEY FIX: look up by token, not email
+            // Look up by token (unique) not email (not unique across roles)
             var user = await _unitOfWork.Admins.GetFirstOrDefaultAsync(
                 a => a.EmailVerificationToken == setPasswordDto.Token);
 
             if (user == null)
             {
-                _logger.LogWarning("No user found with token for password set: {Token}", setPasswordDto.Token);
+                _logger.LogWarning("No user found with token: {Token}", setPasswordDto.Token);
                 return NotFound(ApiResponse<object>.FailureResponse("Invalid verification token"));
             }
 
-            // Confirm token belongs to the right email
             if (!string.Equals(user.Email, setPasswordDto.Email, StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogWarning("Token/email mismatch on set-password. Token owner: {TokenEmail}, Requested: {Email}",
+                _logger.LogWarning("Token/email mismatch. Token owner: {TokenEmail}, Requested: {Email}",
                     user.Email, setPasswordDto.Email);
                 return BadRequest(ApiResponse<object>.FailureResponse("Invalid verification token"));
             }
 
             if (user.EmailVerificationTokenExpiry < DateTime.UtcNow)
             {
-                _logger.LogWarning("Expired token for password set: {Email} (UserType: {UserType})",
+                _logger.LogWarning("Expired token for: {Email} (UserType: {UserType})",
                     user.Email, user.UserType);
                 return BadRequest(ApiResponse<object>.FailureResponse("Verification token has expired"));
             }
+
+            // ── Flow-specific logic ──────────────────────────────────────────
+            if (setPasswordDto.Flow == "new-user")
+            {
+                // New user MUST provide their current (temporary) password as proof
+                // they are the legitimate recipient of the email
+                if (string.IsNullOrWhiteSpace(setPasswordDto.CurrentPassword))
+                {
+                    return BadRequest(ApiResponse<object>.FailureResponse(
+                        "Current password is required to activate your account"));
+                }
+
+                if (!BCrypt.Net.BCrypt.Verify(setPasswordDto.CurrentPassword, user.PasswordHash))
+                {
+                    _logger.LogWarning("Invalid current password for new-user flow: {Email}", user.Email);
+                    return BadRequest(ApiResponse<object>.FailureResponse(
+                        "Current password is incorrect"));
+                }
+            }
+            // For "forgot-password" flow, no current password check — that's the point
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(setPasswordDto.NewPassword);
             user.IsEmailVerified = true;
@@ -143,8 +160,8 @@ public class EmailVerificationController : ControllerBase
             await _unitOfWork.Admins.UpdateAsync(user);
             await _unitOfWork.SaveChangesAsync();
 
-            _logger.LogInformation("User {Email} (UserType: {UserType}) set password successfully",
-                user.Email, user.UserType);
+            _logger.LogInformation("User {Email} (UserType: {UserType}) set password successfully via {Flow} flow",
+                user.Email, user.UserType, setPasswordDto.Flow);
 
             return Ok(ApiResponse<object>.SuccessResponse(new
             {
@@ -159,9 +176,7 @@ public class EmailVerificationController : ControllerBase
     }
 
     /// <summary>
-    /// Resend verification.
-    /// Uses FindAsync (returns ALL matches) to cover multiple unverified
-    /// accounts sharing the same email across different roles.
+    /// Resend verification — handles multiple unverified accounts sharing the same email.
     /// </summary>
     [HttpPost("resend")]
     public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationDto resendDto)
@@ -170,7 +185,6 @@ public class EmailVerificationController : ControllerBase
         {
             _logger.LogInformation("Resending verification email to: {Email}", resendDto.Email);
 
-            // FindAsync returns IEnumerable — all rows matching the predicate
             var unverifiedUsers = (await _unitOfWork.Admins.FindAsync(
                 a => a.Email.ToLower() == resendDto.Email.ToLower() && !a.IsEmailVerified))
                 .ToList();
@@ -185,7 +199,6 @@ public class EmailVerificationController : ControllerBase
                     : NotFound(ApiResponse<object>.FailureResponse("User not found"));
             }
 
-            // Refresh tokens and save first
             foreach (var user in unverifiedUsers)
             {
                 user.EmailVerificationToken = GenerateVerificationToken();
@@ -195,14 +208,12 @@ public class EmailVerificationController : ControllerBase
 
             await _unitOfWork.SaveChangesAsync();
 
-            // Then send emails
             foreach (var user in unverifiedUsers)
             {
                 var verificationLink = _frontendUrlService.GetEmailVerificationUrl(
                     user.EmailVerificationToken!, user.Email);
 
-                _logger.LogInformation(
-                    "Sending verification email to {Email} (UserType: {UserType})",
+                _logger.LogInformation("Resending to {Email} (UserType: {UserType})",
                     user.Email, user.UserType);
 
                 await _emailService.SendEmailVerificationEmailAsync(

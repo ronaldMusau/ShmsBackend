@@ -27,11 +27,11 @@ public class UserController : ControllerBase
 
     /// <summary>
     /// CREATE USER
-    /// - SuperAdmin can create: Admin, Manager, Accountant, Secretary
-    /// - Admin can create:      Manager, Accountant, Secretary ONLY
+    /// - SuperAdmin: Admin, Manager, Accountant, Secretary
+    /// - Admin:      Manager, Accountant, Secretary ONLY
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Admin")]  
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserDto createUserDto)
     {
         if (!ModelState.IsValid)
@@ -42,11 +42,9 @@ public class UserController : ControllerBase
             var createdBy = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
             var currentUserRole = GetCurrentUserRole();
 
-            // Nobody can create a SuperAdmin
             if (createUserDto.UserType == UserType.SuperAdmin)
                 return BadRequest(ApiResponse<object>.FailureResponse("Cannot create a Super Admin account"));
 
-            // Admin cannot create another Admin — only SuperAdmin can do that
             if (currentUserRole == UserType.Admin && createUserDto.UserType == UserType.Admin)
                 return Forbid();
 
@@ -76,7 +74,7 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// GET USER BY ID - SuperAdmin can get any user, Admin can get Manager/Accountant/Secretary
+    /// GET USER BY ID
     /// </summary>
     [HttpGet("{id}")]
     [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant,Secretary")]
@@ -116,7 +114,9 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// GET ALL USERS - SuperAdmin sees all, Admin sees Manager/Accountant/Secretary only
+    /// GET ALL USERS
+    /// - SuperAdmin: sees all
+    /// - Admin: sees Manager/Accountant/Secretary only
     /// </summary>
     [HttpGet]
     [Authorize(Roles = "SuperAdmin,Admin")]
@@ -155,7 +155,9 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// UPDATE USER - Only SuperAdmin and Admin can update, but with restrictions
+    /// UPDATE USER
+    /// - SuperAdmin: can update anyone
+    /// - Admin: can update Manager/Accountant/Secretary only, cannot change their role
     /// </summary>
     [HttpPut("{id}")]
     [Authorize(Roles = "SuperAdmin,Admin")]
@@ -174,11 +176,11 @@ public class UserController : ControllerBase
 
             if (currentUserRole == UserType.Admin)
             {
-                if (userToUpdate.UserType != UserType.Manager &&
-                    userToUpdate.UserType != UserType.Accountant &&
-                    userToUpdate.UserType != UserType.Secretary)
+                // Admin can only update Manager, Accountant, Secretary
+                if (!IsLowerRole(userToUpdate.UserType))
                     return Forbid();
 
+                // Admin cannot change the user's role
                 updateUserDto.UserType = null;
             }
 
@@ -209,20 +211,30 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// DELETE USER - Only SuperAdmin can delete
+    /// DELETE USER (verified)
+    /// - SuperAdmin: can delete anyone (except self)
+    /// - Admin: can delete Manager/Accountant/Secretary only (except self)
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Roles = "SuperAdmin,Admin")]  // ← was "SuperAdmin" only
     public async Task<IActionResult> DeleteUser(Guid id)
     {
         try
         {
+            var currentUserId = GetCurrentUserId();
+            var currentUserRole = GetCurrentUserRole();
+
             var userToDelete = await _userService.GetUserByIdAsync(id);
             if (userToDelete == null)
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
 
-            if (userToDelete.Id == GetCurrentUserId())
+            // Prevent deleting self
+            if (userToDelete.Id == currentUserId)
                 return BadRequest(ApiResponse<object>.FailureResponse("Cannot delete yourself"));
+
+            // Admin can only delete Manager, Accountant, Secretary
+            if (currentUserRole == UserType.Admin && !IsLowerRole(userToDelete.UserType))
+                return Forbid();
 
             var result = await _userService.DeleteUserAsync(id);
             if (!result)
@@ -243,7 +255,9 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// DELETE UNVERIFIED USER - Only SuperAdmin and Admin can delete unverified users
+    /// DELETE UNVERIFIED USER
+    /// - SuperAdmin: any unverified user
+    /// - Admin: unverified Manager/Accountant/Secretary they created
     /// </summary>
     [HttpDelete("unverified/{id}")]
     [Authorize(Roles = "SuperAdmin,Admin")]
@@ -259,10 +273,17 @@ public class UserController : ControllerBase
                 return NotFound(ApiResponse<object>.FailureResponse("User not found"));
 
             if (userToDelete.IsEmailVerified)
-                return BadRequest(ApiResponse<object>.FailureResponse("Cannot delete verified users"));
+                return BadRequest(ApiResponse<object>.FailureResponse("Cannot delete verified users through this endpoint — use DELETE /api/user/{id}"));
 
-            if (currentUserRole != UserType.SuperAdmin && userToDelete.CreatedBy != currentUserId)
-                return Forbid();
+            // Admin can only delete lower-role unverified users they created
+            if (currentUserRole == UserType.Admin)
+            {
+                if (!IsLowerRole(userToDelete.UserType))
+                    return Forbid();
+
+                if (userToDelete.CreatedBy != currentUserId)
+                    return Forbid();
+            }
 
             var result = await _userService.DeleteUserAsync(id);
             if (!result)
@@ -278,7 +299,7 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// TOGGLE USER STATUS - Only SuperAdmin can toggle
+    /// TOGGLE USER STATUS - SuperAdmin only
     /// </summary>
     [HttpPatch("{id}/toggle-status")]
     [Authorize(Roles = "SuperAdmin")]
@@ -312,7 +333,7 @@ public class UserController : ControllerBase
     }
 
     /// <summary>
-    /// GET USER TYPE - Available to all authenticated users
+    /// GET USER TYPE
     /// </summary>
     [HttpGet("{id}/type")]
     [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant,Secretary")]
@@ -347,14 +368,20 @@ public class UserController : ControllerBase
         return Enum.Parse<UserType>(roleClaim ?? "Secretary");
     }
 
+    /// <summary>
+    /// Roles that Admin is allowed to manage (create / edit / delete).
+    /// </summary>
+    private static bool IsLowerRole(UserType userType) =>
+        userType == UserType.Manager ||
+        userType == UserType.Accountant ||
+        userType == UserType.Secretary;
+
     private bool CanAccessUser(UserType currentUserRole, Guid currentUserId, Data.Models.Entities.Admin targetUser)
     {
         return currentUserRole switch
         {
             UserType.SuperAdmin => true,
-            UserType.Admin => targetUser.UserType == UserType.Manager ||
-                              targetUser.UserType == UserType.Accountant ||
-                              targetUser.UserType == UserType.Secretary,
+            UserType.Admin => IsLowerRole(targetUser.UserType),
             UserType.Manager => targetUser.Id == currentUserId,
             UserType.Accountant => targetUser.Id == currentUserId,
             UserType.Secretary => targetUser.Id == currentUserId,
