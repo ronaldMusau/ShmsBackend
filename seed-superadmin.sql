@@ -57,7 +57,7 @@ BEGIN
     VALUES (
         @UserId, 
         @Email, 
-        '/HqwfFYz1zfeZjqTqbgbNIXR2457pPS3ChQ2mDefO6C', -- Password: Ronald123!
+        '$2a$12$5RpupNNi8HEl32gHUq/iRuWdWxcq9.DS8GsIZP8S9FbR.SO3YOrgC', -- Password: Ronald123!
         'Ronald', 
         'Musau', 
         '+254700000000', 
