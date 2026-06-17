@@ -49,6 +49,71 @@ public class AuthService : IAuthService
         _jwtOptions = jwtOptions.Value;
     }
 
+    public async Task<ApiResponse<AuthResponse>> LoginAsync(LoginDto loginDto)
+    {
+        try
+        {
+            var admin = await _unitOfWork.Admins.GetByEmailAndTypeAsync(
+                loginDto.Email, loginDto.SelectedUserType);
+
+            if (admin == null)
+            {
+                _logger.LogWarning("Login attempt with non-existent email/type: {Email} - {UserType}",
+                    loginDto.Email, loginDto.SelectedUserType);
+                return ApiResponse<AuthResponse>.FailureResponse("Invalid email, password, or user type");
+            }
+
+            if (!admin.IsActive)
+            {
+                _logger.LogWarning("Login attempt for inactive user: {Email}", loginDto.Email);
+                return ApiResponse<AuthResponse>.FailureResponse("Account is inactive. Please contact support.");
+            }
+
+            if (!admin.IsEmailVerified)
+            {
+                _logger.LogWarning("Login attempt for unverified email: {Email}", loginDto.Email);
+                return ApiResponse<AuthResponse>.FailureResponse(
+                    "Email not verified. Please check your email for a verification link.");
+            }
+
+            if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, admin.PasswordHash))
+            {
+                _logger.LogWarning("Invalid password for: {Email}", loginDto.Email);
+                return ApiResponse<AuthResponse>.FailureResponse("Invalid email, password, or user type");
+            }
+
+            var accessToken = _tokenService.GenerateAccessToken(admin.Id, admin.Email, admin.UserType);
+            var refreshToken = _tokenService.GenerateRefreshToken();
+
+            admin.RefreshToken = refreshToken;
+            admin.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenExpirationDays);
+            await _unitOfWork.Admins.UpdateAsync(admin);
+            await _unitOfWork.SaveChangesAsync();
+
+            var authResponse = new AuthResponse
+            {
+                AccessToken = accessToken,
+                RefreshToken = refreshToken,
+                UserId = admin.Id,
+                Email = admin.Email,
+                FirstName = admin.FirstName,
+                LastName = admin.LastName,
+                UserType = admin.UserType,
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
+            };
+
+            _logger.LogInformation("User logged in successfully: {Email} as {UserType}",
+                admin.Email, admin.UserType);
+
+            return ApiResponse<AuthResponse>.SuccessResponse(authResponse, "Login successful");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during login for email: {Email}", loginDto.Email);
+            return ApiResponse<AuthResponse>.FailureResponse("An error occurred during login. Please try again.");
+        }
+    }
+
     public async Task<ApiResponse<PreAuthResponseDto>> PreLoginAsync(LoginDto loginDto)
     {
         try

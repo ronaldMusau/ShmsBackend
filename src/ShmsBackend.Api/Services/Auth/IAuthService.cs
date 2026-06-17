@@ -6,6 +6,7 @@ namespace ShmsBackend.Api.Services.Auth;
 
 public interface IAuthService
 {
+    Task<ApiResponse<AuthResponse>> LoginAsync(LoginDto loginDto);
     Task<ApiResponse<PreAuthResponseDto>> PreLoginAsync(LoginDto loginDto);
     Task<ApiResponse<AuthResponse>> VerifyLoginOtpAsync(VerifyLoginDto verifyLoginDto);
     Task<ApiResponse<AuthResponse>> RefreshTokenAsync(RefreshTokenDto refreshTokenDto);

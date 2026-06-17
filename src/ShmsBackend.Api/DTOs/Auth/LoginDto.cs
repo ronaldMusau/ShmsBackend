@@ -10,5 +10,9 @@ public class LoginDto
     public string Email { get; set; } = string.Empty;
 
     [Required]
+    [MinLength(6)]
+    public string Password { get; set; } = string.Empty;
+
+    [Required]
     public UserType SelectedUserType { get; set; }  // User selects which role to login as
 }

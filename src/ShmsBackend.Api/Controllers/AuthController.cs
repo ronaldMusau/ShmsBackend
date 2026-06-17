@@ -18,6 +18,23 @@ public class AuthController : ControllerBase
         _logger = logger;
     }
 
+    [HttpPost("login")]
+    public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        var result = await _authService.LoginAsync(loginDto);
+        if (!result.Success)
+        {
+            return Unauthorized(result);
+        }
+
+        return Ok(result);
+    }
+
     [HttpPost("pre-login")]
     public async Task<IActionResult> PreLogin([FromBody] LoginDto loginDto)
     {
