@@ -7,5 +7,6 @@ public interface IEmailService
     Task<bool> SendOtpEmailAsync(EmailTemplateDto emailData);
     Task<bool> SendWelcomeEmailAsync(string toEmail, string firstName, string temporaryPassword);
     Task<bool> SendPasswordResetEmailAsync(string toEmail, string firstName, string resetLink);
+    Task<bool> SendPasswordResetOtpEmailAsync(string toEmail, string firstName, string otp);
     Task<bool> SendEmailVerificationEmailAsync(string toEmail, string firstName, string verificationLink);
 }

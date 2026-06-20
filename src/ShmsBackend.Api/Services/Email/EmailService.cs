@@ -77,6 +77,15 @@ public class EmailService : IEmailService
             GetPasswordResetEmailTemplate(firstName, resetLink));
     }
 
+    public async Task<bool> SendPasswordResetOtpEmailAsync(string toEmail, string firstName, string otp)
+    {
+        _logger.LogInformation("Sending password reset OTP email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Password Reset Code — Romah Estates",
+            GetPasswordResetOtpEmailTemplate(firstName, otp));
+    }
+
     public async Task<bool> SendEmailVerificationEmailAsync(string toEmail, string firstName, string verificationLink)
     {
         _logger.LogInformation("Sending email verification to: {Email}", toEmail);
@@ -292,6 +301,24 @@ public class EmailService : IEmailService
 {SmallNote("If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.")}";
 
         return WrapInLayout("Password Reset — Romah Estates", inner);
+    }
+
+    // ── Password Reset OTP Template ──────────────────────────────────────────
+
+    private string GetPasswordResetOtpEmailTemplate(string firstName, string otp)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para("We received a request to reset your Romah Estates account password.")}
+{Para("Your 6-digit password reset code is:")}
+<div style='text-align:center; margin: 32px 0;'>
+  <span style='font-size: 2.5rem; font-weight: 700; letter-spacing: 12px; color: {ColourGold};'>{otp}</span>
+</div>
+{Para($"This code expires in <strong style='color:{ColourGold};'>15 minutes</strong>.")}
+{Divider()}
+{SmallNote("If you didn't request a password reset, ignore this email. Your password will remain unchanged.")}";
+
+        return WrapInLayout("Password Reset Code — Romah Estates", inner);
     }
 
     // ── Email Verification Template ──────────────────────────────────────────

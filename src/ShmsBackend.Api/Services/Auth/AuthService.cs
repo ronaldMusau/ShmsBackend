@@ -356,7 +356,7 @@ public class AuthService : IAuthService
     {
         try
         {
-            var admin = await _unitOfWork.Admins.GetByEmailAsync(requestPasswordResetDto.Email);
+            var admin = await _unitOfWork.Admins.GetByEmailAndTypeAsync(requestPasswordResetDto.Email, requestPasswordResetDto.UserType);
 
             if (admin == null)
             {
@@ -367,21 +367,15 @@ public class AuthService : IAuthService
                     "Password reset email sent");
             }
 
-            var resetToken = Guid.NewGuid().ToString();
-            admin.PasswordResetToken = resetToken;
-            admin.PasswordResetTokenExpiry = DateTime.UtcNow.AddHours(1);
+            var otp = new Random().Next(100000, 999999).ToString();
+            admin.PasswordResetToken = otp;
+            admin.PasswordResetTokenExpiry = DateTime.UtcNow.AddMinutes(15);
             await _unitOfWork.Admins.UpdateAsync(admin);
             await _unitOfWork.SaveChangesAsync();
 
-            // Use FrontendUrlService to generate the reset link
-            var resetLink = _frontendUrlService.GetPasswordResetUrl(resetToken, admin.Email);
+            await _emailService.SendPasswordResetOtpEmailAsync(admin.Email, admin.FirstName, otp);
 
-            _logger.LogInformation("Sending password reset email to {Email} with link: {ResetLink}",
-                admin.Email, resetLink);
-
-            await _emailService.SendPasswordResetEmailAsync(admin.Email, admin.FirstName, resetLink);
-
-            _logger.LogInformation("Password reset requested for: {Email}", admin.Email);
+            _logger.LogInformation("Password reset OTP requested for: {Email}", admin.Email);
             return ApiResponse<string>.SuccessResponse(
                 "If an account exists with this email, a password reset link has been sent",
                 "Password reset email sent");
@@ -390,6 +384,38 @@ public class AuthService : IAuthService
         {
             _logger.LogError(ex, "Error during password reset request for email: {Email}",
                 requestPasswordResetDto.Email);
+            return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
+        }
+    }
+
+    public async Task<ApiResponse<string>> ResetPasswordAsync(ResetPasswordDto dto)
+    {
+        try
+        {
+            var admin = await _unitOfWork.Admins.GetByEmailAndTypeAsync(dto.Email, dto.UserType);
+            if (admin == null)
+                return ApiResponse<string>.FailureResponse("Invalid request.");
+
+            if (admin.PasswordResetToken == null || admin.PasswordResetToken != dto.Otp)
+                return ApiResponse<string>.FailureResponse("Invalid OTP code.");
+
+            if (admin.PasswordResetTokenExpiry == null || admin.PasswordResetTokenExpiry < DateTime.UtcNow)
+                return ApiResponse<string>.FailureResponse("OTP code has expired. Please request a new one.");
+
+            admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+            admin.PasswordResetToken = null;
+            admin.PasswordResetTokenExpiry = null;
+            admin.UpdatedAt = DateTime.UtcNow;
+
+            await _unitOfWork.Admins.UpdateAsync(admin);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation("Password reset successful for: {Email} type: {Type}", dto.Email, dto.UserType);
+            return ApiResponse<string>.SuccessResponse("Password reset successfully.", "Password updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during password reset for: {Email}", dto.Email);
             return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }
