@@ -156,13 +156,15 @@ public class UserService : IUserService
         await _unitOfWork.Admins.AddAsync(admin);
         await _unitOfWork.SaveChangesAsync();
 
-        await _emailService.SendWelcomeEmailAsync(
+        var verificationLink = _frontendUrlService.GetEmailVerificationUrl(verificationToken, admin.Email);
+        _logger.LogInformation("Sending verification email to {Email} with link: {VerificationLink}", admin.Email, verificationLink);
+        await _emailService.SendEmailVerificationEmailAsync(
             admin.Email,
             admin.FirstName,
-            temporaryPassword
+            verificationLink
         );
 
-        _logger.LogInformation("User created successfully: {Email} as {UserType}. Welcome email sent.",
+        _logger.LogInformation("User created successfully: {Email} as {UserType}. Verification email sent.",
             admin.Email, admin.UserType);
 
         return admin;
