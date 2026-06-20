@@ -25,12 +25,12 @@ public class UserService : IUserService
         IUnitOfWork unitOfWork,
         IEmailService emailService,
         ILogger<UserService> logger,
-        IFrontendUrlService frontendUrlService) // ADD THIS
+        IFrontendUrlService frontendUrlService)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _logger = logger;
-        _frontendUrlService = frontendUrlService; // ADD THIS
+        _frontendUrlService = frontendUrlService;
     }
 
     public async Task<AdminEntity> CreateUserAsync(CreateUserDto createUserDto, Guid createdBy)
@@ -45,8 +45,7 @@ public class UserService : IUserService
             throw new InvalidOperationException($"User with email {createUserDto.Email} and role {createUserDto.UserType} already exists");
         }
 
-        // Generate a temporary password (not sent via email)
-        var temporaryPassword = GenerateTemporaryPassword();
+        var temporaryPassword = createUserDto.Password;
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(temporaryPassword);
 
         // Generate email verification token
@@ -157,19 +156,13 @@ public class UserService : IUserService
         await _unitOfWork.Admins.AddAsync(admin);
         await _unitOfWork.SaveChangesAsync();
 
-        // Send verification email using the FrontendUrlService
-        var verificationLink = _frontendUrlService.GetEmailVerificationUrl(verificationToken, admin.Email);
-
-        _logger.LogInformation("Sending verification email to {Email} with link: {VerificationLink}",
-            admin.Email, verificationLink);
-
-        await _emailService.SendEmailVerificationEmailAsync(
+        await _emailService.SendWelcomeEmailAsync(
             admin.Email,
             admin.FirstName,
-            verificationLink
+            temporaryPassword
         );
 
-        _logger.LogInformation("User created successfully: {Email} as {UserType}. Verification email sent.",
+        _logger.LogInformation("User created successfully: {Email} as {UserType}. Welcome email sent.",
             admin.Email, admin.UserType);
 
         return admin;

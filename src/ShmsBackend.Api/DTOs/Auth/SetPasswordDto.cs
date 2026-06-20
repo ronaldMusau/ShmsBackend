@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace ShmsBackend.Api.Models.DTOs.Auth;
 
@@ -28,6 +28,5 @@ public class SetPasswordDto
     public string NewPassword { get; set; } = string.Empty;
 
     [Required]
-    [Compare("NewPassword")]
     public string ConfirmPassword { get; set; } = string.Empty;
 }
