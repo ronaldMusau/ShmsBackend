@@ -1,0 +1,117 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using BCrypt.Net;
+using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Models.DTOs.Agent;
+using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Repositories.Interfaces;
+
+namespace ShmsBackend.Api.Services.Portal;
+
+public class AgentService : IAgentService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<AgentService> _logger;
+
+    public AgentService(IUnitOfWork unitOfWork, ILogger<AgentService> logger)
+    {
+        _unitOfWork = unitOfWork;
+        _logger = logger;
+    }
+
+    public async Task<Agent> CreateAsync(CreateAgentDto dto)
+    {
+        var existing = await _unitOfWork.Agents.GetByEmailAsync(dto.Email);
+        if (existing != null)
+            throw new InvalidOperationException($"Agent with email {dto.Email} already exists");
+
+        var agent = new Agent
+        {
+            Id = Guid.NewGuid(),
+            Email = dto.Email.ToLower(),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            FirstName = dto.FirstName,
+            LastName = dto.LastName,
+            PhoneNumber = dto.PhoneNumber,
+            AgencyName = dto.AgencyName,
+            LicenseNumber = dto.LicenseNumber,
+            IsActive = true,
+            IsEmailVerified = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await _unitOfWork.Agents.AddAsync(agent);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Agent created: {Email}", agent.Email);
+        return agent;
+    }
+
+    public async Task<Agent?> GetByIdAsync(Guid id)
+    {
+        return await _unitOfWork.Agents.GetByIdAsync(id);
+    }
+
+    public async Task<IEnumerable<Agent>> GetAllAsync()
+    {
+        return await _unitOfWork.Agents.GetAllAsync();
+    }
+
+    public async Task<Agent> UpdateAsync(Guid id, UpdateAgentDto dto)
+    {
+        var agent = await _unitOfWork.Agents.GetByIdAsync(id);
+        if (agent == null)
+            throw new InvalidOperationException("Agent not found");
+
+        if (!string.IsNullOrEmpty(dto.Email) && dto.Email.ToLower() != agent.Email)
+        {
+            var duplicate = await _unitOfWork.Agents.GetByEmailAsync(dto.Email);
+            if (duplicate != null)
+                throw new InvalidOperationException($"Email {dto.Email} is already in use");
+            agent.Email = dto.Email.ToLower();
+        }
+
+        if (!string.IsNullOrEmpty(dto.FirstName)) agent.FirstName = dto.FirstName;
+        if (!string.IsNullOrEmpty(dto.LastName)) agent.LastName = dto.LastName;
+        if (!string.IsNullOrEmpty(dto.PhoneNumber)) agent.PhoneNumber = dto.PhoneNumber;
+        if (dto.IsActive.HasValue) agent.IsActive = dto.IsActive.Value;
+        if (!string.IsNullOrEmpty(dto.AgencyName)) agent.AgencyName = dto.AgencyName;
+        if (!string.IsNullOrEmpty(dto.LicenseNumber)) agent.LicenseNumber = dto.LicenseNumber;
+
+        agent.UpdatedAt = DateTime.UtcNow;
+        await _unitOfWork.Agents.UpdateAsync(agent);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Agent updated: {Id}", id);
+        return agent;
+    }
+
+    public async Task<bool> DeleteAsync(Guid id)
+    {
+        var agent = await _unitOfWork.Agents.GetByIdAsync(id);
+        if (agent == null) return false;
+
+        await _unitOfWork.Agents.DeleteAsync(agent);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Agent deleted: {Id}", id);
+        return true;
+    }
+
+    public async Task<bool> ToggleStatusAsync(Guid id)
+    {
+        var agent = await _unitOfWork.Agents.GetByIdAsync(id);
+        if (agent == null) return false;
+
+        agent.IsActive = !agent.IsActive;
+        agent.UpdatedAt = DateTime.UtcNow;
+
+        await _unitOfWork.Agents.UpdateAsync(agent);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Agent status toggled: {Id}, IsActive: {IsActive}", id, agent.IsActive);
+        return true;
+    }
+}

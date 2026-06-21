@@ -1,0 +1,119 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using BCrypt.Net;
+using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Models.DTOs.Tenant;
+using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Repositories.Interfaces;
+
+namespace ShmsBackend.Api.Services.Portal;
+
+public class TenantService : ITenantService
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<TenantService> _logger;
+
+    public TenantService(IUnitOfWork unitOfWork, ILogger<TenantService> logger)
+    {
+        _unitOfWork = unitOfWork;
+        _logger = logger;
+    }
+
+    public async Task<Tenant> CreateAsync(CreateTenantDto dto)
+    {
+        var existing = await _unitOfWork.Tenants.GetByEmailAsync(dto.Email);
+        if (existing != null)
+            throw new InvalidOperationException($"Tenant with email {dto.Email} already exists");
+
+        var tenant = new Tenant
+        {
+            Id = Guid.NewGuid(),
+            Email = dto.Email.ToLower(),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            FirstName = dto.FirstName,
+            LastName = dto.LastName,
+            PhoneNumber = dto.PhoneNumber,
+            DateOfBirth = dto.DateOfBirth,
+            EmergencyContactName = dto.EmergencyContactName,
+            EmergencyContactPhone = dto.EmergencyContactPhone,
+            IsActive = true,
+            IsEmailVerified = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await _unitOfWork.Tenants.AddAsync(tenant);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Tenant created: {Email}", tenant.Email);
+        return tenant;
+    }
+
+    public async Task<Tenant?> GetByIdAsync(Guid id)
+    {
+        return await _unitOfWork.Tenants.GetByIdAsync(id);
+    }
+
+    public async Task<IEnumerable<Tenant>> GetAllAsync()
+    {
+        return await _unitOfWork.Tenants.GetAllAsync();
+    }
+
+    public async Task<Tenant> UpdateAsync(Guid id, UpdateTenantDto dto)
+    {
+        var tenant = await _unitOfWork.Tenants.GetByIdAsync(id);
+        if (tenant == null)
+            throw new InvalidOperationException("Tenant not found");
+
+        if (!string.IsNullOrEmpty(dto.Email) && dto.Email.ToLower() != tenant.Email)
+        {
+            var duplicate = await _unitOfWork.Tenants.GetByEmailAsync(dto.Email);
+            if (duplicate != null)
+                throw new InvalidOperationException($"Email {dto.Email} is already in use");
+            tenant.Email = dto.Email.ToLower();
+        }
+
+        if (!string.IsNullOrEmpty(dto.FirstName)) tenant.FirstName = dto.FirstName;
+        if (!string.IsNullOrEmpty(dto.LastName)) tenant.LastName = dto.LastName;
+        if (!string.IsNullOrEmpty(dto.PhoneNumber)) tenant.PhoneNumber = dto.PhoneNumber;
+        if (dto.IsActive.HasValue) tenant.IsActive = dto.IsActive.Value;
+        if (dto.DateOfBirth.HasValue) tenant.DateOfBirth = dto.DateOfBirth.Value;
+        if (!string.IsNullOrEmpty(dto.EmergencyContactName)) tenant.EmergencyContactName = dto.EmergencyContactName;
+        if (!string.IsNullOrEmpty(dto.EmergencyContactPhone)) tenant.EmergencyContactPhone = dto.EmergencyContactPhone;
+
+        tenant.UpdatedAt = DateTime.UtcNow;
+        await _unitOfWork.Tenants.UpdateAsync(tenant);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Tenant updated: {Id}", id);
+        return tenant;
+    }
+
+    public async Task<bool> DeleteAsync(Guid id)
+    {
+        var tenant = await _unitOfWork.Tenants.GetByIdAsync(id);
+        if (tenant == null) return false;
+
+        await _unitOfWork.Tenants.DeleteAsync(tenant);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Tenant deleted: {Id}", id);
+        return true;
+    }
+
+    public async Task<bool> ToggleStatusAsync(Guid id)
+    {
+        var tenant = await _unitOfWork.Tenants.GetByIdAsync(id);
+        if (tenant == null) return false;
+
+        tenant.IsActive = !tenant.IsActive;
+        tenant.UpdatedAt = DateTime.UtcNow;
+
+        await _unitOfWork.Tenants.UpdateAsync(tenant);
+        await _unitOfWork.SaveChangesAsync();
+
+        _logger.LogInformation("Tenant status toggled: {Id}, IsActive: {IsActive}", id, tenant.IsActive);
+        return true;
+    }
+}

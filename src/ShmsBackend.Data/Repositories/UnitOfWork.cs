@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Storage;
 using ShmsBackend.Data.Context;
@@ -10,19 +10,80 @@ public class UnitOfWork : IUnitOfWork
 {
     private readonly ShmsDbContext _context;
     private IDbContextTransaction? _transaction;
-    private IAdminRepository? _adminRepository;  // Changed from _userRepository
+
+    private IAdminRepository? _adminRepository;
+    private IPortalUserRepository? _portalUserRepository;
+    private ILandlordRepository? _landlordRepository;
+    private IAgentRepository? _agentRepository;
+    private ITenantRepository? _tenantRepository;
+    private IHouseRepository? _houseRepository;
+    private IFlatRepository? _flatRepository;
 
     public UnitOfWork(ShmsDbContext context)
     {
         _context = context;
     }
 
-    public IAdminRepository Admins  // Changed from Users
+    public IAdminRepository Admins
     {
         get
         {
             _adminRepository ??= new AdminRepository(_context);
             return _adminRepository;
+        }
+    }
+
+    public IPortalUserRepository PortalUsers
+    {
+        get
+        {
+            _portalUserRepository ??= new PortalUserRepository(_context);
+            return _portalUserRepository;
+        }
+    }
+
+    public ILandlordRepository Landlords
+    {
+        get
+        {
+            _landlordRepository ??= new LandlordRepository(_context);
+            return _landlordRepository;
+        }
+    }
+
+    public IAgentRepository Agents
+    {
+        get
+        {
+            _agentRepository ??= new AgentRepository(_context);
+            return _agentRepository;
+        }
+    }
+
+    public ITenantRepository Tenants
+    {
+        get
+        {
+            _tenantRepository ??= new TenantRepository(_context);
+            return _tenantRepository;
+        }
+    }
+
+    public IHouseRepository Houses
+    {
+        get
+        {
+            _houseRepository ??= new HouseRepository(_context);
+            return _houseRepository;
+        }
+    }
+
+    public IFlatRepository Flats
+    {
+        get
+        {
+            _flatRepository ??= new FlatRepository(_context);
+            return _flatRepository;
         }
     }
 

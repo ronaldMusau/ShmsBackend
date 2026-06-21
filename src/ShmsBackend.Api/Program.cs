@@ -10,6 +10,7 @@ using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.OTP;
 using ShmsBackend.Api.Services.User;
 using ShmsBackend.Api.Services.Common;
+using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Repositories;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -41,6 +42,13 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // Add Services
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+
+// Portal Services
+builder.Services.AddScoped<ILandlordService, LandlordService>();
+builder.Services.AddScoped<IAgentService, AgentService>();
+builder.Services.AddScoped<ITenantService, TenantService>();
+builder.Services.AddScoped<IHouseService, HouseService>();
+builder.Services.AddScoped<IFlatService, FlatService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
