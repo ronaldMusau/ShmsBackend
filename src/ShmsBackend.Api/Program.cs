@@ -11,6 +11,7 @@ using ShmsBackend.Api.Services.OTP;
 using ShmsBackend.Api.Services.User;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Portal;
+using ShmsBackend.Api.Services.PortalAuth;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Repositories;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -42,6 +43,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // Add Services
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IPortalAuthService, PortalAuthService>();
 
 // Portal Services
 builder.Services.AddScoped<ILandlordService, LandlordService>();
@@ -53,7 +55,7 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IPreAuthCacheService, PreAuthCacheService>();
-builder.Services.AddScoped<IFrontendUrlService, FrontendUrlService>(); // NEW
+builder.Services.AddScoped<IFrontendUrlService, FrontendUrlService>();
 
 // Register HttpClient factory and EmailService
 builder.Services.AddHttpClient();
@@ -80,7 +82,7 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(
             Encoding.UTF8.GetBytes(jwtOptions.Secret)),
         ClockSkew = TimeSpan.Zero,
-        RoleClaimType = ClaimTypes.Role // Ensure role claim is recognized
+        RoleClaimType = ClaimTypes.Role
     };
 
     // Configure JWT for SignalR
@@ -104,33 +106,34 @@ builder.Services.AddAuthentication(options =>
 // Add Authorization with Policies
 builder.Services.AddAuthorization(options =>
 {
-    // Policy for SuperAdmin only - Can do everything
+    // Admin hierarchy policies
     options.AddPolicy("SuperAdminOnly", policy =>
         policy.RequireRole("SuperAdmin"));
 
-    // Policy for Admin and above - Can create Manager/Accountant/Secretary
     options.AddPolicy("AdminAndAbove", policy =>
         policy.RequireRole("SuperAdmin", "Admin"));
 
-    // Policy for viewing users - Different levels handled in controller
     options.AddPolicy("CanViewUsers", policy =>
         policy.RequireRole("SuperAdmin", "Admin", "Manager", "Accountant", "Secretary"));
 
-    // Policy for creating users - Only SuperAdmin and Admin
     options.AddPolicy("CanCreateUsers", policy =>
         policy.RequireRole("SuperAdmin", "Admin"));
 
-    // Policy for updating users - SuperAdmin all, Admin only lower roles
     options.AddPolicy("CanUpdateUsers", policy =>
         policy.RequireRole("SuperAdmin", "Admin"));
 
-    // Policy for deleting users - SuperAdmin only
     options.AddPolicy("CanDeleteUsers", policy =>
         policy.RequireRole("SuperAdmin"));
 
-    // Policy for toggling status - SuperAdmin only
     options.AddPolicy("CanToggleUserStatus", policy =>
         policy.RequireRole("SuperAdmin"));
+
+    // Portal policies
+    options.AddPolicy("PortalUser", policy =>
+        policy.RequireRole("Landlord", "Agent", "Tenant", "Explorer"));
+
+    options.AddPolicy("PortalAdminOrStaff", policy =>
+        policy.RequireRole("SuperAdmin", "Admin", "Secretary", "Manager"));
 });
 
 // Add CORS
@@ -138,10 +141,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins(
-            builder.Configuration
-                .GetSection("Cors:AllowedOrigins")
-                .Get<string[]>() ?? new[] { "*" })
+        policy.WithOrigins("http://localhost:4200", "http://localhost:4201")
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials();

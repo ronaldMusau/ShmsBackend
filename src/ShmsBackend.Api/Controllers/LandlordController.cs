@@ -53,12 +53,13 @@ public class LandlordController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating landlord");
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while creating the landlord"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while creating the landlord"));
         }
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
     public async Task<IActionResult> GetById(Guid id)
     {
         try
@@ -86,12 +87,13 @@ public class LandlordController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting landlord: {Id}", id);
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while retrieving the landlord"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while retrieving the landlord"));
         }
     }
 
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
     public async Task<IActionResult> GetAll()
     {
         try
@@ -102,12 +104,13 @@ public class LandlordController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting all landlords");
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while retrieving landlords"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while retrieving landlords"));
         }
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateLandlordDto dto)
     {
         if (!ModelState.IsValid)
@@ -136,12 +139,13 @@ public class LandlordController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating landlord: {Id}", id);
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while updating the landlord"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while updating the landlord"));
         }
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> Delete(Guid id)
     {
         try
@@ -155,7 +159,8 @@ public class LandlordController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting landlord: {Id}", id);
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while deleting the landlord"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while deleting the landlord"));
         }
     }
 
@@ -174,7 +179,8 @@ public class LandlordController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error toggling landlord status: {Id}", id);
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while updating landlord status"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while updating landlord status"));
         }
     }
 }

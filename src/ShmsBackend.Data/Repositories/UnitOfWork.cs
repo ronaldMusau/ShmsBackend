@@ -16,6 +16,7 @@ public class UnitOfWork : IUnitOfWork
     private ILandlordRepository? _landlordRepository;
     private IAgentRepository? _agentRepository;
     private ITenantRepository? _tenantRepository;
+    private IExplorerRepository? _explorerRepository;
     private IHouseRepository? _houseRepository;
     private IFlatRepository? _flatRepository;
 
@@ -66,6 +67,15 @@ public class UnitOfWork : IUnitOfWork
         {
             _tenantRepository ??= new TenantRepository(_context);
             return _tenantRepository;
+        }
+    }
+
+    public IExplorerRepository Explorers
+    {
+        get
+        {
+            _explorerRepository ??= new ExplorerRepository(_context);
+            return _explorerRepository;
         }
     }
 

@@ -10,6 +10,7 @@ public interface IUnitOfWork : IDisposable
     ILandlordRepository Landlords { get; }
     IAgentRepository Agents { get; }
     ITenantRepository Tenants { get; }
+    IExplorerRepository Explorers { get; }
     IHouseRepository Houses { get; }
     IFlatRepository Flats { get; }
     Task<int> SaveChangesAsync();

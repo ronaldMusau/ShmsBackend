@@ -54,12 +54,13 @@ public class TenantController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating tenant");
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while creating the tenant"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while creating the tenant"));
         }
     }
 
     [HttpGet("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
     public async Task<IActionResult> GetById(Guid id)
     {
         try
@@ -88,12 +89,13 @@ public class TenantController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting tenant: {Id}", id);
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while retrieving the tenant"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while retrieving the tenant"));
         }
     }
 
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
     public async Task<IActionResult> GetAll()
     {
         try
@@ -104,12 +106,13 @@ public class TenantController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting all tenants");
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while retrieving tenants"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while retrieving tenants"));
         }
     }
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTenantDto dto)
     {
         if (!ModelState.IsValid)
@@ -139,12 +142,13 @@ public class TenantController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating tenant: {Id}", id);
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while updating the tenant"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while updating the tenant"));
         }
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> Delete(Guid id)
     {
         try
@@ -158,7 +162,8 @@ public class TenantController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting tenant: {Id}", id);
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while deleting the tenant"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while deleting the tenant"));
         }
     }
 
@@ -177,7 +182,8 @@ public class TenantController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error toggling tenant status: {Id}", id);
-            return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while updating tenant status"));
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while updating tenant status"));
         }
     }
 }

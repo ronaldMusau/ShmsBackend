@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using ShmsBackend.Api.Configuration;
@@ -34,21 +35,25 @@ public class TokenService : ITokenService
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Secret));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        _logger.LogInformation("Generated admin access token for {Email} as {UserType}", email, userType);
 
-        var token = new JwtSecurityToken(
-            issuer: _jwtOptions.Issuer,
-            audience: _jwtOptions.Audience,
-            claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes),
-            signingCredentials: credentials
-        );
+        return BuildToken(claims);
+    }
 
-        _logger.LogInformation("Generated access token for user {Email} with expiration: {Expiration} minutes",
-            email, _jwtOptions.AccessTokenExpirationMinutes);
+    public string GeneratePortalAccessToken(Guid userId, string email, PortalUserType portalUserType)
+    {
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString()),
+            new Claim(ClaimTypes.Email, email),
+            new Claim(ClaimTypes.Role, portalUserType.ToString()),
+            new Claim("portal_user_type", portalUserType.ToString()),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        _logger.LogInformation("Generated portal access token for {Email} as {PortalUserType}", email, portalUserType);
+
+        return BuildToken(claims);
     }
 
     public string GenerateRefreshToken()
@@ -88,7 +93,7 @@ public class TokenService : ITokenService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error validating token");
+            _logger.LogError(ex, "Error validating expired token");
             return null;
         }
     }
@@ -96,5 +101,21 @@ public class TokenService : ITokenService
     public Task<bool> ValidateRefreshTokenAsync(Guid userId, string refreshToken)
     {
         return Task.FromResult(!string.IsNullOrEmpty(refreshToken));
+    }
+
+    private string BuildToken(List<Claim> claims)
+    {
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Secret));
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+        var token = new JwtSecurityToken(
+            issuer: _jwtOptions.Issuer,
+            audience: _jwtOptions.Audience,
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes),
+            signingCredentials: credentials
+        );
+
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

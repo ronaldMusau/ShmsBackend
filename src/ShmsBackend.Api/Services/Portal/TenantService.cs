@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using BCrypt.Net;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
 using ShmsBackend.Data.Models.Entities.Portal;
@@ -29,8 +28,8 @@ public class TenantService : ITenantService
         var tenant = new Tenant
         {
             Id = Guid.NewGuid(),
-            Email = dto.Email.ToLower(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            Email = dto.Email.ToLower().Trim(),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12),
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             PhoneNumber = dto.PhoneNumber,
@@ -38,7 +37,7 @@ public class TenantService : ITenantService
             EmergencyContactName = dto.EmergencyContactName,
             EmergencyContactPhone = dto.EmergencyContactPhone,
             IsActive = true,
-            IsEmailVerified = false,
+            IsEmailVerified = true,  // Admin-created accounts are email-trusted
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -71,7 +70,7 @@ public class TenantService : ITenantService
             var duplicate = await _unitOfWork.Tenants.GetByEmailAsync(dto.Email);
             if (duplicate != null)
                 throw new InvalidOperationException($"Email {dto.Email} is already in use");
-            tenant.Email = dto.Email.ToLower();
+            tenant.Email = dto.Email.ToLower().Trim();
         }
 
         if (!string.IsNullOrEmpty(dto.FirstName)) tenant.FirstName = dto.FirstName;

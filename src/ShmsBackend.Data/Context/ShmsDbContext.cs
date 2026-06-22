@@ -24,6 +24,7 @@ public class ShmsDbContext : DbContext
     public DbSet<Landlord> Landlords { get; set; }
     public DbSet<Agent> Agents { get; set; }
     public DbSet<Tenant> Tenants { get; set; }
+    public DbSet<Explorer> Explorers { get; set; }
 
     // Property listings
     public DbSet<House> Houses { get; set; }
@@ -121,6 +122,11 @@ public class ShmsDbContext : DbContext
             entity.ToTable("Tenants");
             entity.Property(e => e.EmergencyContactName).HasMaxLength(100);
             entity.Property(e => e.EmergencyContactPhone).HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<Explorer>(entity =>
+        {
+            entity.ToTable("Explorers");
         });
 
         // ── House Configuration ──────────────────────────────────────────────

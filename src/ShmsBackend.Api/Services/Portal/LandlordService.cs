@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using BCrypt.Net;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Landlord;
 using ShmsBackend.Data.Models.Entities.Portal;
@@ -29,15 +28,15 @@ public class LandlordService : ILandlordService
         var landlord = new Landlord
         {
             Id = Guid.NewGuid(),
-            Email = dto.Email.ToLower(),
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            Email = dto.Email.ToLower().Trim(),
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12),
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             PhoneNumber = dto.PhoneNumber,
             NationalId = dto.NationalId,
             AgencyName = dto.AgencyName,
             IsActive = true,
-            IsEmailVerified = false,
+            IsEmailVerified = true,  // Admin-created accounts are email-trusted
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -70,7 +69,7 @@ public class LandlordService : ILandlordService
             var duplicate = await _unitOfWork.Landlords.GetByEmailAsync(dto.Email);
             if (duplicate != null)
                 throw new InvalidOperationException($"Email {dto.Email} is already in use");
-            landlord.Email = dto.Email.ToLower();
+            landlord.Email = dto.Email.ToLower().Trim();
         }
 
         if (!string.IsNullOrEmpty(dto.FirstName)) landlord.FirstName = dto.FirstName;
