@@ -16,6 +16,10 @@ public class CreateFlatDto
     [Required]
     public string City { get; set; } = string.Empty;
 
+    public string? County { get; set; }
+    public string? Constituency { get; set; }
+    public string? Ward { get; set; }
+
     public string? State { get; set; }
 
     public string? ZipCode { get; set; }

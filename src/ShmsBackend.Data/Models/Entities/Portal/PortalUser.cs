@@ -11,6 +11,9 @@ public abstract class PortalUser
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
+    public string? County { get; set; }
+    public string? Constituency { get; set; }
+    public string? Ward { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsEmailVerified { get; set; } = false;
     public string? EmailVerificationToken { get; set; }

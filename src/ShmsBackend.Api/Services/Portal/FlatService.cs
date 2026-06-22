@@ -46,6 +46,9 @@ public class FlatService : IFlatService
             Description = dto.Description,
             Address = dto.Address,
             City = dto.City,
+            County = dto.County,
+            Constituency = dto.Constituency,
+            Ward = dto.Ward,
             State = dto.State,
             ZipCode = dto.ZipCode,
             Price = dto.Price,
@@ -121,6 +124,9 @@ public class FlatService : IFlatService
         if (dto.Description != null) flat.Description = dto.Description;
         if (!string.IsNullOrEmpty(dto.Address)) flat.Address = dto.Address;
         if (!string.IsNullOrEmpty(dto.City)) flat.City = dto.City;
+        if (dto.County != null) flat.County = dto.County;
+        if (dto.Constituency != null) flat.Constituency = dto.Constituency;
+        if (dto.Ward != null) flat.Ward = dto.Ward;
         if (dto.State != null) flat.State = dto.State;
         if (dto.ZipCode != null) flat.ZipCode = dto.ZipCode;
         if (dto.Price.HasValue) flat.Price = dto.Price.Value;
