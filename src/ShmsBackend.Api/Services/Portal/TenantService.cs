@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -14,12 +16,14 @@ public class TenantService : ITenantService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<TenantService> _logger;
     private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
 
-    public TenantService(IUnitOfWork unitOfWork, ILogger<TenantService> logger, IEmailService emailService)
+    public TenantService(IUnitOfWork unitOfWork, ILogger<TenantService> logger, IEmailService emailService, INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
+        _notificationService = notificationService;
     }
 
     public async Task<Tenant> CreateAsync(CreateTenantDto dto)
@@ -60,6 +64,24 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send welcome email to tenant {Email}", tenant.Email);
+        }
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[]
+                {
+                    NotificationAudience.SuperAdmin,
+                    NotificationAudience.Admin,
+                    NotificationAudience.Secretary
+                },
+                $"New tenant {tenant.FirstName} {tenant.LastName} has been registered.",
+                "user"
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send notification for tenant creation {Email}", tenant.Email);
         }
 
         _logger.LogInformation("Tenant created: {Email}", tenant.Email);

@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Flat;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 
 namespace ShmsBackend.Api.Services.Portal;
@@ -12,10 +15,14 @@ namespace ShmsBackend.Api.Services.Portal;
 public class FlatService
 {
     private readonly ShmsDbContext _context;
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<FlatService> _logger;
 
-    public FlatService(ShmsDbContext context)
+    public FlatService(ShmsDbContext context, INotificationService notificationService, ILogger<FlatService> logger)
     {
         _context = context;
+        _notificationService = notificationService;
+        _logger = logger;
     }
 
     public async Task<object> CreateAsync(CreateFlatDto dto)
@@ -78,6 +85,29 @@ public class FlatService
             _context.Houses.AddRange(houses);
 
         await _context.SaveChangesAsync();
+
+        try
+        {
+            var houseCount = houses.Count;
+            var location = !string.IsNullOrEmpty(flat.Ward) ? flat.Ward : "an unspecified area";
+            var houseText = houseCount > 0 ? $" with {houseCount} house{(houseCount == 1 ? "" : "s")}" : "";
+
+            await _notificationService.SendToRolesAsync(
+                new[]
+                {
+                    NotificationAudience.SuperAdmin,
+                    NotificationAudience.Admin,
+                    NotificationAudience.Secretary,
+                    NotificationAudience.Manager
+                },
+                $"New flat '{flat.FlatName}' created in {location}{houseText}.",
+                "property"
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send notification for flat creation {FlatName}", flat.FlatName);
+        }
 
         return (await GetByIdAsync(flat.Id))!;
     }

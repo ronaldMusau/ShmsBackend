@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Landlord;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -14,12 +16,14 @@ public class LandlordService : ILandlordService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<LandlordService> _logger;
     private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
 
-    public LandlordService(IUnitOfWork unitOfWork, ILogger<LandlordService> logger, IEmailService emailService)
+    public LandlordService(IUnitOfWork unitOfWork, ILogger<LandlordService> logger, IEmailService emailService, INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
+        _notificationService = notificationService;
     }
 
     public async Task<Landlord> CreateAsync(CreateLandlordDto dto)
@@ -50,6 +54,24 @@ public class LandlordService : ILandlordService
         var emailSent = await _emailService.SendWelcomeEmailAsync(landlord.Email, landlord.FirstName, dto.Password);
         if (!emailSent)
             _logger.LogError("Failed to send welcome email to Landlord: {Email}", landlord.Email);
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[]
+                {
+                    NotificationAudience.SuperAdmin,
+                    NotificationAudience.Admin,
+                    NotificationAudience.Secretary
+                },
+                $"New landlord {landlord.FirstName} {landlord.LastName} has been registered.",
+                "user"
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send notification for landlord creation {Email}", landlord.Email);
+        }
 
         _logger.LogInformation("Landlord created: {Email}", landlord.Email);
         return landlord;

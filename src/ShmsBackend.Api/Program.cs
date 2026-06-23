@@ -11,6 +11,7 @@ using ShmsBackend.Api.Services.OTP;
 using ShmsBackend.Api.Services.User;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Portal;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.PortalAuth;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Repositories;
@@ -60,6 +61,7 @@ builder.Services.AddScoped<IFrontendUrlService, FrontendUrlService>();
 // Register HttpClient factory and EmailService
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // Add JWT Authentication
 var jwtOptions = builder.Configuration.GetSection("JwtOptions").Get<JwtOptions>();

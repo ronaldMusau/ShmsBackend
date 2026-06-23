@@ -30,6 +30,9 @@ public class ShmsDbContext : DbContext
     public DbSet<House> Houses { get; set; }
     public DbSet<Flat> Flats { get; set; }
 
+    // Notifications
+    public DbSet<Notification> Notifications { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -168,6 +171,20 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.PaymentStatus)
                   .HasConversion<string>()
                   .HasDefaultValue(PaymentStatus.NotPaid);
+        });
+
+        // ── Notification Configuration ───────────────────────────────────────
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Message).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Category).HasMaxLength(50).HasDefaultValue("general");
+            entity.Property(e => e.TargetUserId).HasMaxLength(100);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasIndex(e => e.TargetUserId);
+            entity.HasIndex(e => e.Audience);
+            entity.HasIndex(e => e.IsRead);
+            entity.ToTable("Notifications");
         });
     }
 }

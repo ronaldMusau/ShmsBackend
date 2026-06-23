@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Agent;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -14,12 +16,14 @@ public class AgentService : IAgentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<AgentService> _logger;
     private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
 
-    public AgentService(IUnitOfWork unitOfWork, ILogger<AgentService> logger, IEmailService emailService)
+    public AgentService(IUnitOfWork unitOfWork, ILogger<AgentService> logger, IEmailService emailService, INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
+        _notificationService = notificationService;
     }
 
     public async Task<Agent> CreateAsync(CreateAgentDto dto)
@@ -59,6 +63,24 @@ public class AgentService : IAgentService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send welcome email to agent {Email}", agent.Email);
+        }
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[]
+                {
+                    NotificationAudience.SuperAdmin,
+                    NotificationAudience.Admin,
+                    NotificationAudience.Secretary
+                },
+                $"New agent {agent.FirstName} {agent.LastName} has been registered in {agent.Ward ?? "an unspecified area"}.",
+                "user"
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send notification for agent creation {Email}", agent.Email);
         }
 
         _logger.LogInformation("Agent created: {Email}", agent.Email);

@@ -16,9 +16,18 @@ public class NotificationHub : Hub
     public override async Task OnConnectedAsync()
     {
         var userId = Context.UserIdentifier;
-        _logger.LogInformation("User connected to NotificationHub: {UserId}", userId);
+        if (!string.IsNullOrEmpty(userId))
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
+            var roleClaim = Context.User?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+            if (!string.IsNullOrEmpty(roleClaim))
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"role_{roleClaim}");
+            }
+        }
+
+        _logger.LogInformation("User connected to NotificationHub: {UserId}", userId);
         await base.OnConnectedAsync();
     }
 

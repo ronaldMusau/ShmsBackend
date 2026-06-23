@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.House;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 
 namespace ShmsBackend.Api.Services.Portal;
@@ -12,10 +15,14 @@ namespace ShmsBackend.Api.Services.Portal;
 public class HouseService
 {
     private readonly ShmsDbContext _context;
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<HouseService> _logger;
 
-    public HouseService(ShmsDbContext context)
+    public HouseService(ShmsDbContext context, INotificationService notificationService, ILogger<HouseService> logger)
     {
         _context = context;
+        _notificationService = notificationService;
+        _logger = logger;
     }
 
     public async Task<object> CreateAsync(CreateHouseDto dto)
@@ -48,6 +55,25 @@ public class HouseService
 
         _context.Houses.Add(house);
         await _context.SaveChangesAsync();
+
+        try
+        {
+            var flatName = flat.FlatName;
+            await _notificationService.SendToRolesAsync(
+                new[]
+                {
+                    NotificationAudience.SuperAdmin,
+                    NotificationAudience.Admin,
+                    NotificationAudience.Secretary
+                },
+                $"House {house.HouseNumber} added to {flatName}.",
+                "property"
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send notification for house creation {HouseNumber}", house.HouseNumber);
+        }
 
         return (await GetByIdAsync(house.Id))!;
     }
@@ -105,7 +131,9 @@ public class HouseService
 
     public async Task<object?> UpdateAsync(Guid id, UpdateHouseDto dto)
     {
-        var house = await _context.Houses.FindAsync(id);
+        var house = await _context.Houses
+            .Include(h => h.Flat)
+            .FirstOrDefaultAsync(h => h.Id == id);
         if (house == null) return null;
 
         if (dto.HouseNumber != null)
@@ -143,6 +171,45 @@ public class HouseService
 
         house.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+
+        try
+        {
+            if (dto.OccupancyStatus != null)
+            {
+                var flatName = house.Flat?.FlatName ?? "a flat";
+                await _notificationService.SendToRolesAsync(
+                    new[]
+                    {
+                        NotificationAudience.SuperAdmin,
+                        NotificationAudience.Admin,
+                        NotificationAudience.Secretary,
+                        NotificationAudience.Accountant
+                    },
+                    $"House {house.HouseNumber} at {flatName} is now {house.OccupancyStatus}.",
+                    "property"
+                );
+            }
+
+            if (dto.PaymentStatus != null)
+            {
+                var flatName = house.Flat?.FlatName ?? "a flat";
+                await _notificationService.SendToRolesAsync(
+                    new[]
+                    {
+                        NotificationAudience.SuperAdmin,
+                        NotificationAudience.Admin,
+                        NotificationAudience.Accountant
+                    },
+                    $"Payment status for House {house.HouseNumber} at {flatName} updated to {house.PaymentStatus}.",
+                    "payment"
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send notification for house update {HouseNumber}", house.HouseNumber);
+        }
+
         return await GetByIdAsync(id);
     }
 

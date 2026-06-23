@@ -9,6 +9,7 @@ using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -19,6 +20,7 @@ public class PortalAuthService : IPortalAuthService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITokenService _tokenService;
     private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
     private readonly ITokenBlacklistService _tokenBlacklistService;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly ILogger<PortalAuthService> _logger;
@@ -28,6 +30,7 @@ public class PortalAuthService : IPortalAuthService
         IUnitOfWork unitOfWork,
         ITokenService tokenService,
         IEmailService emailService,
+        INotificationService notificationService,
         ITokenBlacklistService tokenBlacklistService,
         IFrontendUrlService frontendUrlService,
         ILogger<PortalAuthService> logger,
@@ -36,6 +39,7 @@ public class PortalAuthService : IPortalAuthService
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
         _emailService = emailService;
+        _notificationService = notificationService;
         _tokenBlacklistService = tokenBlacklistService;
         _frontendUrlService = frontendUrlService;
         _logger = logger;
@@ -169,6 +173,19 @@ public class PortalAuthService : IPortalAuthService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send welcome email to explorer {Email}", explorer.Email);
+            }
+
+            try
+            {
+                await _notificationService.SendToUserAsync(
+                    explorer.Id.ToString(),
+                    "Welcome to Romah! Browse available properties in your area.",
+                    "general"
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send welcome notification to explorer {Email}", explorer.Email);
             }
 
             _logger.LogInformation("Explorer registered: {Email}", explorer.Email);
