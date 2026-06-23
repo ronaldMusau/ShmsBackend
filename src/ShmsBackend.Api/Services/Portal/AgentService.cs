@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Agent;
+using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -12,11 +13,13 @@ public class AgentService : IAgentService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<AgentService> _logger;
+    private readonly IEmailService _emailService;
 
-    public AgentService(IUnitOfWork unitOfWork, ILogger<AgentService> logger)
+    public AgentService(IUnitOfWork unitOfWork, ILogger<AgentService> logger, IEmailService emailService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _emailService = emailService;
     }
 
     public async Task<Agent> CreateAsync(CreateAgentDto dto)
@@ -43,6 +46,20 @@ public class AgentService : IAgentService
 
         await _unitOfWork.Agents.AddAsync(agent);
         await _unitOfWork.SaveChangesAsync();
+
+        try
+        {
+            await _emailService.SendWelcomeEmailAsync(
+                agent.Email,
+                agent.FirstName,
+                dto.Password
+            );
+            _logger.LogInformation("Welcome email sent to agent {Email}", agent.Email);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send welcome email to agent {Email}", agent.Email);
+        }
 
         _logger.LogInformation("Agent created: {Email}", agent.Email);
         return agent;

@@ -157,6 +157,20 @@ public class PortalAuthService : IPortalAuthService
                 _logger.LogError("Failed to send verification email to Explorer: {Email}", explorer.Email);
             }
 
+            try
+            {
+                await _emailService.SendWelcomeEmailAsync(
+                    explorer.Email,
+                    explorer.FirstName,
+                    "Use the password you registered with to log in to the Romah Client Portal."
+                );
+                _logger.LogInformation("Welcome email sent to explorer {Email}", explorer.Email);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send welcome email to explorer {Email}", explorer.Email);
+            }
+
             _logger.LogInformation("Explorer registered: {Email}", explorer.Email);
 
             return ApiResponse<string>.SuccessResponse(

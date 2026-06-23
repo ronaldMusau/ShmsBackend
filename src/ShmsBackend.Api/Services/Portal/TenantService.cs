@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
+using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -12,11 +13,13 @@ public class TenantService : ITenantService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<TenantService> _logger;
+    private readonly IEmailService _emailService;
 
-    public TenantService(IUnitOfWork unitOfWork, ILogger<TenantService> logger)
+    public TenantService(IUnitOfWork unitOfWork, ILogger<TenantService> logger, IEmailService emailService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
+        _emailService = emailService;
     }
 
     public async Task<Tenant> CreateAsync(CreateTenantDto dto)
@@ -44,6 +47,20 @@ public class TenantService : ITenantService
 
         await _unitOfWork.Tenants.AddAsync(tenant);
         await _unitOfWork.SaveChangesAsync();
+
+        try
+        {
+            await _emailService.SendWelcomeEmailAsync(
+                tenant.Email,
+                tenant.FirstName,
+                dto.Password
+            );
+            _logger.LogInformation("Welcome email sent to tenant {Email}", tenant.Email);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send welcome email to tenant {Email}", tenant.Email);
+        }
 
         _logger.LogInformation("Tenant created: {Email}", tenant.Email);
         return tenant;
