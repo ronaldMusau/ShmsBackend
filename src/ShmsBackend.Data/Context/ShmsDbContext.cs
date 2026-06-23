@@ -129,65 +129,40 @@ public class ShmsDbContext : DbContext
             entity.ToTable("Explorers");
         });
 
-        // ── House Configuration ──────────────────────────────────────────────
-        modelBuilder.Entity<House>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Title).IsRequired().HasMaxLength(200);
-            entity.Property(e => e.Description).HasMaxLength(2000);
-            entity.Property(e => e.Address).IsRequired().HasMaxLength(500);
-            entity.Property(e => e.City).IsRequired().HasMaxLength(100);
-            entity.Property(e => e.State).HasMaxLength(100);
-            entity.Property(e => e.ZipCode).HasMaxLength(20);
-            entity.Property(e => e.Price).HasColumnType("decimal(18,2)");
-            entity.Property(e => e.IsAvailable).HasDefaultValue(true);
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
-            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
-
-            entity.HasOne(e => e.Landlord)
-                .WithMany()
-                .HasForeignKey(e => e.LandlordId)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            entity.HasOne(e => e.Agent)
-                .WithMany()
-                .HasForeignKey(e => e.AgentId)
-                .OnDelete(DeleteBehavior.SetNull);
-
-            entity.ToTable("Houses");
-        });
-
         // ── Flat Configuration ───────────────────────────────────────────────
         modelBuilder.Entity<Flat>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.Property(e => e.Title).IsRequired().HasMaxLength(200);
-            entity.Property(e => e.Description).HasMaxLength(2000);
-            entity.Property(e => e.Address).IsRequired().HasMaxLength(500);
-            entity.Property(e => e.City).IsRequired().HasMaxLength(100);
-            entity.Property(e => e.State).HasMaxLength(100);
-            entity.Property(e => e.ZipCode).HasMaxLength(20);
-            entity.Property(e => e.Price).HasColumnType("decimal(18,2)");
-            entity.Property(e => e.IsAvailable).HasDefaultValue(true);
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
-            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
-
-            entity.HasOne(e => e.House)
-                .WithMany(h => h.Flats)
-                .HasForeignKey(e => e.HouseId)
-                .OnDelete(DeleteBehavior.SetNull);
-
+            entity.Property(e => e.FlatName).IsRequired().HasMaxLength(200);
+            entity.HasIndex(e => e.FlatName).IsUnique();
+            entity.Property(e => e.County).HasMaxLength(100);
+            entity.Property(e => e.Constituency).HasMaxLength(100);
+            entity.Property(e => e.Ward).HasMaxLength(100);
             entity.HasOne(e => e.Landlord)
-                .WithMany()
-                .HasForeignKey(e => e.LandlordId)
-                .OnDelete(DeleteBehavior.Restrict);
+                  .WithMany()
+                  .HasForeignKey(e => e.LandlordId)
+                  .OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(e => e.Houses)
+                  .WithOne(h => h.Flat)
+                  .HasForeignKey(h => h.FlatId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
 
-            entity.HasOne(e => e.Agent)
-                .WithMany()
-                .HasForeignKey(e => e.AgentId)
-                .OnDelete(DeleteBehavior.SetNull);
-
-            entity.ToTable("Flats");
+        // ── House Configuration ──────────────────────────────────────────────
+        modelBuilder.Entity<House>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.HouseNumber).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.HouseType).IsRequired()
+                  .HasConversion<string>();
+            entity.Property(e => e.RentFee).HasColumnType("decimal(10,2)");
+            entity.Property(e => e.DepositFee).HasColumnType("decimal(10,2)");
+            entity.Property(e => e.OccupancyStatus)
+                  .HasConversion<string>()
+                  .HasDefaultValue(OccupancyStatus.Vacant);
+            entity.Property(e => e.PaymentStatus)
+                  .HasConversion<string>()
+                  .HasDefaultValue(PaymentStatus.NotPaid);
         });
     }
 }

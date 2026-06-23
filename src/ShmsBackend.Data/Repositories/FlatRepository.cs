@@ -20,25 +20,4 @@ public class FlatRepository : Repository<Flat>, IFlatRepository
             .Where(f => f.LandlordId == landlordId)
             .ToListAsync();
     }
-
-    public async Task<IEnumerable<Flat>> GetByHouseIdAsync(Guid houseId)
-    {
-        return await _dbSet
-            .Where(f => f.HouseId == houseId)
-            .ToListAsync();
-    }
-
-    public async Task<IEnumerable<Flat>> GetAvailableAsync()
-    {
-        return await _dbSet
-            .Where(f => f.IsAvailable)
-            .ToListAsync();
-    }
-
-    public async Task<IEnumerable<Flat>> GetByCityAsync(string city)
-    {
-        return await _dbSet
-            .Where(f => f.City.ToLower() == city.ToLower())
-            .ToListAsync();
-    }
 }

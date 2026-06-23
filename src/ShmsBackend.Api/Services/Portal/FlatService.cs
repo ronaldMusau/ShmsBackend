@@ -1,159 +1,233 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.Flat;
+using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
-using ShmsBackend.Data.Repositories.Interfaces;
 
 namespace ShmsBackend.Api.Services.Portal;
 
-public class FlatService : IFlatService
+public class FlatService
 {
-    private readonly IUnitOfWork _unitOfWork;
-    private readonly ILogger<FlatService> _logger;
+    private readonly ShmsDbContext _context;
 
-    public FlatService(IUnitOfWork unitOfWork, ILogger<FlatService> logger)
+    public FlatService(ShmsDbContext context)
     {
-        _unitOfWork = unitOfWork;
-        _logger = logger;
+        _context = context;
     }
 
-    public async Task<Flat> CreateAsync(CreateFlatDto dto)
+    public async Task<object> CreateAsync(CreateFlatDto dto)
     {
-        var landlordExists = await _unitOfWork.Landlords.GetByIdAsync(dto.LandlordId);
-        if (landlordExists == null)
-            throw new InvalidOperationException($"Landlord with id {dto.LandlordId} not found");
+        var exists = await _context.Flats
+            .AnyAsync(f => f.FlatName == dto.FlatName);
+        if (exists)
+            throw new InvalidOperationException($"A flat named '{dto.FlatName}' already exists.");
 
-        if (dto.AgentId.HasValue)
-        {
-            var agentExists = await _unitOfWork.Agents.GetByIdAsync(dto.AgentId.Value);
-            if (agentExists == null)
-                throw new InvalidOperationException($"Agent with id {dto.AgentId} not found");
-        }
-
-        if (dto.HouseId.HasValue)
-        {
-            var houseExists = await _unitOfWork.Houses.GetByIdAsync(dto.HouseId.Value);
-            if (houseExists == null)
-                throw new InvalidOperationException($"House with id {dto.HouseId} not found");
-        }
+        var landlord = await _context.Landlords
+            .FirstOrDefaultAsync(u => u.Id == dto.LandlordId);
+        if (landlord == null)
+            throw new InvalidOperationException("Landlord not found.");
 
         var flat = new Flat
         {
             Id = Guid.NewGuid(),
-            Title = dto.Title,
-            Description = dto.Description,
-            Address = dto.Address,
-            City = dto.City,
+            FlatName = dto.FlatName,
             County = dto.County,
             Constituency = dto.Constituency,
             Ward = dto.Ward,
-            State = dto.State,
-            ZipCode = dto.ZipCode,
-            Price = dto.Price,
-            FloorNumber = dto.FloorNumber,
-            Bedrooms = dto.Bedrooms,
-            Bathrooms = dto.Bathrooms,
-            IsAvailable = true,
-            HouseId = dto.HouseId,
             LandlordId = dto.LandlordId,
-            AgentId = dto.AgentId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
-        await _unitOfWork.Flats.AddAsync(flat);
-        await _unitOfWork.SaveChangesAsync();
-
-        _logger.LogInformation("Flat created: {Id}", flat.Id);
-        return flat;
-    }
-
-    public async Task<Flat?> GetByIdAsync(Guid id)
-    {
-        return await _unitOfWork.Flats.GetByIdAsync(id);
-    }
-
-    public async Task<IEnumerable<Flat>> GetAllAsync()
-    {
-        return await _unitOfWork.Flats.GetAllAsync();
-    }
-
-    public async Task<IEnumerable<Flat>> GetByLandlordAsync(Guid landlordId)
-    {
-        return await _unitOfWork.Flats.GetByLandlordIdAsync(landlordId);
-    }
-
-    public async Task<IEnumerable<Flat>> GetByHouseAsync(Guid houseId)
-    {
-        return await _unitOfWork.Flats.GetByHouseIdAsync(houseId);
-    }
-
-    public async Task<IEnumerable<Flat>> GetAvailableAsync()
-    {
-        return await _unitOfWork.Flats.GetAvailableAsync();
-    }
-
-    public async Task<IEnumerable<Flat>> GetByCityAsync(string city)
-    {
-        return await _unitOfWork.Flats.GetByCityAsync(city);
-    }
-
-    public async Task<Flat> UpdateAsync(Guid id, UpdateFlatDto dto)
-    {
-        var flat = await _unitOfWork.Flats.GetByIdAsync(id);
-        if (flat == null)
-            throw new InvalidOperationException("Flat not found");
-
-        if (dto.AgentId.HasValue)
+        var houses = new List<House>();
+        if (dto.Houses != null && dto.Houses.Count > 0)
         {
-            var agentExists = await _unitOfWork.Agents.GetByIdAsync(dto.AgentId.Value);
-            if (agentExists == null)
-                throw new InvalidOperationException($"Agent with id {dto.AgentId} not found");
+            foreach (var group in dto.Houses)
+            {
+                if (!Enum.TryParse<HouseType>(group.HouseType, true, out var houseType))
+                    throw new InvalidOperationException($"Invalid house type: {group.HouseType}");
+
+                for (int i = 1; i <= group.Count; i++)
+                {
+                    houses.Add(new House
+                    {
+                        Id = Guid.NewGuid(),
+                        HouseNumber = $"{group.HouseNumberPrefix}{i}",
+                        HouseType = houseType,
+                        RentFee = group.RentFee,
+                        DepositFee = group.DepositFee,
+                        OccupancyStatus = OccupancyStatus.Vacant,
+                        PaymentStatus = PaymentStatus.NotPaid,
+                        FlatId = flat.Id,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            var numbers = houses.Select(h => h.HouseNumber).ToList();
+            if (numbers.Count != numbers.Distinct().Count())
+                throw new InvalidOperationException("Duplicate house numbers detected in the submitted house groups.");
         }
 
-        if (dto.HouseId.HasValue)
-        {
-            var houseExists = await _unitOfWork.Houses.GetByIdAsync(dto.HouseId.Value);
-            if (houseExists == null)
-                throw new InvalidOperationException($"House with id {dto.HouseId} not found");
-        }
+        _context.Flats.Add(flat);
+        if (houses.Count > 0)
+            _context.Houses.AddRange(houses);
 
-        if (!string.IsNullOrEmpty(dto.Title)) flat.Title = dto.Title;
-        if (dto.Description != null) flat.Description = dto.Description;
-        if (!string.IsNullOrEmpty(dto.Address)) flat.Address = dto.Address;
-        if (!string.IsNullOrEmpty(dto.City)) flat.City = dto.City;
+        await _context.SaveChangesAsync();
+
+        return (await GetByIdAsync(flat.Id))!;
+    }
+
+    public async Task<IEnumerable<object>> GetAllAsync()
+    {
+        return await _context.Flats
+            .Include(f => f.Landlord)
+            .Include(f => f.Houses)
+            .Select(f => new
+            {
+                f.Id,
+                f.FlatName,
+                f.County,
+                f.Constituency,
+                f.Ward,
+                f.LandlordId,
+                Landlord = f.Landlord == null ? null : new
+                {
+                    f.Landlord.Id,
+                    f.Landlord.FirstName,
+                    f.Landlord.LastName,
+                    f.Landlord.Email,
+                    f.Landlord.PhoneNumber
+                },
+                TotalHouses = f.Houses.Count,
+                VacantHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+                OccupiedHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                f.CreatedAt,
+                f.UpdatedAt
+            })
+            .ToListAsync<object>();
+    }
+
+    public async Task<object?> GetByIdAsync(Guid id)
+    {
+        var flat = await _context.Flats
+            .Include(f => f.Landlord)
+            .Include(f => f.Houses)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+        if (flat == null) return null;
+
+        return new
+        {
+            flat.Id,
+            flat.FlatName,
+            flat.County,
+            flat.Constituency,
+            flat.Ward,
+            flat.LandlordId,
+            Landlord = flat.Landlord == null ? null : new
+            {
+                flat.Landlord.Id,
+                flat.Landlord.FirstName,
+                flat.Landlord.LastName,
+                flat.Landlord.Email,
+                flat.Landlord.PhoneNumber
+            },
+            Houses = flat.Houses.Select(h => new
+            {
+                h.Id,
+                h.HouseNumber,
+                HouseType = h.HouseType.ToString(),
+                h.RentFee,
+                h.DepositFee,
+                OccupancyStatus = h.OccupancyStatus.ToString(),
+                PaymentStatus = h.PaymentStatus.ToString(),
+                h.CreatedAt
+            }),
+            TotalHouses = flat.Houses.Count,
+            VacantHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+            OccupiedHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+            flat.CreatedAt,
+            flat.UpdatedAt
+        };
+    }
+
+    public async Task<object?> UpdateAsync(Guid id, UpdateFlatDto dto)
+    {
+        var flat = await _context.Flats.FindAsync(id);
+        if (flat == null) return null;
+
+        if (dto.FlatName != null)
+        {
+            var duplicate = await _context.Flats
+                .AnyAsync(f => f.FlatName == dto.FlatName && f.Id != id);
+            if (duplicate)
+                throw new InvalidOperationException($"A flat named '{dto.FlatName}' already exists.");
+            flat.FlatName = dto.FlatName;
+        }
         if (dto.County != null) flat.County = dto.County;
         if (dto.Constituency != null) flat.Constituency = dto.Constituency;
         if (dto.Ward != null) flat.Ward = dto.Ward;
-        if (dto.State != null) flat.State = dto.State;
-        if (dto.ZipCode != null) flat.ZipCode = dto.ZipCode;
-        if (dto.Price.HasValue) flat.Price = dto.Price.Value;
-        if (dto.FloorNumber.HasValue) flat.FloorNumber = dto.FloorNumber.Value;
-        if (dto.Bedrooms.HasValue) flat.Bedrooms = dto.Bedrooms.Value;
-        if (dto.Bathrooms.HasValue) flat.Bathrooms = dto.Bathrooms.Value;
-        if (dto.IsAvailable.HasValue) flat.IsAvailable = dto.IsAvailable.Value;
-        if (dto.HouseId.HasValue) flat.HouseId = dto.HouseId;
-        if (dto.AgentId.HasValue) flat.AgentId = dto.AgentId;
 
         flat.UpdatedAt = DateTime.UtcNow;
-        await _unitOfWork.Flats.UpdateAsync(flat);
-        await _unitOfWork.SaveChangesAsync();
-
-        _logger.LogInformation("Flat updated: {Id}", id);
-        return flat;
+        await _context.SaveChangesAsync();
+        return await GetByIdAsync(id);
     }
 
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var flat = await _unitOfWork.Flats.GetByIdAsync(id);
+        var flat = await _context.Flats
+            .Include(f => f.Houses)
+            .FirstOrDefaultAsync(f => f.Id == id);
         if (flat == null) return false;
 
-        await _unitOfWork.Flats.DeleteAsync(flat);
-        await _unitOfWork.SaveChangesAsync();
-
-        _logger.LogInformation("Flat deleted: {Id}", id);
+        _context.Flats.Remove(flat);
+        await _context.SaveChangesAsync();
         return true;
+    }
+
+    public async Task<IEnumerable<object>> GetByLandlordAsync(Guid landlordId)
+    {
+        return await _context.Flats
+            .Include(f => f.Houses)
+            .Where(f => f.LandlordId == landlordId)
+            .Select(f => new
+            {
+                f.Id,
+                f.FlatName,
+                f.County,
+                f.Constituency,
+                f.Ward,
+                TotalHouses = f.Houses.Count,
+                VacantHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+                OccupiedHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                f.CreatedAt
+            })
+            .ToListAsync<object>();
+    }
+
+    public async Task<IEnumerable<object>> GetByLocationAsync(string county, string constituency, string ward)
+    {
+        return await _context.Flats
+            .Include(f => f.Houses)
+            .Where(f => f.County == county
+                     && f.Constituency == constituency
+                     && f.Ward == ward)
+            .Select(f => new
+            {
+                f.Id,
+                f.FlatName,
+                f.County,
+                f.Constituency,
+                f.Ward,
+                TotalHouses = f.Houses.Count,
+                VacantHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+                f.CreatedAt
+            })
+            .ToListAsync<object>();
     }
 }

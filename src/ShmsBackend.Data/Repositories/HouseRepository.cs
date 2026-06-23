@@ -14,24 +14,10 @@ public class HouseRepository : Repository<House>, IHouseRepository
     {
     }
 
-    public async Task<IEnumerable<House>> GetByLandlordIdAsync(Guid landlordId)
+    public async Task<IEnumerable<House>> GetByFlatIdAsync(Guid flatId)
     {
         return await _dbSet
-            .Where(h => h.LandlordId == landlordId)
-            .ToListAsync();
-    }
-
-    public async Task<IEnumerable<House>> GetAvailableAsync()
-    {
-        return await _dbSet
-            .Where(h => h.IsAvailable)
-            .ToListAsync();
-    }
-
-    public async Task<IEnumerable<House>> GetByCityAsync(string city)
-    {
-        return await _dbSet
-            .Where(h => h.City.ToLower() == city.ToLower())
+            .Where(h => h.FlatId == flatId)
             .ToListAsync();
     }
 }
