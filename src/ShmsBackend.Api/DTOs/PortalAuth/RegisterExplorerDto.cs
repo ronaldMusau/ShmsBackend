@@ -26,4 +26,7 @@ public class RegisterExplorerDto
 
     [MaxLength(20)]
     public string? PhoneNumber { get; set; }
+    public string? County { get; set; }
+    public string? Constituency { get; set; }
+    public string? Ward { get; set; }
 }

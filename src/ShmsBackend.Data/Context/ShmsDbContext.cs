@@ -122,6 +122,11 @@ public class ShmsDbContext : DbContext
             entity.ToTable("Tenants");
             entity.Property(e => e.EmergencyContactName).HasMaxLength(100);
             entity.Property(e => e.EmergencyContactPhone).HasMaxLength(20);
+            entity.HasOne(e => e.House)
+                  .WithMany()
+                  .HasForeignKey(e => e.HouseId)
+                  .OnDelete(DeleteBehavior.SetNull)
+                  .IsRequired(false);
         });
 
         modelBuilder.Entity<Explorer>(entity =>

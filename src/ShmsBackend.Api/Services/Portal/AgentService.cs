@@ -78,6 +78,9 @@ public class AgentService : IAgentService
         if (dto.IsActive.HasValue) agent.IsActive = dto.IsActive.Value;
         if (!string.IsNullOrEmpty(dto.AgencyName)) agent.AgencyName = dto.AgencyName;
         if (!string.IsNullOrEmpty(dto.LicenseNumber)) agent.LicenseNumber = dto.LicenseNumber;
+        if (dto.County != null) agent.County = dto.County;
+        if (dto.Constituency != null) agent.Constituency = dto.Constituency;
+        if (dto.Ward != null) agent.Ward = dto.Ward;
 
         agent.UpdatedAt = DateTime.UtcNow;
         await _unitOfWork.Agents.UpdateAsync(agent);
