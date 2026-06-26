@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Landlord;
+using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
@@ -19,19 +20,22 @@ public class LandlordService : ILandlordService
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly IFrontendUrlService _frontendUrlService;
+    private readonly ITokenBlacklistService _tokenBlacklistService;
 
     public LandlordService(
         IUnitOfWork unitOfWork,
         ILogger<LandlordService> logger,
         IEmailService emailService,
         INotificationService notificationService,
-        IFrontendUrlService frontendUrlService)
+        IFrontendUrlService frontendUrlService,
+        ITokenBlacklistService tokenBlacklistService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
         _notificationService = notificationService;
         _frontendUrlService = frontendUrlService;
+        _tokenBlacklistService = tokenBlacklistService;
     }
 
     public async Task<Landlord> CreateAsync(CreateLandlordDto dto)
@@ -49,8 +53,8 @@ public class LandlordService : ILandlordService
             LastName = dto.LastName,
             PhoneNumber = dto.PhoneNumber,
             NationalId = dto.NationalId,
-            AgencyName = dto.AgencyName,
-            IsActive = true,
+            DateOfBirth = dto.DateOfBirth,
+            IsActive = false,
             IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -134,7 +138,7 @@ public class LandlordService : ILandlordService
         if (!string.IsNullOrEmpty(dto.PhoneNumber)) landlord.PhoneNumber = dto.PhoneNumber;
         if (dto.IsActive.HasValue) landlord.IsActive = dto.IsActive.Value;
         if (!string.IsNullOrEmpty(dto.NationalId)) landlord.NationalId = dto.NationalId;
-        if (!string.IsNullOrEmpty(dto.AgencyName)) landlord.AgencyName = dto.AgencyName;
+        if (dto.DateOfBirth.HasValue) landlord.DateOfBirth = dto.DateOfBirth.Value;
 
         landlord.UpdatedAt = DateTime.UtcNow;
         await _unitOfWork.Landlords.UpdateAsync(landlord);
@@ -163,6 +167,21 @@ public class LandlordService : ILandlordService
 
         landlord.IsActive = !landlord.IsActive;
         landlord.UpdatedAt = DateTime.UtcNow;
+
+        if (!landlord.IsActive)
+        {
+            if (!string.IsNullOrEmpty(landlord.RefreshToken))
+                await _tokenBlacklistService.BlacklistTokenAsync(landlord.RefreshToken, TimeSpan.FromDays(30));
+
+            try
+            {
+                await _emailService.SendAccountDeactivatedEmailAsync(landlord.Email, landlord.FirstName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send deactivation email to {Email}", landlord.Email);
+            }
+        }
 
         await _unitOfWork.Landlords.UpdateAsync(landlord);
         await _unitOfWork.SaveChangesAsync();

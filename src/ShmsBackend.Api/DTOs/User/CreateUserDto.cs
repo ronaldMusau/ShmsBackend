@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel.DataAnnotations;
 using ShmsBackend.Data.Enums;
 
@@ -22,6 +22,10 @@ public class CreateUserDto
 
     [Phone]
     public string? PhoneNumber { get; set; }
+
+    public DateTime? DateOfBirth { get; set; }
+
+    public string? NationalId { get; set; }
 
     [Required]
     public UserType UserType { get; set; }

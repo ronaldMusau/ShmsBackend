@@ -13,6 +13,8 @@ public abstract class Admin
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
+    public DateTime? DateOfBirth { get; set; }
+    public string? NationalId { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsEmailVerified { get; set; } = false;
     public string? EmailVerificationToken { get; set; }

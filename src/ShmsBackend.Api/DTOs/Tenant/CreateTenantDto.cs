@@ -22,6 +22,8 @@ public class CreateTenantDto
     [Phone]
     public string? PhoneNumber { get; set; }
 
+    public string? NationalId { get; set; }
+
     public DateTime? DateOfBirth { get; set; }
 
     public string? EmergencyContactName { get; set; }

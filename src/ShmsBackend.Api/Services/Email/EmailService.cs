@@ -104,6 +104,15 @@ public class EmailService : IEmailService
             GetPortalWelcomeEmailTemplate(firstName, password));
     }
 
+    public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName)
+    {
+        _logger.LogInformation("Sending account deactivation email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Romah Estates — Account Deactivated",
+            GetAccountDeactivatedTemplate(firstName));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -355,6 +364,24 @@ public class EmailService : IEmailService
 {SmallNote("If you did not expect this email, please contact your system administrator.")}";
 
         return WrapInLayout("Welcome to Romah Client Portal", inner);
+    }
+
+    // ── Account Deactivated Template ────────────────────────────────────────
+
+    private string GetAccountDeactivatedTemplate(string firstName)
+    {
+        var inner = $@"
+{H2($"Account Deactivated, {firstName}")}
+{Para($"Your account on <strong style='color:{ColourGold};'>Romah Estates</strong> has been <strong>deactivated</strong> by an administrator.")}
+{Para("You will not be able to log in or access any portal features while your account is deactivated.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>NEED HELP?</p>
+  <p style='margin:0;font-size:15px;color:{ColourTextSec};'>Please contact the Romah Estates management team to resolve this issue.</p>
+")}
+{Divider()}
+{SmallNote("If you believe this was done in error, please contact your administrator immediately.")}";
+
+        return WrapInLayout("Account Deactivated — Romah Estates", inner);
     }
 
     // ── Email Verification Template ──────────────────────────────────────────

@@ -1,3 +1,5 @@
+using System;
+
 namespace ShmsBackend.Api.Models.DTOs.Landlord;
 
 public class UpdateLandlordDto
@@ -8,5 +10,5 @@ public class UpdateLandlordDto
     public string? PhoneNumber { get; set; }
     public bool? IsActive { get; set; }
     public string? NationalId { get; set; }
-    public string? AgencyName { get; set; }
+    public DateTime? DateOfBirth { get; set; }
 }

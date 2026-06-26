@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
+using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
@@ -19,19 +20,22 @@ public class TenantService : ITenantService
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly IFrontendUrlService _frontendUrlService;
+    private readonly ITokenBlacklistService _tokenBlacklistService;
 
     public TenantService(
         IUnitOfWork unitOfWork,
         ILogger<TenantService> logger,
         IEmailService emailService,
         INotificationService notificationService,
-        IFrontendUrlService frontendUrlService)
+        IFrontendUrlService frontendUrlService,
+        ITokenBlacklistService tokenBlacklistService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
         _notificationService = notificationService;
         _frontendUrlService = frontendUrlService;
+        _tokenBlacklistService = tokenBlacklistService;
     }
 
     public async Task<Tenant> CreateAsync(CreateTenantDto dto)
@@ -48,10 +52,11 @@ public class TenantService : ITenantService
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             PhoneNumber = dto.PhoneNumber,
+            NationalId = dto.NationalId,
             DateOfBirth = dto.DateOfBirth,
             EmergencyContactName = dto.EmergencyContactName,
             EmergencyContactPhone = dto.EmergencyContactPhone,
-            IsActive = true,
+            IsActive = false,
             IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -135,6 +140,7 @@ public class TenantService : ITenantService
         if (!string.IsNullOrEmpty(dto.LastName)) tenant.LastName = dto.LastName;
         if (!string.IsNullOrEmpty(dto.PhoneNumber)) tenant.PhoneNumber = dto.PhoneNumber;
         if (dto.IsActive.HasValue) tenant.IsActive = dto.IsActive.Value;
+        if (!string.IsNullOrEmpty(dto.NationalId)) tenant.NationalId = dto.NationalId;
         if (dto.DateOfBirth.HasValue) tenant.DateOfBirth = dto.DateOfBirth.Value;
         if (!string.IsNullOrEmpty(dto.EmergencyContactName)) tenant.EmergencyContactName = dto.EmergencyContactName;
         if (!string.IsNullOrEmpty(dto.EmergencyContactPhone)) tenant.EmergencyContactPhone = dto.EmergencyContactPhone;
@@ -166,6 +172,21 @@ public class TenantService : ITenantService
 
         tenant.IsActive = !tenant.IsActive;
         tenant.UpdatedAt = DateTime.UtcNow;
+
+        if (!tenant.IsActive)
+        {
+            if (!string.IsNullOrEmpty(tenant.RefreshToken))
+                await _tokenBlacklistService.BlacklistTokenAsync(tenant.RefreshToken, TimeSpan.FromDays(30));
+
+            try
+            {
+                await _emailService.SendAccountDeactivatedEmailAsync(tenant.Email, tenant.FirstName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send deactivation email to {Email}", tenant.Email);
+            }
+        }
 
         await _unitOfWork.Tenants.UpdateAsync(tenant);
         await _unitOfWork.SaveChangesAsync();

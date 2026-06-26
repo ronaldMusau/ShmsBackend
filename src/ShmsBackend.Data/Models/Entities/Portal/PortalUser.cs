@@ -14,6 +14,8 @@ public abstract class PortalUser
     public string? County { get; set; }
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
+    public DateTime? DateOfBirth { get; set; }
+    public string? NationalId { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsEmailVerified { get; set; } = false;
     public string? EmailVerificationToken { get; set; }

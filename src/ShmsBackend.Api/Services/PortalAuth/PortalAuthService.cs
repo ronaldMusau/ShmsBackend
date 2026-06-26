@@ -70,14 +70,14 @@ public class PortalAuthService : IPortalAuthService
             {
                 _logger.LogWarning("Portal login attempt for inactive account: {Email}", dto.Email);
                 return ApiResponse<PortalAuthResponse>.FailureResponse(
-                    "Account is inactive. Please contact support.");
+                    "Your account has been deactivated. Please contact management.");
             }
 
             if (!user.IsEmailVerified)
             {
                 _logger.LogWarning("Portal login attempt for unverified email: {Email}", dto.Email);
                 return ApiResponse<PortalAuthResponse>.FailureResponse(
-                    "Email not verified. Please check your inbox for the verification link.");
+                    "Please verify your email address before logging in. Check your inbox for the verification link.");
             }
 
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
@@ -394,6 +394,7 @@ public class PortalAuthService : IPortalAuthService
                 return ApiResponse<string>.FailureResponse("Incorrect temporary password.");
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, 12);
+            user.IsActive = true;
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 

@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace ShmsBackend.Api.Models.DTOs.Landlord;
@@ -23,5 +24,5 @@ public class CreateLandlordDto
 
     public string? NationalId { get; set; }
 
-    public string? AgencyName { get; set; }
+    public DateTime? DateOfBirth { get; set; }
 }

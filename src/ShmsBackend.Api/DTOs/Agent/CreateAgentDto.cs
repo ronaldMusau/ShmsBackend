@@ -23,7 +23,9 @@ public class CreateAgentDto
     [Phone]
     public string? PhoneNumber { get; set; }
 
-    public string? AgencyName { get; set; }
+    public string? NationalId { get; set; }
+
+    public DateTime? DateOfBirth { get; set; }
 
     public string? LicenseNumber { get; set; }
 

@@ -50,6 +50,8 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.FirstName).IsRequired().HasMaxLength(100);
             entity.Property(e => e.LastName).IsRequired().HasMaxLength(100);
             entity.Property(e => e.PhoneNumber).HasMaxLength(20);
+            entity.Property(e => e.DateOfBirth);
+            entity.Property(e => e.NationalId).HasMaxLength(50);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.IsEmailVerified).HasDefaultValue(false);
             entity.Property(e => e.EmailVerificationToken).HasMaxLength(500);
@@ -100,6 +102,8 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.FirstName).IsRequired().HasMaxLength(100);
             entity.Property(e => e.LastName).IsRequired().HasMaxLength(100);
             entity.Property(e => e.PhoneNumber).HasMaxLength(20);
+            entity.Property(e => e.DateOfBirth);
+            entity.Property(e => e.NationalId).HasMaxLength(50);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.IsEmailVerified).HasDefaultValue(false);
             entity.Property(e => e.EmailVerificationToken).HasMaxLength(500);
@@ -112,7 +116,6 @@ public class ShmsDbContext : DbContext
         modelBuilder.Entity<Landlord>(entity =>
         {
             entity.ToTable("Landlords");
-            entity.Property(e => e.NationalId).HasMaxLength(50);
             entity.Property(e => e.AgencyName).HasMaxLength(200);
         });
 

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(dotnet ef *)",
-      "Bash(dotnet build *)"
+      "Bash(dotnet build *)",
+      "Bash(Stop-Process -Name \"ShmsBackend.Api\" -Force -ErrorAction SilentlyContinue)"
     ]
   }
 }

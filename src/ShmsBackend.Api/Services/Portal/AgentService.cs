@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Agent;
+using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
@@ -22,6 +23,7 @@ public class AgentService : IAgentService
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly IFrontendUrlService _frontendUrlService;
+    private readonly ITokenBlacklistService _tokenBlacklistService;
     private readonly ShmsDbContext _context;
 
     public AgentService(
@@ -30,6 +32,7 @@ public class AgentService : IAgentService
         IEmailService emailService,
         INotificationService notificationService,
         IFrontendUrlService frontendUrlService,
+        ITokenBlacklistService tokenBlacklistService,
         ShmsDbContext context)
     {
         _unitOfWork = unitOfWork;
@@ -37,6 +40,7 @@ public class AgentService : IAgentService
         _emailService = emailService;
         _notificationService = notificationService;
         _frontendUrlService = frontendUrlService;
+        _tokenBlacklistService = tokenBlacklistService;
         _context = context;
     }
 
@@ -54,12 +58,13 @@ public class AgentService : IAgentService
             FirstName = dto.FirstName,
             LastName = dto.LastName,
             PhoneNumber = dto.PhoneNumber,
-            AgencyName = dto.AgencyName,
+            NationalId = dto.NationalId,
+            DateOfBirth = dto.DateOfBirth,
             LicenseNumber = dto.LicenseNumber,
             County = dto.County,
             Constituency = dto.Constituency,
             Ward = dto.Ward,
-            IsActive = true,
+            IsActive = false,
             IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -157,7 +162,8 @@ public class AgentService : IAgentService
         if (!string.IsNullOrEmpty(dto.LastName)) agent.LastName = dto.LastName;
         if (!string.IsNullOrEmpty(dto.PhoneNumber)) agent.PhoneNumber = dto.PhoneNumber;
         if (dto.IsActive.HasValue) agent.IsActive = dto.IsActive.Value;
-        if (!string.IsNullOrEmpty(dto.AgencyName)) agent.AgencyName = dto.AgencyName;
+        if (!string.IsNullOrEmpty(dto.NationalId)) agent.NationalId = dto.NationalId;
+        if (dto.DateOfBirth.HasValue) agent.DateOfBirth = dto.DateOfBirth.Value;
         if (!string.IsNullOrEmpty(dto.LicenseNumber)) agent.LicenseNumber = dto.LicenseNumber;
         if (dto.County != null) agent.County = dto.County;
         if (dto.Constituency != null) agent.Constituency = dto.Constituency;
@@ -210,6 +216,21 @@ public class AgentService : IAgentService
 
         agent.IsActive = !agent.IsActive;
         agent.UpdatedAt = DateTime.UtcNow;
+
+        if (!agent.IsActive)
+        {
+            if (!string.IsNullOrEmpty(agent.RefreshToken))
+                await _tokenBlacklistService.BlacklistTokenAsync(agent.RefreshToken, TimeSpan.FromDays(30));
+
+            try
+            {
+                await _emailService.SendAccountDeactivatedEmailAsync(agent.Email, agent.FirstName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send deactivation email to {Email}", agent.Email);
+            }
+        }
 
         await _unitOfWork.Agents.UpdateAsync(agent);
         await _unitOfWork.SaveChangesAsync();

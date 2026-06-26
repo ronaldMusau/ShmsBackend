@@ -1,3 +1,5 @@
+using System;
+
 namespace ShmsBackend.Api.Models.DTOs.Agent;
 
 public class UpdateAgentDto
@@ -10,6 +12,7 @@ public class UpdateAgentDto
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
     public bool? IsActive { get; set; }
-    public string? AgencyName { get; set; }
+    public string? NationalId { get; set; }
+    public DateTime? DateOfBirth { get; set; }
     public string? LicenseNumber { get; set; }
 }

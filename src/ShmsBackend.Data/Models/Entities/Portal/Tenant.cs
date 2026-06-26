@@ -5,7 +5,6 @@ namespace ShmsBackend.Data.Models.Entities.Portal;
 
 public class Tenant : PortalUser
 {
-    public DateTime? DateOfBirth { get; set; }
     public string? EmergencyContactName { get; set; }
     public string? EmergencyContactPhone { get; set; }
     public Guid? HouseId { get; set; }
