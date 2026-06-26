@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Agent;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -17,13 +21,23 @@ public class AgentService : IAgentService
     private readonly ILogger<AgentService> _logger;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
+    private readonly IFrontendUrlService _frontendUrlService;
+    private readonly ShmsDbContext _context;
 
-    public AgentService(IUnitOfWork unitOfWork, ILogger<AgentService> logger, IEmailService emailService, INotificationService notificationService)
+    public AgentService(
+        IUnitOfWork unitOfWork,
+        ILogger<AgentService> logger,
+        IEmailService emailService,
+        INotificationService notificationService,
+        IFrontendUrlService frontendUrlService,
+        ShmsDbContext context)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
         _notificationService = notificationService;
+        _frontendUrlService = frontendUrlService;
+        _context = context;
     }
 
     public async Task<Agent> CreateAsync(CreateAgentDto dto)
@@ -42,8 +56,11 @@ public class AgentService : IAgentService
             PhoneNumber = dto.PhoneNumber,
             AgencyName = dto.AgencyName,
             LicenseNumber = dto.LicenseNumber,
+            County = dto.County,
+            Constituency = dto.Constituency,
+            Ward = dto.Ward,
             IsActive = true,
-            IsEmailVerified = true,  // Admin-created accounts are email-trusted
+            IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -51,18 +68,43 @@ public class AgentService : IAgentService
         await _unitOfWork.Agents.AddAsync(agent);
         await _unitOfWork.SaveChangesAsync();
 
+        var verificationToken = Guid.NewGuid().ToString("N");
+        agent.EmailVerificationToken = verificationToken;
+        agent.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+        await _unitOfWork.SaveChangesAsync();
+
+        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, agent.Email);
         try
         {
-            await _emailService.SendWelcomeEmailAsync(
-                agent.Email,
-                agent.FirstName,
-                dto.Password
-            );
+            await _emailService.SendEmailVerificationEmailAsync(agent.Email, agent.FirstName, verificationLink);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send verification email to agent {Email}", agent.Email);
+        }
+
+        try
+        {
+            await _emailService.SendPortalWelcomeEmailAsync(agent.Email, agent.FirstName, dto.Password);
             _logger.LogInformation("Welcome email sent to agent {Email}", agent.Email);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send welcome email to agent {Email}", agent.Email);
+        }
+
+        if (dto.FlatIds != null && dto.FlatIds.Any())
+        {
+            foreach (var flatId in dto.FlatIds)
+            {
+                _context.AgentFlats.Add(new AgentFlat
+                {
+                    AgentId = agent.Id,
+                    FlatId = flatId,
+                    AssignedAt = DateTime.UtcNow
+                });
+            }
+            await _context.SaveChangesAsync();
         }
 
         try
@@ -127,6 +169,26 @@ public class AgentService : IAgentService
 
         _logger.LogInformation("Agent updated: {Id}", id);
         return agent;
+    }
+
+    public async Task AssignFlatsAsync(Guid agentId, AgentFlatAssignmentDto dto)
+    {
+        var existing = await _context.AgentFlats
+            .Where(af => af.AgentId == agentId)
+            .ToListAsync();
+        _context.AgentFlats.RemoveRange(existing);
+
+        foreach (var flatId in dto.FlatIds)
+        {
+            _context.AgentFlats.Add(new AgentFlat
+            {
+                AgentId = agentId,
+                FlatId = flatId,
+                AssignedAt = DateTime.UtcNow
+            });
+        }
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Flats assigned to agent {AgentId}: {Count}", agentId, dto.FlatIds.Count);
     }
 
     public async Task<bool> DeleteAsync(Guid id)

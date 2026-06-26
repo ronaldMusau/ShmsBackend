@@ -16,4 +16,5 @@ public class Flat
 
     public Landlord? Landlord { get; set; }
     public ICollection<House> Houses { get; set; } = new List<House>();
+    public ICollection<AgentFlat> AgentFlats { get; set; } = new List<AgentFlat>();
 }

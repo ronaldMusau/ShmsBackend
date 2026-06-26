@@ -30,6 +30,9 @@ public class ShmsDbContext : DbContext
     public DbSet<House> Houses { get; set; }
     public DbSet<Flat> Flats { get; set; }
 
+    // Agent–Flat assignments
+    public DbSet<AgentFlat> AgentFlats { get; set; }
+
     // Notifications
     public DbSet<Notification> Notifications { get; set; }
 
@@ -171,6 +174,22 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.PaymentStatus)
                   .HasConversion<string>()
                   .HasDefaultValue(PaymentStatus.NotPaid);
+        });
+
+        // ── AgentFlat Configuration ──────────────────────────────────────────
+        modelBuilder.Entity<AgentFlat>(entity =>
+        {
+            entity.HasKey(e => new { e.AgentId, e.FlatId });
+            entity.HasOne(e => e.Agent)
+                  .WithMany(a => a.AgentFlats)
+                  .HasForeignKey(e => e.AgentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.Flat)
+                  .WithMany(f => f.AgentFlats)
+                  .HasForeignKey(e => e.FlatId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(e => e.AssignedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.ToTable("AgentFlats");
         });
 
         // ── Notification Configuration ───────────────────────────────────────

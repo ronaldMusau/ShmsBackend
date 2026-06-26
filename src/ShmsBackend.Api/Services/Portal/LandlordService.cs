@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Landlord;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Models.Entities;
@@ -17,13 +18,20 @@ public class LandlordService : ILandlordService
     private readonly ILogger<LandlordService> _logger;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
+    private readonly IFrontendUrlService _frontendUrlService;
 
-    public LandlordService(IUnitOfWork unitOfWork, ILogger<LandlordService> logger, IEmailService emailService, INotificationService notificationService)
+    public LandlordService(
+        IUnitOfWork unitOfWork,
+        ILogger<LandlordService> logger,
+        IEmailService emailService,
+        INotificationService notificationService,
+        IFrontendUrlService frontendUrlService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
         _notificationService = notificationService;
+        _frontendUrlService = frontendUrlService;
     }
 
     public async Task<Landlord> CreateAsync(CreateLandlordDto dto)
@@ -43,7 +51,7 @@ public class LandlordService : ILandlordService
             NationalId = dto.NationalId,
             AgencyName = dto.AgencyName,
             IsActive = true,
-            IsEmailVerified = true,  // Admin-created accounts are email-trusted
+            IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -51,9 +59,29 @@ public class LandlordService : ILandlordService
         await _unitOfWork.Landlords.AddAsync(landlord);
         await _unitOfWork.SaveChangesAsync();
 
-        var emailSent = await _emailService.SendWelcomeEmailAsync(landlord.Email, landlord.FirstName, dto.Password);
-        if (!emailSent)
-            _logger.LogError("Failed to send welcome email to Landlord: {Email}", landlord.Email);
+        var verificationToken = Guid.NewGuid().ToString("N");
+        landlord.EmailVerificationToken = verificationToken;
+        landlord.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+        await _unitOfWork.SaveChangesAsync();
+
+        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, landlord.Email);
+        try
+        {
+            await _emailService.SendEmailVerificationEmailAsync(landlord.Email, landlord.FirstName, verificationLink);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send verification email to landlord {Email}", landlord.Email);
+        }
+
+        try
+        {
+            await _emailService.SendPortalWelcomeEmailAsync(landlord.Email, landlord.FirstName, dto.Password);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send welcome email to landlord {Email}", landlord.Email);
+        }
 
         try
         {

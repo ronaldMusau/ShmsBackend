@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Models.Entities;
@@ -17,13 +18,20 @@ public class TenantService : ITenantService
     private readonly ILogger<TenantService> _logger;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
+    private readonly IFrontendUrlService _frontendUrlService;
 
-    public TenantService(IUnitOfWork unitOfWork, ILogger<TenantService> logger, IEmailService emailService, INotificationService notificationService)
+    public TenantService(
+        IUnitOfWork unitOfWork,
+        ILogger<TenantService> logger,
+        IEmailService emailService,
+        INotificationService notificationService,
+        IFrontendUrlService frontendUrlService)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
         _emailService = emailService;
         _notificationService = notificationService;
+        _frontendUrlService = frontendUrlService;
     }
 
     public async Task<Tenant> CreateAsync(CreateTenantDto dto)
@@ -44,7 +52,7 @@ public class TenantService : ITenantService
             EmergencyContactName = dto.EmergencyContactName,
             EmergencyContactPhone = dto.EmergencyContactPhone,
             IsActive = true,
-            IsEmailVerified = true,  // Admin-created accounts are email-trusted
+            IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -52,13 +60,24 @@ public class TenantService : ITenantService
         await _unitOfWork.Tenants.AddAsync(tenant);
         await _unitOfWork.SaveChangesAsync();
 
+        var verificationToken = Guid.NewGuid().ToString("N");
+        tenant.EmailVerificationToken = verificationToken;
+        tenant.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+        await _unitOfWork.SaveChangesAsync();
+
+        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, tenant.Email);
         try
         {
-            await _emailService.SendWelcomeEmailAsync(
-                tenant.Email,
-                tenant.FirstName,
-                dto.Password
-            );
+            await _emailService.SendEmailVerificationEmailAsync(tenant.Email, tenant.FirstName, verificationLink);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send verification email to tenant {Email}", tenant.Email);
+        }
+
+        try
+        {
+            await _emailService.SendPortalWelcomeEmailAsync(tenant.Email, tenant.FirstName, dto.Password);
             _logger.LogInformation("Welcome email sent to tenant {Email}", tenant.Email);
         }
         catch (Exception ex)

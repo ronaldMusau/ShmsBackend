@@ -95,6 +95,15 @@ public class EmailService : IEmailService
             GetEmailVerificationTemplate(firstName, verificationLink));
     }
 
+    public async Task<bool> SendPortalWelcomeEmailAsync(string toEmail, string firstName, string password)
+    {
+        _logger.LogInformation("Sending portal welcome email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Welcome to Romah Client Portal — Your Account Details",
+            GetPortalWelcomeEmailTemplate(firstName, password));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -319,6 +328,33 @@ public class EmailService : IEmailService
 {SmallNote("If you didn't request a password reset, ignore this email. Your password will remain unchanged.")}";
 
         return WrapInLayout("Password Reset Code — Romah Estates", inner);
+    }
+
+    // ── Portal Welcome Template ──────────────────────────────────────────────
+
+    private string GetPortalWelcomeEmailTemplate(string firstName, string password)
+    {
+        var loginUrl = _frontendUrlService.GetPortalLoginUrl();
+
+        var inner = $@"
+{H2($"Welcome, {firstName}!")}
+{Para("Your account on the <strong style='color:{ColourGold};'>Romah Client Portal</strong> has been created. Here are your login credentials:")}
+
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;
+            text-transform:uppercase;margin:0 0 8px 0;'>Your Password</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;
+               font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {password}
+  </span>
+")}
+
+{Para($"Please <strong style='color:{ColourGold};'>verify your email</strong> by clicking the link sent in a separate email, then set a new password before you can log in.")}
+{GoldButton(loginUrl, "GO TO CLIENT PORTAL")}
+{Divider()}
+{SmallNote("If you did not expect this email, please contact your system administrator.")}";
+
+        return WrapInLayout("Welcome to Romah Client Portal", inner);
     }
 
     // ── Email Verification Template ──────────────────────────────────────────

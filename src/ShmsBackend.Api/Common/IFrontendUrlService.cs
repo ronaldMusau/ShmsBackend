@@ -7,4 +7,7 @@ public interface IFrontendUrlService
     string GetPasswordResetUrl(string token, string email);
     string GetLoginUrl();
     string GetEmailVerificationPath(string token, string email);
+    string GetPortalBaseUrl();
+    string GetPortalEmailVerificationUrl(string token, string email);
+    string GetPortalLoginUrl();
 }

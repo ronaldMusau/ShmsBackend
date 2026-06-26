@@ -39,37 +39,44 @@ public class PortalFlatController : ControllerBase
     {
         var role = GetUserRole();
 
-        var flats = await _context.Flats
+        if (role == "Agent")
+        {
+            var agentId = GetUserId();
+            var flats = await _context.AgentFlats
+                .Include(af => af.Flat)
+                    .ThenInclude(f => f.Houses)
+                .Where(af => af.AgentId == agentId)
+                .Select(af => new
+                {
+                    af.Flat.Id,
+                    af.Flat.FlatName,
+                    af.Flat.County,
+                    af.Flat.Constituency,
+                    af.Flat.Ward,
+                    af.Flat.LandlordId,
+                    TotalHouses = af.Flat.Houses.Count,
+                    VacantHouses = af.Flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+                    OccupiedHouses = af.Flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                    Houses = af.Flat.Houses.Select(h => new
+                    {
+                        h.Id,
+                        h.HouseNumber,
+                        HouseType = h.HouseType.ToString(),
+                        OccupancyStatus = h.OccupancyStatus.ToString(),
+                        h.CreatedAt
+                    }),
+                    af.Flat.CreatedAt
+                })
+                .ToListAsync();
+
+            return Ok(new { success = true, data = flats });
+        }
+
+        var allFlats = await _context.Flats
             .Include(f => f.Houses)
             .ToListAsync();
 
-        if (role == "Agent")
-        {
-            return Ok(flats.Select(flat => new
-            {
-                flat.Id,
-                flat.FlatName,
-                flat.County,
-                flat.Constituency,
-                flat.Ward,
-                flat.LandlordId,
-                TotalHouses = flat.Houses.Count,
-                VacantHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
-                OccupiedHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
-                Houses = flat.Houses.Select(h => new
-                {
-                    h.Id,
-                    h.HouseNumber,
-                    HouseType = h.HouseType.ToString(),
-                    OccupancyStatus = h.OccupancyStatus.ToString(),
-                    h.CreatedAt
-                    // NOTE: No RentFee, DepositFee, or PaymentStatus — agents cannot see financials
-                }),
-                flat.CreatedAt
-            }));
-        }
-
-        return Ok(flats.Select(flat => new
+        return Ok(new { success = true, data = allFlats.Select(flat => new
         {
             flat.Id,
             flat.FlatName,
@@ -92,7 +99,7 @@ public class PortalFlatController : ControllerBase
                 h.CreatedAt
             }),
             flat.CreatedAt
-        }));
+        })});
     }
 
     // GET /api/portalflats/{id}
@@ -101,15 +108,19 @@ public class PortalFlatController : ControllerBase
     {
         var role = GetUserRole();
 
-        var flat = await _context.Flats
-            .Include(f => f.Houses)
-            .FirstOrDefaultAsync(f => f.Id == id);
-
-        if (flat == null) return NotFound();
-
         if (role == "Agent")
         {
-            return Ok(new
+            var agentId = GetUserId();
+            var agentFlat = await _context.AgentFlats
+                .Include(af => af.Flat)
+                    .ThenInclude(f => f.Houses)
+                .FirstOrDefaultAsync(af => af.AgentId == agentId && af.FlatId == id);
+
+            if (agentFlat == null)
+                return NotFound(new { success = false, message = "Flat not found or not assigned to you." });
+
+            var flat = agentFlat.Flat;
+            return Ok(new { success = true, data = new
             {
                 flat.Id,
                 flat.FlatName,
@@ -129,21 +140,27 @@ public class PortalFlatController : ControllerBase
                     h.CreatedAt
                 }),
                 flat.CreatedAt
-            });
+            }});
         }
 
-        return Ok(new
+        var result = await _context.Flats
+            .Include(f => f.Houses)
+            .FirstOrDefaultAsync(f => f.Id == id);
+
+        if (result == null) return NotFound(new { success = false, message = "Flat not found." });
+
+        return Ok(new { success = true, data = new
         {
-            flat.Id,
-            flat.FlatName,
-            flat.County,
-            flat.Constituency,
-            flat.Ward,
-            flat.LandlordId,
-            TotalHouses = flat.Houses.Count,
-            VacantHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
-            OccupiedHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
-            Houses = flat.Houses.Select(h => new
+            result.Id,
+            result.FlatName,
+            result.County,
+            result.Constituency,
+            result.Ward,
+            result.LandlordId,
+            TotalHouses = result.Houses.Count,
+            VacantHouses = result.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+            OccupiedHouses = result.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+            Houses = result.Houses.Select(h => new
             {
                 h.Id,
                 h.HouseNumber,
@@ -154,7 +171,7 @@ public class PortalFlatController : ControllerBase
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt
             }),
-            flat.CreatedAt
-        });
+            result.CreatedAt
+        }});
     }
 }

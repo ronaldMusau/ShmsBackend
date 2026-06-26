@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace ShmsBackend.Api.Models.DTOs.Agent;
@@ -24,4 +26,10 @@ public class CreateAgentDto
     public string? AgencyName { get; set; }
 
     public string? LicenseNumber { get; set; }
+
+    public string? County { get; set; }
+    public string? Constituency { get; set; }
+    public string? Ward { get; set; }
+
+    public List<Guid> FlatIds { get; set; } = new();
 }

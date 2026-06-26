@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.PortalAuth;
 using ShmsBackend.Api.Services.PortalAuth;
 
+
 namespace ShmsBackend.Api.Controllers;
 
 [ApiController]
@@ -116,6 +117,32 @@ public class PortalAuthController : ControllerBase
         if (!result.Success)
             return BadRequest(result);
 
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Verifies the email address of a Landlord, Agent, or Tenant using the token sent by email.
+    /// </summary>
+    [HttpPost("verify-email")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyEmail([FromBody] PortalVerifyEmailDto dto)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var result = await _portalAuthService.VerifyEmailAsync(dto);
+        if (!result.Success) return BadRequest(result);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Allows a Landlord, Agent, or Tenant to set a new password using their temporary password.
+    /// </summary>
+    [HttpPost("set-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SetPassword([FromBody] PortalSetPasswordDto dto)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var result = await _portalAuthService.SetPasswordAsync(dto);
+        if (!result.Success) return BadRequest(result);
         return Ok(result);
     }
 }

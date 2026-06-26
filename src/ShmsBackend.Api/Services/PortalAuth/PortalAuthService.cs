@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using BCrypt.Net;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ShmsBackend.Api.Configuration;
@@ -10,6 +11,7 @@ using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -25,6 +27,7 @@ public class PortalAuthService : IPortalAuthService
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly ILogger<PortalAuthService> _logger;
     private readonly JwtOptions _jwtOptions;
+    private readonly ShmsDbContext _context;
 
     public PortalAuthService(
         IUnitOfWork unitOfWork,
@@ -34,7 +37,8 @@ public class PortalAuthService : IPortalAuthService
         ITokenBlacklistService tokenBlacklistService,
         IFrontendUrlService frontendUrlService,
         ILogger<PortalAuthService> logger,
-        IOptions<JwtOptions> jwtOptions)
+        IOptions<JwtOptions> jwtOptions,
+        ShmsDbContext context)
     {
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
@@ -44,6 +48,7 @@ public class PortalAuthService : IPortalAuthService
         _frontendUrlService = frontendUrlService;
         _logger = logger;
         _jwtOptions = jwtOptions.Value;
+        _context = context;
     }
 
     public async Task<ApiResponse<PortalAuthResponse>> LoginAsync(PortalLoginDto dto)
@@ -126,8 +131,6 @@ public class PortalAuthService : IPortalAuthService
                     "An account with this email already exists.");
             }
 
-            var verificationToken = Guid.NewGuid().ToString("N");
-
             var explorer = new Explorer
             {
                 Id = Guid.NewGuid(),
@@ -140,9 +143,7 @@ public class PortalAuthService : IPortalAuthService
                 Constituency = dto.Constituency,
                 Ward = dto.Ward,
                 IsActive = true,
-                IsEmailVerified = false,
-                EmailVerificationToken = verificationToken,
-                EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(24),
+                IsEmailVerified = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -150,23 +151,12 @@ public class PortalAuthService : IPortalAuthService
             await _unitOfWork.Explorers.AddAsync(explorer);
             await _unitOfWork.SaveChangesAsync();
 
-            var verificationLink = _frontendUrlService.GetEmailVerificationUrl(
-                verificationToken, dto.Email);
-
-            var emailSent = await _emailService.SendEmailVerificationEmailAsync(
-                explorer.Email, explorer.FirstName, verificationLink);
-
-            if (!emailSent)
-            {
-                _logger.LogError("Failed to send verification email to Explorer: {Email}", explorer.Email);
-            }
-
             try
             {
-                await _emailService.SendWelcomeEmailAsync(
+                await _emailService.SendPortalWelcomeEmailAsync(
                     explorer.Email,
                     explorer.FirstName,
-                    "Use the password you registered with to log in to the Romah Client Portal."
+                    dto.Password
                 );
                 _logger.LogInformation("Welcome email sent to explorer {Email}", explorer.Email);
             }
@@ -191,7 +181,7 @@ public class PortalAuthService : IPortalAuthService
             _logger.LogInformation("Explorer registered: {Email}", explorer.Email);
 
             return ApiResponse<string>.SuccessResponse(
-                "Registration successful. Please check your email to verify your account before logging in.",
+                "Registration successful. You can now log in to the Romah Client Portal.",
                 "Registration successful");
         }
         catch (Exception ex)
@@ -352,6 +342,69 @@ public class PortalAuthService : IPortalAuthService
             _logger.LogError(ex, "Error during portal password reset for {Email}", dto.Email);
             return ApiResponse<string>.FailureResponse(
                 "An error occurred. Please try again.");
+        }
+    }
+
+    public async Task<ApiResponse<string>> VerifyEmailAsync(PortalVerifyEmailDto dto)
+    {
+        try
+        {
+            var user = await _context.PortalUsers
+                .FirstOrDefaultAsync(u =>
+                    u.Email == dto.Email &&
+                    u.EmailVerificationToken == dto.Token &&
+                    u.EmailVerificationTokenExpiry > DateTime.UtcNow);
+
+            if (user == null)
+                return ApiResponse<string>.FailureResponse("Invalid or expired verification link.");
+
+            if (user.IsEmailVerified)
+                return ApiResponse<string>.SuccessResponse("Email already verified.", "Already verified");
+
+            user.IsEmailVerified = true;
+            user.EmailVerificationToken = null;
+            user.EmailVerificationTokenExpiry = null;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Portal email verified: {Email}", dto.Email);
+            return ApiResponse<string>.SuccessResponse(
+                "Email verified successfully. You may now set your password.",
+                "Email verified");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error verifying portal email: {Email}", dto.Email);
+            return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
+        }
+    }
+
+    public async Task<ApiResponse<string>> SetPasswordAsync(PortalSetPasswordDto dto)
+    {
+        try
+        {
+            var user = await _context.PortalUsers
+                .FirstOrDefaultAsync(u => u.Email == dto.Email);
+
+            if (user == null)
+                return ApiResponse<string>.FailureResponse("User not found.");
+
+            if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+                return ApiResponse<string>.FailureResponse("Incorrect temporary password.");
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, 12);
+            user.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Portal password set: {Email}", dto.Email);
+            return ApiResponse<string>.SuccessResponse(
+                "Password set successfully. You can now log in.",
+                "Password set");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting portal password: {Email}", dto.Email);
+            return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }
 }

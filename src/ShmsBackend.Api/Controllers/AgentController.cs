@@ -1,11 +1,14 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Agent;
 using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Portal;
+using ShmsBackend.Data.Context;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -15,11 +18,13 @@ public class AgentController : ControllerBase
 {
     private readonly IAgentService _agentService;
     private readonly ILogger<AgentController> _logger;
+    private readonly ShmsDbContext _context;
 
-    public AgentController(IAgentService agentService, ILogger<AgentController> logger)
+    public AgentController(IAgentService agentService, ILogger<AgentController> logger, ShmsDbContext context)
     {
         _agentService = agentService;
         _logger = logger;
+        _context = context;
     }
 
     [HttpPost]
@@ -42,6 +47,9 @@ public class AgentController : ControllerBase
                     agent.PhoneNumber,
                     agent.AgencyName,
                     agent.LicenseNumber,
+                    agent.County,
+                    agent.Constituency,
+                    agent.Ward,
                     agent.IsActive,
                     agent.PortalUserType
                 }, "Agent created successfully"));
@@ -77,6 +85,9 @@ public class AgentController : ControllerBase
                 agent.PhoneNumber,
                 agent.AgencyName,
                 agent.LicenseNumber,
+                agent.County,
+                agent.Constituency,
+                agent.Ward,
                 agent.IsActive,
                 agent.IsEmailVerified,
                 agent.PortalUserType,
@@ -128,6 +139,9 @@ public class AgentController : ControllerBase
                 agent.PhoneNumber,
                 agent.AgencyName,
                 agent.LicenseNumber,
+                agent.County,
+                agent.Constituency,
+                agent.Ward,
                 agent.IsActive,
                 agent.UpdatedAt
             }, "Agent updated successfully"));
@@ -181,6 +195,49 @@ public class AgentController : ControllerBase
             _logger.LogError(ex, "Error toggling agent status: {Id}", id);
             return StatusCode(500, ApiResponse<object>.FailureResponse(
                 "An error occurred while updating agent status"));
+        }
+    }
+
+    [HttpGet("{id}/flats")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetFlats(Guid id)
+    {
+        var flats = await _context.AgentFlats
+            .Include(af => af.Flat)
+                .ThenInclude(f => f.Houses)
+            .Where(af => af.AgentId == id)
+            .Select(af => new
+            {
+                af.Flat.Id,
+                af.Flat.FlatName,
+                af.Flat.County,
+                af.Flat.Constituency,
+                af.Flat.Ward,
+                af.AssignedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, data = flats });
+    }
+
+    [HttpPost("{id}/flats")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    public async Task<IActionResult> AssignFlats(Guid id, [FromBody] AgentFlatAssignmentDto dto)
+    {
+        try
+        {
+            var agent = await _agentService.GetByIdAsync(id);
+            if (agent == null)
+                return NotFound(ApiResponse<object>.FailureResponse("Agent not found"));
+
+            await _agentService.AssignFlatsAsync(id, dto);
+            return Ok(new { success = true, message = "Flats assigned successfully." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error assigning flats to agent: {Id}", id);
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while assigning flats"));
         }
     }
 }

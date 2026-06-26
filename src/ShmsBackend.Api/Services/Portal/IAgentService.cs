@@ -14,4 +14,5 @@ public interface IAgentService
     Task<Agent> UpdateAsync(Guid id, UpdateAgentDto dto);
     Task<bool> DeleteAsync(Guid id);
     Task<bool> ToggleStatusAsync(Guid id);
+    Task AssignFlatsAsync(Guid agentId, AgentFlatAssignmentDto dto);
 }

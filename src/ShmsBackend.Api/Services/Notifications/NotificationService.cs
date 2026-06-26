@@ -29,30 +29,36 @@ public class NotificationService : INotificationService
 
     public async Task SendToRoleAsync(NotificationAudience audience, string message, string category = "general")
     {
-        var notification = new Notification
+        var userIds = await GetUserIdsByAudienceAsync(audience);
+
+        if (userIds.Count == 0)
+        {
+            _logger.LogInformation("No users found for role {Audience}, skipping notification", audience);
+            return;
+        }
+
+        var notifications = userIds.Select(userId => new Notification
         {
             Id = Guid.NewGuid(),
-            Audience = audience,
-            TargetUserId = null,
+            Audience = NotificationAudience.SpecificUser,
+            TargetUserId = userId,
             Message = message,
             Category = category,
             IsRead = false,
             CreatedAt = DateTime.UtcNow
-        };
+        }).ToList();
 
-        _context.Notifications.Add(notification);
+        _context.Notifications.AddRange(notifications);
         await _context.SaveChangesAsync();
 
-        await _hubContext.Clients.Group($"role_{audience}").SendAsync("ReceiveNotification", new
+        var payload = new { message, category, createdAt = DateTime.UtcNow };
+        foreach (var userId in userIds)
         {
-            id = notification.Id,
-            message = notification.Message,
-            category = notification.Category,
-            isRead = false,
-            createdAt = notification.CreatedAt
-        });
+            await _hubContext.Clients.Group($"user_{userId}").SendAsync("ReceiveNotification", payload);
+        }
 
-        _logger.LogInformation("Notification sent to role {Audience}: {Message}", audience, message);
+        _logger.LogInformation("Notification sent to {Count} users of role {Audience}: {Message}",
+            userIds.Count, audience, message);
     }
 
     public async Task SendToRolesAsync(IEnumerable<NotificationAudience> audiences, string message, string category = "general")
@@ -93,21 +99,8 @@ public class NotificationService : INotificationService
 
     public async Task<IEnumerable<Notification>> GetForUserAsync(string userId, NotificationAudience? userRole)
     {
-        var query = _context.Notifications.AsQueryable();
-
-        if (userRole.HasValue)
-        {
-            query = query.Where(n =>
-                (n.Audience == userRole.Value && n.TargetUserId == null) ||
-                (n.Audience == NotificationAudience.SpecificUser && n.TargetUserId == userId)
-            );
-        }
-        else
-        {
-            query = query.Where(n => n.TargetUserId == userId);
-        }
-
-        return await query
+        return await _context.Notifications
+            .Where(n => n.Audience == NotificationAudience.SpecificUser && n.TargetUserId == userId)
             .OrderByDescending(n => n.CreatedAt)
             .Take(100)
             .ToListAsync();
@@ -116,8 +109,7 @@ public class NotificationService : INotificationService
     public async Task<bool> MarkAsReadAsync(Guid notificationId, string userId)
     {
         var notification = await _context.Notifications
-            .FirstOrDefaultAsync(n => n.Id == notificationId &&
-                (n.TargetUserId == userId || n.Audience != NotificationAudience.SpecificUser));
+            .FirstOrDefaultAsync(n => n.Id == notificationId && n.TargetUserId == userId);
 
         if (notification == null) return false;
 
@@ -131,8 +123,8 @@ public class NotificationService : INotificationService
     {
         var notifications = await _context.Notifications
             .Where(n => !n.IsRead &&
-                ((userRole.HasValue && n.Audience == userRole.Value && n.TargetUserId == null) ||
-                 (n.Audience == NotificationAudience.SpecificUser && n.TargetUserId == userId)))
+                n.Audience == NotificationAudience.SpecificUser &&
+                n.TargetUserId == userId)
             .ToListAsync();
 
         foreach (var notification in notifications)
@@ -146,8 +138,7 @@ public class NotificationService : INotificationService
     public async Task<bool> DeleteAsync(Guid notificationId, string userId)
     {
         var notification = await _context.Notifications
-            .FirstOrDefaultAsync(n => n.Id == notificationId &&
-                (n.TargetUserId == userId || n.Audience != NotificationAudience.SpecificUser));
+            .FirstOrDefaultAsync(n => n.Id == notificationId && n.TargetUserId == userId);
 
         if (notification == null) return false;
 
@@ -159,9 +150,7 @@ public class NotificationService : INotificationService
     public async Task DeleteAllAsync(string userId, NotificationAudience? userRole)
     {
         var notifications = await _context.Notifications
-            .Where(n =>
-                (userRole.HasValue && n.Audience == userRole.Value && n.TargetUserId == null) ||
-                (n.Audience == NotificationAudience.SpecificUser && n.TargetUserId == userId))
+            .Where(n => n.Audience == NotificationAudience.SpecificUser && n.TargetUserId == userId)
             .ToListAsync();
 
         _context.Notifications.RemoveRange(notifications);
@@ -172,7 +161,33 @@ public class NotificationService : INotificationService
     {
         return await _context.Notifications
             .CountAsync(n => !n.IsRead &&
-                ((userRole.HasValue && n.Audience == userRole.Value && n.TargetUserId == null) ||
-                 (n.Audience == NotificationAudience.SpecificUser && n.TargetUserId == userId)));
+                n.Audience == NotificationAudience.SpecificUser &&
+                n.TargetUserId == userId);
+    }
+
+    private async Task<List<string>> GetUserIdsByAudienceAsync(NotificationAudience audience)
+    {
+        return audience switch
+        {
+            NotificationAudience.SuperAdmin =>
+                (await _context.SuperAdmins.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            NotificationAudience.Admin =>
+                (await _context.AdminUsers.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            NotificationAudience.Manager =>
+                (await _context.Managers.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            NotificationAudience.Accountant =>
+                (await _context.Accountants.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            NotificationAudience.Secretary =>
+                (await _context.Secretaries.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            NotificationAudience.Landlord =>
+                (await _context.Landlords.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            NotificationAudience.Agent =>
+                (await _context.Agents.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            NotificationAudience.Tenant =>
+                (await _context.Tenants.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            NotificationAudience.Explorer =>
+                (await _context.Explorers.Select(u => u.Id).ToListAsync()).ConvertAll(id => id.ToString()),
+            _ => new List<string>()
+        };
     }
 }
