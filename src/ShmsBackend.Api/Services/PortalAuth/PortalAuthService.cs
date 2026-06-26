@@ -122,13 +122,14 @@ public class PortalAuthService : IPortalAuthService
     {
         try
         {
-            // Prevent duplicate registration across all portal user types
-            var existing = await _unitOfWork.PortalUsers.GetByEmailAsync(dto.Email);
-            if (existing != null)
+            var existingExplorer = await _context.Explorers
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == dto.Email.ToLower());
+
+            if (existingExplorer != null)
             {
                 _logger.LogWarning("Explorer registration attempt with existing email: {Email}", dto.Email);
                 return ApiResponse<string>.FailureResponse(
-                    "An account with this email already exists.");
+                    "An Explorer account with this email already exists.");
             }
 
             var explorer = new Explorer
