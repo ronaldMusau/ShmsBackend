@@ -1,5 +1,4 @@
 using System;
-using ShmsBackend.Data.Enums;
 
 namespace ShmsBackend.Api.Models.Responses;
 
@@ -11,6 +10,6 @@ public class PortalAuthResponse
     public string Email { get; set; } = string.Empty;
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
-    public PortalUserType Role { get; set; }
+    public string Role { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
 }

@@ -106,7 +106,7 @@ public class PortalAuthService : IPortalAuthService
                 Email = user.Email,
                 FirstName = user.FirstName,
                 LastName = user.LastName,
-                Role = user.PortalUserType,
+                Role = user.PortalUserType.ToString(),
                 ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
             }, "Login successful");
         }
@@ -232,7 +232,7 @@ public class PortalAuthService : IPortalAuthService
                 Email = user.Email,
                 FirstName = user.FirstName,
                 LastName = user.LastName,
-                Role = user.PortalUserType,
+                Role = user.PortalUserType.ToString(),
                 ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
             }, "Token refreshed successfully");
         }
