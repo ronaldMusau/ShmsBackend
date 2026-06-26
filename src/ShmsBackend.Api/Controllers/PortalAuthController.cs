@@ -9,7 +9,7 @@ using ShmsBackend.Api.Services.PortalAuth;
 namespace ShmsBackend.Api.Controllers;
 
 [ApiController]
-[Route("api/portal-auth")]
+[Route("api/portalauth")]
 public class PortalAuthController : ControllerBase
 {
     private readonly IPortalAuthService _portalAuthService;
