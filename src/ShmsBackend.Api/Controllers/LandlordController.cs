@@ -23,7 +23,7 @@ public class LandlordController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Create([FromBody] CreateLandlordDto dto)
     {
         if (!ModelState.IsValid)
@@ -145,7 +145,7 @@ public class LandlordController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Delete(Guid id)
     {
         try

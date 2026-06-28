@@ -86,7 +86,7 @@ public class FlatController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var result = await _flatService.DeleteAsync(id);

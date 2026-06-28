@@ -28,7 +28,7 @@ public class AgentController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Create([FromBody] CreateAgentDto dto)
     {
         if (!ModelState.IsValid)
@@ -159,7 +159,7 @@ public class AgentController : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Delete(Guid id)
     {
         try

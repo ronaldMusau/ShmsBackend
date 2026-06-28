@@ -31,7 +31,7 @@ public class UserController : ControllerBase
     /// - Admin:      Manager, Accountant, Secretary ONLY
     /// </summary>
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserDto createUserDto)
     {
         if (!ModelState.IsValid)
@@ -119,7 +119,7 @@ public class UserController : ControllerBase
     /// - Admin: sees Manager/Accountant/Secretary only
     /// </summary>
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetAllUsers()
     {
         try
@@ -160,7 +160,7 @@ public class UserController : ControllerBase
     /// - Admin: can update Manager/Accountant/Secretary only, cannot change their role
     /// </summary>
     [HttpPut("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserDto updateUserDto)
     {
         if (!ModelState.IsValid)
@@ -216,7 +216,7 @@ public class UserController : ControllerBase
     /// - Admin: can delete Manager/Accountant/Secretary only (except self)
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin")]  // ← was "SuperAdmin" only
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]  // ← was "SuperAdmin" only
     public async Task<IActionResult> DeleteUser(Guid id)
     {
         try
@@ -302,7 +302,7 @@ public class UserController : ControllerBase
     /// TOGGLE USER STATUS - SuperAdmin only
     /// </summary>
     [HttpPatch("{id}/toggle-status")]
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> ToggleUserStatus(Guid id)
     {
         try
