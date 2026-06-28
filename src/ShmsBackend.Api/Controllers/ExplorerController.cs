@@ -1,5 +1,6 @@
 using System;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -60,6 +61,45 @@ public class ExplorerController : ControllerBase
             explorer.IsEmailVerified, explorer.DateOfBirth,
             explorer.NationalId, explorer.CreatedAt
         }});
+    }
+
+    [HttpPatch("{id:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] JsonElement body)
+    {
+        var explorer = await _context.Explorers.FirstOrDefaultAsync(e => e.Id == id);
+        if (explorer == null)
+            return NotFound(new { success = false, message = "Explorer not found." });
+
+        if (body.TryGetProperty("firstName", out var fn) && fn.ValueKind == JsonValueKind.String)
+            explorer.FirstName = fn.GetString()!;
+        if (body.TryGetProperty("lastName", out var ln) && ln.ValueKind == JsonValueKind.String)
+            explorer.LastName = ln.GetString()!;
+        if (body.TryGetProperty("email", out var em) && em.ValueKind == JsonValueKind.String)
+            explorer.Email = em.GetString()!;
+        if (body.TryGetProperty("phoneNumber", out var ph) && ph.ValueKind == JsonValueKind.String)
+            explorer.PhoneNumber = ph.GetString();
+        if (body.TryGetProperty("nationalId", out var ni) && ni.ValueKind == JsonValueKind.String)
+            explorer.NationalId = ni.GetString();
+        if (body.TryGetProperty("county", out var co) && co.ValueKind == JsonValueKind.String)
+            explorer.County = co.GetString();
+        if (body.TryGetProperty("constituency", out var cs) && cs.ValueKind == JsonValueKind.String)
+            explorer.Constituency = cs.GetString();
+        if (body.TryGetProperty("ward", out var wa) && wa.ValueKind == JsonValueKind.String)
+            explorer.Ward = wa.GetString();
+        if (body.TryGetProperty("isActive", out var ia) && ia.ValueKind == JsonValueKind.True ||
+            body.TryGetProperty("isActive", out ia) && ia.ValueKind == JsonValueKind.False)
+            explorer.IsActive = ia.GetBoolean();
+        if (body.TryGetProperty("dateOfBirth", out var dob) && dob.ValueKind == JsonValueKind.String)
+        {
+            if (DateTime.TryParse(dob.GetString(), out var dobDate))
+                explorer.DateOfBirth = dobDate;
+        }
+
+        explorer.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true, message = "Explorer updated successfully." });
     }
 
     [HttpDelete("{id:guid}")]
