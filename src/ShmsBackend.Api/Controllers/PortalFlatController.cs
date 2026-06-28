@@ -72,6 +72,32 @@ public class PortalFlatController : ControllerBase
             return Ok(new { success = true, data = flats });
         }
 
+        if (User.IsInRole("Landlord"))
+        {
+            var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(landlordIdStr, out var landlordId))
+                return Unauthorized();
+
+            var landlordFlats = await _context.Flats
+                .Include(f => f.Houses)
+                .Where(f => f.LandlordId == landlordId)
+                .Select(f => new
+                {
+                    f.Id,
+                    f.FlatName,
+                    f.County,
+                    f.Constituency,
+                    f.Ward,
+                    f.LandlordId,
+                    HouseCount = f.Houses.Count,
+                    VacantCount = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+                    OccupiedCount = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied)
+                })
+                .ToListAsync();
+
+            return Ok(new { success = true, data = landlordFlats });
+        }
+
         var allFlats = await _context.Flats
             .Include(f => f.Houses)
             .ToListAsync();
@@ -140,6 +166,55 @@ public class PortalFlatController : ControllerBase
                     h.CreatedAt
                 }),
                 flat.CreatedAt
+            }});
+        }
+
+        if (User.IsInRole("Landlord"))
+        {
+            var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(landlordIdStr, out var landlordId))
+                return Unauthorized();
+
+            var landlordFlat = await _context.Flats
+                .Include(f => f.Houses)
+                    .ThenInclude(h => h.Tenants)
+                .FirstOrDefaultAsync(f => f.Id == id && f.LandlordId == landlordId);
+
+            if (landlordFlat == null)
+                return NotFound(new { success = false, message = "Flat not found or not owned by you." });
+
+            return Ok(new { success = true, data = new
+            {
+                landlordFlat.Id,
+                landlordFlat.FlatName,
+                landlordFlat.County,
+                landlordFlat.Constituency,
+                landlordFlat.Ward,
+                landlordFlat.LandlordId,
+                TotalHouses = landlordFlat.Houses.Count,
+                VacantHouses = landlordFlat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+                OccupiedHouses = landlordFlat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                Houses = landlordFlat.Houses.Select(h => new
+                {
+                    h.Id,
+                    h.HouseNumber,
+                    HouseType = h.HouseType.ToString(),
+                    h.RentFee,
+                    h.DepositFee,
+                    OccupancyStatus = h.OccupancyStatus.ToString(),
+                    PaymentStatus = h.PaymentStatus.ToString(),
+                    h.CreatedAt,
+                    CurrentTenant = h.Tenants.Select(t => new
+                    {
+                        t.Id,
+                        t.FirstName,
+                        t.LastName,
+                        t.PhoneNumber,
+                        t.Email,
+                        t.CreatedAt
+                    }).FirstOrDefault()
+                }),
+                landlordFlat.CreatedAt
             }});
         }
 

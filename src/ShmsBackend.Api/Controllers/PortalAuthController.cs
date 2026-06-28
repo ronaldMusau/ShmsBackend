@@ -1,9 +1,13 @@
+using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.PortalAuth;
 using ShmsBackend.Api.Services.PortalAuth;
+using ShmsBackend.Data.Context;
 
 
 namespace ShmsBackend.Api.Controllers;
@@ -14,13 +18,16 @@ public class PortalAuthController : ControllerBase
 {
     private readonly IPortalAuthService _portalAuthService;
     private readonly ILogger<PortalAuthController> _logger;
+    private readonly ShmsDbContext _context;
 
     public PortalAuthController(
         IPortalAuthService portalAuthService,
-        ILogger<PortalAuthController> logger)
+        ILogger<PortalAuthController> logger,
+        ShmsDbContext context)
     {
         _portalAuthService = portalAuthService;
         _logger = logger;
+        _context = context;
     }
 
     /// <summary>
@@ -144,5 +151,42 @@ public class PortalAuthController : ControllerBase
         var result = await _portalAuthService.SetPasswordAsync(dto);
         if (!result.Success) return BadRequest(result);
         return Ok(result);
+    }
+
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<IActionResult> GetMe()
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var user = await _context.PortalUsers
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user == null)
+            return NotFound(new { success = false, message = "User not found." });
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                user.Id,
+                user.FirstName,
+                user.LastName,
+                user.Email,
+                user.PhoneNumber,
+                user.NationalId,
+                user.DateOfBirth,
+                user.County,
+                user.Constituency,
+                user.Ward,
+                user.IsActive,
+                user.IsEmailVerified,
+                user.PortalUserType,
+                user.CreatedAt
+            }
+        });
     }
 }

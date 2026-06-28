@@ -59,6 +59,20 @@ public class PortalTenantController : ControllerBase
                 h.Flat.County,
                 h.Flat.Constituency,
                 h.Flat.Ward
+            },
+            TenantProfile = new
+            {
+                tenant.FirstName,
+                tenant.LastName,
+                tenant.Email,
+                tenant.PhoneNumber,
+                tenant.NationalId,
+                tenant.DateOfBirth,
+                tenant.County,
+                tenant.Constituency,
+                tenant.Ward,
+                tenant.IsActive,
+                tenant.CreatedAt
             }
         });
     }

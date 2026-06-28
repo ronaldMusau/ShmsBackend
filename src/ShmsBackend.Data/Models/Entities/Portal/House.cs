@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ShmsBackend.Data.Models.Entities.Portal;
 
@@ -39,4 +40,5 @@ public class House
     public DateTime UpdatedAt { get; set; }
 
     public Flat? Flat { get; set; }
+    public ICollection<Tenant> Tenants { get; set; } = new List<Tenant>();
 }

@@ -132,7 +132,7 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.EmergencyContactName).HasMaxLength(100);
             entity.Property(e => e.EmergencyContactPhone).HasMaxLength(20);
             entity.HasOne(e => e.House)
-                  .WithMany()
+                  .WithMany(h => h.Tenants)
                   .HasForeignKey(e => e.HouseId)
                   .OnDelete(DeleteBehavior.SetNull)
                   .IsRequired(false);
