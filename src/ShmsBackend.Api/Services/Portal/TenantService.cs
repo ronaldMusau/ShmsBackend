@@ -187,6 +187,17 @@ public class TenantService : ITenantService
                 _logger.LogError(ex, "Failed to send deactivation email to {Email}", tenant.Email);
             }
         }
+        else
+        {
+            try
+            {
+                await _emailService.SendAccountReactivatedEmailAsync(tenant.Email, tenant.FirstName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send reactivation email to {Email}", tenant.Email);
+            }
+        }
 
         await _unitOfWork.Tenants.UpdateAsync(tenant);
         await _unitOfWork.SaveChangesAsync();

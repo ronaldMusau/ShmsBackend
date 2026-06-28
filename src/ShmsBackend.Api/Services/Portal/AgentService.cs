@@ -231,6 +231,17 @@ public class AgentService : IAgentService
                 _logger.LogError(ex, "Failed to send deactivation email to {Email}", agent.Email);
             }
         }
+        else
+        {
+            try
+            {
+                await _emailService.SendAccountReactivatedEmailAsync(agent.Email, agent.FirstName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send reactivation email to {Email}", agent.Email);
+            }
+        }
 
         await _unitOfWork.Agents.UpdateAsync(agent);
         await _unitOfWork.SaveChangesAsync();

@@ -182,6 +182,17 @@ public class LandlordService : ILandlordService
                 _logger.LogError(ex, "Failed to send deactivation email to {Email}", landlord.Email);
             }
         }
+        else
+        {
+            try
+            {
+                await _emailService.SendAccountReactivatedEmailAsync(landlord.Email, landlord.FirstName);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send reactivation email to {Email}", landlord.Email);
+            }
+        }
 
         await _unitOfWork.Landlords.UpdateAsync(landlord);
         await _unitOfWork.SaveChangesAsync();

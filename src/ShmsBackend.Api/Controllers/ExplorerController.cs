@@ -94,6 +94,11 @@ public class ExplorerController : ControllerBase
             try { await _emailService.SendAccountDeactivatedEmailAsync(explorer.Email, explorer.FirstName); }
             catch { /* log but don't fail */ }
         }
+        else
+        {
+            try { await _emailService.SendAccountReactivatedEmailAsync(explorer.Email, explorer.FirstName); }
+            catch { /* log but don't fail */ }
+        }
 
         await _context.SaveChangesAsync();
         return Ok(new { success = true, data = new { explorer.Id, explorer.IsActive },

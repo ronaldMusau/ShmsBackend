@@ -11,4 +11,5 @@ public interface IEmailService
     Task<bool> SendEmailVerificationEmailAsync(string toEmail, string firstName, string verificationLink);
     Task<bool> SendPortalWelcomeEmailAsync(string toEmail, string firstName, string password);
     Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName);
+    Task<bool> SendAccountReactivatedEmailAsync(string toEmail, string firstName);
 }
