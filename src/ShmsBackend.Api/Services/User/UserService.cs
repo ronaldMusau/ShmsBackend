@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.User;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Common;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -20,17 +21,20 @@ public class UserService : IUserService
     private readonly IEmailService _emailService;
     private readonly ILogger<UserService> _logger;
     private readonly IFrontendUrlService _frontendUrlService;
+    private readonly INotificationService _notificationService;
 
     public UserService(
         IUnitOfWork unitOfWork,
         IEmailService emailService,
         ILogger<UserService> logger,
-        IFrontendUrlService frontendUrlService)
+        IFrontendUrlService frontendUrlService,
+        INotificationService notificationService)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _logger = logger;
         _frontendUrlService = frontendUrlService;
+        _notificationService = notificationService;
     }
 
     public async Task<AdminEntity> CreateUserAsync(CreateUserDto createUserDto, Guid createdBy)
@@ -428,6 +432,20 @@ public class UserService : IUserService
 
         await _unitOfWork.Admins.UpdateAsync(user);
         await _unitOfWork.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToUserAsync(
+                user.Id.ToString(),
+                user.IsActive
+                    ? "Your account has been reactivated. You can now log in."
+                    : "Your account has been deactivated. Please contact your administrator.",
+                "account");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send status change notification for user {Id}", user.Id);
+        }
 
         _logger.LogInformation("User status toggled: {Id}, IsActive: {IsActive}", id, user.IsActive);
         return true;

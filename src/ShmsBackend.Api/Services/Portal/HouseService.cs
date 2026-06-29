@@ -64,7 +64,9 @@ public class HouseService
                 {
                     NotificationAudience.SuperAdmin,
                     NotificationAudience.Admin,
-                    NotificationAudience.Secretary
+                    NotificationAudience.Secretary,
+                    NotificationAudience.Manager,
+                    NotificationAudience.Accountant
                 },
                 $"House {house.HouseNumber} added to {flatName}.",
                 "property"
@@ -73,6 +75,18 @@ public class HouseService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send notification for house creation {HouseNumber}", house.HouseNumber);
+        }
+
+        try
+        {
+            await _notificationService.SendToUserAsync(
+                flat.LandlordId.ToString(),
+                $"A new house ({house.HouseNumber}) has been added to your flat '{flat.FlatName}'.",
+                "property");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send house creation notification to landlord");
         }
 
         return (await GetByIdAsync(house.Id))!;

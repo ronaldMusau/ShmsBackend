@@ -87,7 +87,9 @@ public class TenantService : ITenantService
                 {
                     NotificationAudience.SuperAdmin,
                     NotificationAudience.Admin,
-                    NotificationAudience.Secretary
+                    NotificationAudience.Secretary,
+                    NotificationAudience.Manager,
+                    NotificationAudience.Accountant
                 },
                 $"New tenant {tenant.FirstName} {tenant.LastName} has been registered.",
                 "user"
@@ -187,6 +189,20 @@ public class TenantService : ITenantService
             {
                 _logger.LogError(ex, "Failed to send reactivation email to {Email}", tenant.Email);
             }
+        }
+
+        try
+        {
+            await _notificationService.SendToUserAsync(
+                tenant.Id.ToString(),
+                tenant.IsActive
+                    ? "Your account has been reactivated. You can now log in."
+                    : "Your account has been deactivated. Please contact your administrator.",
+                "account");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send status change notification for tenant {Id}", tenant.Id);
         }
 
         await _unitOfWork.Tenants.UpdateAsync(tenant);

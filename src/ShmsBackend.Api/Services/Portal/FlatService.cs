@@ -98,7 +98,8 @@ public class FlatService
                     NotificationAudience.SuperAdmin,
                     NotificationAudience.Admin,
                     NotificationAudience.Secretary,
-                    NotificationAudience.Manager
+                    NotificationAudience.Manager,
+                    NotificationAudience.Accountant
                 },
                 $"New flat '{flat.FlatName}' created in {location}{houseText}.",
                 "property"
@@ -107,6 +108,18 @@ public class FlatService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send notification for flat creation {FlatName}", flat.FlatName);
+        }
+
+        try
+        {
+            await _notificationService.SendToUserAsync(
+                dto.LandlordId.ToString(),
+                $"A new flat '{flat.FlatName}' has been created and assigned to you.",
+                "property");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send flat creation notification to landlord");
         }
 
         return (await GetByIdAsync(flat.Id))!;

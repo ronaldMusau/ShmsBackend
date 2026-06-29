@@ -85,7 +85,9 @@ public class LandlordService : ILandlordService
                 {
                     NotificationAudience.SuperAdmin,
                     NotificationAudience.Admin,
-                    NotificationAudience.Secretary
+                    NotificationAudience.Secretary,
+                    NotificationAudience.Manager,
+                    NotificationAudience.Accountant
                 },
                 $"New landlord {landlord.FirstName} {landlord.LastName} has been registered.",
                 "user"
@@ -183,6 +185,20 @@ public class LandlordService : ILandlordService
             {
                 _logger.LogError(ex, "Failed to send reactivation email to {Email}", landlord.Email);
             }
+        }
+
+        try
+        {
+            await _notificationService.SendToUserAsync(
+                landlord.Id.ToString(),
+                landlord.IsActive
+                    ? "Your account has been reactivated. You can now log in."
+                    : "Your account has been deactivated. Please contact your administrator.",
+                "account");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send status change notification for landlord {Id}", landlord.Id);
         }
 
         await _unitOfWork.Landlords.UpdateAsync(landlord);

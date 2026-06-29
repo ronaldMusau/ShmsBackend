@@ -109,7 +109,9 @@ public class AgentService : IAgentService
                 {
                     NotificationAudience.SuperAdmin,
                     NotificationAudience.Admin,
-                    NotificationAudience.Secretary
+                    NotificationAudience.Secretary,
+                    NotificationAudience.Manager,
+                    NotificationAudience.Accountant
                 },
                 $"New agent {agent.FirstName} {agent.LastName} has been registered in {agent.Ward ?? "an unspecified area"}.",
                 "user"
@@ -231,6 +233,20 @@ public class AgentService : IAgentService
             {
                 _logger.LogError(ex, "Failed to send reactivation email to {Email}", agent.Email);
             }
+        }
+
+        try
+        {
+            await _notificationService.SendToUserAsync(
+                agent.Id.ToString(),
+                agent.IsActive
+                    ? "Your account has been reactivated. You can now log in."
+                    : "Your account has been deactivated. Please contact your administrator.",
+                "account");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send status change notification for agent {Id}", agent.Id);
         }
 
         await _unitOfWork.Agents.UpdateAsync(agent);

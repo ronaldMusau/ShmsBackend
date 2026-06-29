@@ -104,6 +104,15 @@ public class EmailService : IEmailService
             GetPortalVerifyWithPasswordTemplate(firstName, verificationLink, temporaryPassword));
     }
 
+    public async Task<bool> SendExplorerWelcomeEmailAsync(string toEmail, string firstName, string loginUrl)
+    {
+        _logger.LogInformation("Sending explorer welcome email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Welcome to Romah Estates — You're All Set!",
+            GetExplorerWelcomeTemplate(firstName, loginUrl));
+    }
+
     public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName)
     {
         _logger.LogInformation("Sending account deactivation email to: {Email}", toEmail);
@@ -372,6 +381,21 @@ public class EmailService : IEmailService
 {SmallNote("If you did not expect this email, please contact your system administrator.")}";
 
         return WrapInLayout("Verify Your Email — Romah Estates", inner);
+    }
+
+    // ── Explorer Welcome Template ────────────────────────────────────────────
+
+    private string GetExplorerWelcomeTemplate(string firstName, string loginUrl)
+    {
+        var inner = $@"
+{H2($"Welcome to Romah Estates, {firstName}!")}
+{Para($"Your Explorer account has been created successfully on <strong style='color:{ColourGold};'>Romah Estates</strong>.")}
+{Para("You can now log in and start exploring available properties.")}
+{GoldButton(loginUrl, "LOG IN TO ROMAH ESTATES")}
+{Divider()}
+{SmallNote("If you did not create this account, please ignore this email.")}";
+
+        return WrapInLayout("Welcome to Romah Estates", inner);
     }
 
     // ── Account Deactivated Template ────────────────────────────────────────

@@ -12,6 +12,7 @@ using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -154,11 +155,10 @@ public class PortalAuthService : IPortalAuthService
 
             try
             {
-                await _emailService.SendPortalVerifyWithPasswordEmailAsync(
+                await _emailService.SendExplorerWelcomeEmailAsync(
                     explorer.Email,
                     explorer.FirstName,
-                    _frontendUrlService.GetPortalLoginUrl(),
-                    dto.Password
+                    _frontendUrlService.GetPortalLoginUrl()
                 );
                 _logger.LogInformation("Welcome email sent to explorer {Email}", explorer.Email);
             }
@@ -178,6 +178,18 @@ public class PortalAuthService : IPortalAuthService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send welcome notification to explorer {Email}", explorer.Email);
+            }
+
+            try
+            {
+                await _notificationService.SendToRolesAsync(
+                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin },
+                    $"New explorer {explorer.FirstName} {explorer.LastName} has self-registered.",
+                    "user");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send explorer registration notification to admins");
             }
 
             _logger.LogInformation("Explorer registered: {Email}", explorer.Email);
