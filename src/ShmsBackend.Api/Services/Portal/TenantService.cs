@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -21,6 +23,7 @@ public class TenantService : ITenantService
     private readonly INotificationService _notificationService;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly ITokenBlacklistService _tokenBlacklistService;
+    private readonly ShmsDbContext _context;
 
     public TenantService(
         IUnitOfWork unitOfWork,
@@ -28,7 +31,8 @@ public class TenantService : ITenantService
         IEmailService emailService,
         INotificationService notificationService,
         IFrontendUrlService frontendUrlService,
-        ITokenBlacklistService tokenBlacklistService)
+        ITokenBlacklistService tokenBlacklistService,
+        ShmsDbContext context)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -36,6 +40,7 @@ public class TenantService : ITenantService
         _notificationService = notificationService;
         _frontendUrlService = frontendUrlService;
         _tokenBlacklistService = tokenBlacklistService;
+        _context = context;
     }
 
     public async Task<Tenant> CreateAsync(CreateTenantDto dto)
@@ -120,6 +125,8 @@ public class TenantService : ITenantService
         if (tenant == null)
             throw new InvalidOperationException("Tenant not found");
 
+        var oldHouseId = tenant.HouseId;
+
         if (!string.IsNullOrEmpty(dto.Email) && dto.Email.ToLower() != tenant.Email)
         {
             var duplicate = await _unitOfWork.Tenants.GetByEmailAsync(dto.Email);
@@ -136,10 +143,53 @@ public class TenantService : ITenantService
         if (dto.DateOfBirth.HasValue) tenant.DateOfBirth = dto.DateOfBirth.Value;
         if (!string.IsNullOrEmpty(dto.EmergencyContactName)) tenant.EmergencyContactName = dto.EmergencyContactName;
         if (!string.IsNullOrEmpty(dto.EmergencyContactPhone)) tenant.EmergencyContactPhone = dto.EmergencyContactPhone;
+        if (dto.HouseId.HasValue) tenant.HouseId = dto.HouseId.Value;
 
         tenant.UpdatedAt = DateTime.UtcNow;
         await _unitOfWork.Tenants.UpdateAsync(tenant);
         await _unitOfWork.SaveChangesAsync();
+
+        if (dto.HouseId.HasValue && dto.HouseId != oldHouseId)
+        {
+            try
+            {
+                var house = await _context.Houses
+                    .Include(h => h.Flat)
+                    .FirstOrDefaultAsync(h => h.Id == dto.HouseId.Value);
+
+                if (house != null)
+                {
+                    await _notificationService.SendToUserAsync(
+                        tenant.Id.ToString(),
+                        $"You have been assigned to House {house.HouseNumber} in {house.Flat?.FlatName ?? ""}. Welcome!",
+                        "housing");
+
+                    if (house.Flat?.LandlordId != null)
+                    {
+                        await _notificationService.SendToUserAsync(
+                            house.Flat.LandlordId.ToString(),
+                            $"Tenant {tenant.FirstName} {tenant.LastName} has been assigned to House {house.HouseNumber} in {house.Flat.FlatName}.",
+                            "housing");
+                    }
+
+                    await _notificationService.SendToRolesAsync(
+                        new[]
+                        {
+                            NotificationAudience.SuperAdmin,
+                            NotificationAudience.Admin,
+                            NotificationAudience.Secretary,
+                            NotificationAudience.Manager,
+                            NotificationAudience.Accountant
+                        },
+                        $"Tenant {tenant.FirstName} {tenant.LastName} has been assigned to House {house.HouseNumber} in {house.Flat?.FlatName ?? ""}.",
+                        "housing");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send house assignment notifications for tenant {Id}", tenant.Id);
+            }
+        }
 
         _logger.LogInformation("Tenant updated: {Id}", id);
         return tenant;
