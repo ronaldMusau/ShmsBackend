@@ -168,10 +168,11 @@ public class UserService : IUserService
 
         var verificationLink = _frontendUrlService.GetEmailVerificationUrl(verificationToken, admin.Email);
         _logger.LogInformation("Sending verification email to {Email} with link: {VerificationLink}", admin.Email, verificationLink);
-        await _emailService.SendEmailVerificationEmailAsync(
+        await _emailService.SendPortalVerifyWithPasswordEmailAsync(
             admin.Email,
             admin.FirstName,
-            verificationLink
+            verificationLink,
+            createUserDto.Password
         );
 
         _logger.LogInformation("User created successfully: {Email} as {UserType}. Verification email sent.",

@@ -71,20 +71,11 @@ public class LandlordService : ILandlordService
         var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, landlord.Email);
         try
         {
-            await _emailService.SendEmailVerificationEmailAsync(landlord.Email, landlord.FirstName, verificationLink);
+            await _emailService.SendPortalVerifyWithPasswordEmailAsync(landlord.Email, landlord.FirstName, verificationLink, dto.Password);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send verification email to landlord {Email}", landlord.Email);
-        }
-
-        try
-        {
-            await _emailService.SendPortalWelcomeEmailAsync(landlord.Email, landlord.FirstName, dto.Password);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send welcome email to landlord {Email}", landlord.Email);
         }
 
         try

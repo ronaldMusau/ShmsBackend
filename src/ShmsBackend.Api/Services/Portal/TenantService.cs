@@ -73,21 +73,11 @@ public class TenantService : ITenantService
         var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, tenant.Email);
         try
         {
-            await _emailService.SendEmailVerificationEmailAsync(tenant.Email, tenant.FirstName, verificationLink);
+            await _emailService.SendPortalVerifyWithPasswordEmailAsync(tenant.Email, tenant.FirstName, verificationLink, dto.Password);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send verification email to tenant {Email}", tenant.Email);
-        }
-
-        try
-        {
-            await _emailService.SendPortalWelcomeEmailAsync(tenant.Email, tenant.FirstName, dto.Password);
-            _logger.LogInformation("Welcome email sent to tenant {Email}", tenant.Email);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send welcome email to tenant {Email}", tenant.Email);
         }
 
         try

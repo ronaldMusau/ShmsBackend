@@ -81,21 +81,11 @@ public class AgentService : IAgentService
         var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, agent.Email);
         try
         {
-            await _emailService.SendEmailVerificationEmailAsync(agent.Email, agent.FirstName, verificationLink);
+            await _emailService.SendPortalVerifyWithPasswordEmailAsync(agent.Email, agent.FirstName, verificationLink, dto.Password);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send verification email to agent {Email}", agent.Email);
-        }
-
-        try
-        {
-            await _emailService.SendPortalWelcomeEmailAsync(agent.Email, agent.FirstName, dto.Password);
-            _logger.LogInformation("Welcome email sent to agent {Email}", agent.Email);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send welcome email to agent {Email}", agent.Email);
         }
 
         if (dto.FlatIds != null && dto.FlatIds.Any())

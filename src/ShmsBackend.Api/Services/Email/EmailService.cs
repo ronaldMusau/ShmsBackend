@@ -95,13 +95,13 @@ public class EmailService : IEmailService
             GetEmailVerificationTemplate(firstName, verificationLink));
     }
 
-    public async Task<bool> SendPortalWelcomeEmailAsync(string toEmail, string firstName, string password)
+    public async Task<bool> SendPortalVerifyWithPasswordEmailAsync(string toEmail, string firstName, string verificationLink, string temporaryPassword)
     {
-        _logger.LogInformation("Sending portal welcome email to: {Email}", toEmail);
+        _logger.LogInformation("Sending portal verify+password email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
-            "Welcome to Romah Client Portal — Your Account Details",
-            GetPortalWelcomeEmailTemplate(firstName, password));
+            "Romah Estates — Verify Your Email & Get Started",
+            GetPortalVerifyWithPasswordTemplate(firstName, verificationLink, temporaryPassword));
     }
 
     public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName)
@@ -348,31 +348,30 @@ public class EmailService : IEmailService
         return WrapInLayout("Password Reset Code — Romah Estates", inner);
     }
 
-    // ── Portal Welcome Template ──────────────────────────────────────────────
+    // ── Portal Verify + Password Template ───────────────────────────────────
 
-    private string GetPortalWelcomeEmailTemplate(string firstName, string password)
+    private string GetPortalVerifyWithPasswordTemplate(string firstName, string verificationLink, string temporaryPassword)
     {
-        var loginUrl = _frontendUrlService.GetPortalLoginUrl();
-
         var inner = $@"
-{H2($"Welcome, {firstName}!")}
-{Para("Your account on the <strong style='color:{ColourGold};'>Romah Client Portal</strong> has been created. Here are your login credentials:")}
+{H2($"Welcome to Romah Estates, {firstName}!")}
+{Para("Your portal account has been created. Verify your email address using the button below and use the temporary password shown here to get started.")}
 
 {GoldBox($@"
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;
-            text-transform:uppercase;margin:0 0 8px 0;'>Your Password</p>
+            text-transform:uppercase;margin:0 0 8px 0;'>Your Temporary Password</p>
   <span style='font-family:""Courier New"",monospace;font-size:22px;
                font-weight:700;color:{ColourGold};letter-spacing:4px;'>
-    {password}
+    {temporaryPassword}
   </span>
 ")}
 
-{Para($"Please <strong style='color:{ColourGold};'>verify your email</strong> by clicking the link sent in a separate email, then set a new password before you can log in.")}
-{GoldButton(loginUrl, "GO TO CLIENT PORTAL")}
+{Para("Click the button below to verify your email. You will be prompted to enter your temporary password and choose a new one.")}
+{GoldButton(verificationLink, "VERIFY EMAIL & SET PASSWORD")}
+{Para($"This link will expire in <strong style='color:{ColourGold};'>48 hours</strong>.")}
 {Divider()}
 {SmallNote("If you did not expect this email, please contact your system administrator.")}";
 
-        return WrapInLayout("Welcome to Romah Client Portal", inner);
+        return WrapInLayout("Verify Your Email — Romah Estates", inner);
     }
 
     // ── Account Deactivated Template ────────────────────────────────────────

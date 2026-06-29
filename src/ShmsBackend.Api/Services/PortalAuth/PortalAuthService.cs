@@ -154,9 +154,10 @@ public class PortalAuthService : IPortalAuthService
 
             try
             {
-                await _emailService.SendPortalWelcomeEmailAsync(
+                await _emailService.SendPortalVerifyWithPasswordEmailAsync(
                     explorer.Email,
                     explorer.FirstName,
+                    _frontendUrlService.GetPortalLoginUrl(),
                     dto.Password
                 );
                 _logger.LogInformation("Welcome email sent to explorer {Email}", explorer.Email);
