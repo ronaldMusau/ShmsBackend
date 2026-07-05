@@ -238,6 +238,27 @@ public class HouseService
         return true;
     }
 
+    public async Task<IEnumerable<object>> GetHistoryAsync(Guid houseId)
+    {
+        return await _context.TenantHouseHistories
+            .Where(h => h.HouseId == houseId)
+            .OrderByDescending(h => h.AssignedAt)
+            .Select(h => (object)new
+            {
+                h.Id,
+                h.TenantId,
+                h.TenantFirstName,
+                h.TenantLastName,
+                h.TenantEmail,
+                h.TenantPhone,
+                h.HouseNumber,
+                h.FlatName,
+                h.AssignedAt,
+                h.RemovedAt
+            })
+            .ToListAsync();
+    }
+
     private static object MapToDto(House h) => new
     {
         h.Id,

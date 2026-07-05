@@ -82,4 +82,12 @@ public class HouseController : ControllerBase
         if (!result) return NotFound(new { success = false, message = "House not found." });
         return Ok(new { success = true, message = "House deleted successfully." });
     }
+
+    [HttpGet("{id:guid}/history")]
+    [Authorize]
+    public async Task<IActionResult> GetHistory(Guid id)
+    {
+        var history = await _houseService.GetHistoryAsync(id);
+        return Ok(new { success = true, data = history });
+    }
 }
