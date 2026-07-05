@@ -67,6 +67,9 @@ public class PortalAuthService : IPortalAuthService
                     "Invalid email, password, or account type.");
             }
 
+            if (user.IsDeleted)
+                return ApiResponse<PortalAuthResponse>.FailureResponse("This account no longer exists.");
+
             if (!user.IsActive)
             {
                 _logger.LogWarning("Portal login attempt for inactive account: {Email}", dto.Email);

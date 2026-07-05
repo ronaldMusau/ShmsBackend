@@ -45,6 +45,35 @@ public class LandlordService : ILandlordService
         if (existing != null)
             throw new InvalidOperationException($"Landlord with email {dto.Email} already exists");
 
+        var deleted = await _unitOfWork.Landlords.GetDeletedByEmailAsync(dto.Email);
+        if (deleted != null)
+        {
+            deleted.FirstName = dto.FirstName;
+            deleted.LastName = dto.LastName;
+            deleted.PhoneNumber = dto.PhoneNumber;
+            deleted.NationalId = dto.NationalId;
+            deleted.DateOfBirth = dto.DateOfBirth;
+            deleted.IsDeleted = false;
+            deleted.DeletedAt = null;
+            deleted.IsActive = false;
+            deleted.IsEmailVerified = false;
+            deleted.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12);
+            deleted.EmailVerificationToken = null;
+            deleted.EmailVerificationTokenExpiry = null;
+            deleted.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.Landlords.UpdateAsync(deleted);
+            await _unitOfWork.SaveChangesAsync();
+            var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
+                .Replace("+", "-").Replace("/", "_").Replace("=", "");
+            deleted.EmailVerificationToken = token;
+            deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+            await _unitOfWork.SaveChangesAsync();
+            var link = _frontendUrlService.GetPortalEmailVerificationUrl(token, deleted.Email, PortalUserType.Landlord);
+            try { await _emailService.SendPortalVerifyWithPasswordEmailAsync(deleted.Email, deleted.FirstName, link, dto.Password); }
+            catch { }
+            return deleted;
+        }
+
         var landlord = new Landlord
         {
             Id = Guid.NewGuid(),
@@ -147,7 +176,10 @@ public class LandlordService : ILandlordService
         var landlord = await _unitOfWork.Landlords.GetByIdAsync(id);
         if (landlord == null) return false;
 
-        await _unitOfWork.Landlords.DeleteAsync(landlord);
+        landlord.IsDeleted = true;
+        landlord.DeletedAt = DateTime.UtcNow;
+        landlord.IsActive = false;
+        await _unitOfWork.Landlords.UpdateAsync(landlord);
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation("Landlord deleted: {Id}", id);

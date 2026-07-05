@@ -223,12 +223,11 @@ public class FlatService
 
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var flat = await _context.Flats
-            .Include(f => f.Houses)
-            .FirstOrDefaultAsync(f => f.Id == id);
+        var flat = await _context.Flats.FindAsync(id);
         if (flat == null) return false;
 
-        _context.Flats.Remove(flat);
+        flat.IsDeleted = true;
+        flat.DeletedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         return true;
     }

@@ -232,7 +232,8 @@ public class HouseService
         var house = await _context.Houses.FindAsync(id);
         if (house == null) return false;
 
-        _context.Houses.Remove(house);
+        house.IsDeleted = true;
+        house.DeletedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         return true;
     }

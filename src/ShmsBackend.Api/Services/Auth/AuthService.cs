@@ -63,6 +63,9 @@ public class AuthService : IAuthService
                 return ApiResponse<AuthResponse>.FailureResponse("Invalid email, password, or user type");
             }
 
+            if (admin.IsDeleted)
+                return ApiResponse<AuthResponse>.FailureResponse("This account no longer exists.");
+
             if (!admin.IsActive)
             {
                 _logger.LogWarning("Login attempt for inactive user: {Email}", loginDto.Email);

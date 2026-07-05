@@ -6,4 +6,5 @@ namespace ShmsBackend.Data.Repositories.Interfaces;
 public interface ILandlordRepository : IRepository<Landlord>
 {
     Task<Landlord?> GetByEmailAsync(string email);
+    Task<Landlord?> GetDeletedByEmailAsync(string email);
 }

@@ -17,4 +17,11 @@ public class LandlordRepository : Repository<Landlord>, ILandlordRepository
         return await _dbSet
             .FirstOrDefaultAsync(l => l.Email.ToLower() == email.ToLower());
     }
+
+    public async Task<Landlord?> GetDeletedByEmailAsync(string email)
+    {
+        return await _context.Landlords
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(l => l.Email.ToLower() == email.ToLower() && l.IsDeleted);
+    }
 }

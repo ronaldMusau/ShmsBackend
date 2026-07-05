@@ -17,4 +17,11 @@ public class AgentRepository : Repository<Agent>, IAgentRepository
         return await _dbSet
             .FirstOrDefaultAsync(a => a.Email.ToLower() == email.ToLower());
     }
+
+    public async Task<Agent?> GetDeletedByEmailAsync(string email)
+    {
+        return await _context.Agents
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(a => a.Email.ToLower() == email.ToLower() && a.IsDeleted);
+    }
 }

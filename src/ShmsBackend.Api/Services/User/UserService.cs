@@ -366,47 +366,12 @@ public class UserService : IUserService
     public async Task<bool> DeleteUserAsync(Guid id)
     {
         var user = await _unitOfWork.Admins.GetByIdAsync(id);
-        if (user == null)
-        {
-            return false;
-        }
+        if (user == null) return false;
 
-        // Prevent deletion of SuperAdmin
-        if (user.UserType == UserType.SuperAdmin)
-        {
-            throw new InvalidOperationException("Cannot delete super admin");
-        }
-
-        // Delete from child table first (cascade should handle this, but being explicit)
-        switch (user.UserType)
-        {
-            case UserType.Admin:
-                var admin = await _unitOfWork.Admins.GetSpecificAdminAsync<AdminUser>(id);
-                if (admin != null)
-                    await _unitOfWork.Admins.DeleteAsync(admin);
-                break;
-
-            case UserType.Manager:
-                var manager = await _unitOfWork.Admins.GetSpecificAdminAsync<Manager>(id);
-                if (manager != null)
-                    await _unitOfWork.Admins.DeleteAsync(manager);
-                break;
-
-            case UserType.Accountant:
-                var accountant = await _unitOfWork.Admins.GetSpecificAdminAsync<Accountant>(id);
-                if (accountant != null)
-                    await _unitOfWork.Admins.DeleteAsync(accountant);
-                break;
-
-            case UserType.Secretary:
-                var secretary = await _unitOfWork.Admins.GetSpecificAdminAsync<Secretary>(id);
-                if (secretary != null)
-                    await _unitOfWork.Admins.DeleteAsync(secretary);
-                break;
-        }
-
-        // Delete from base table
-        await _unitOfWork.Admins.DeleteAsync(user);
+        user.IsDeleted = true;
+        user.DeletedAt = DateTime.UtcNow;
+        user.IsActive = false;
+        await _unitOfWork.Admins.UpdateAsync(user);
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation("User deleted successfully: {Id}", id);

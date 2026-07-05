@@ -50,6 +50,37 @@ public class TenantService : ITenantService
         if (existing != null)
             throw new InvalidOperationException($"Tenant with email {dto.Email} already exists");
 
+        var deleted = await _unitOfWork.Tenants.GetDeletedByEmailAsync(dto.Email);
+        if (deleted != null)
+        {
+            deleted.FirstName = dto.FirstName;
+            deleted.LastName = dto.LastName;
+            deleted.PhoneNumber = dto.PhoneNumber;
+            deleted.NationalId = dto.NationalId;
+            deleted.DateOfBirth = dto.DateOfBirth;
+            deleted.EmergencyContactName = dto.EmergencyContactName;
+            deleted.EmergencyContactPhone = dto.EmergencyContactPhone;
+            deleted.IsDeleted = false;
+            deleted.DeletedAt = null;
+            deleted.IsActive = false;
+            deleted.IsEmailVerified = false;
+            deleted.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12);
+            deleted.EmailVerificationToken = null;
+            deleted.EmailVerificationTokenExpiry = null;
+            deleted.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.Tenants.UpdateAsync(deleted);
+            await _unitOfWork.SaveChangesAsync();
+            var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
+                .Replace("+", "-").Replace("/", "_").Replace("=", "");
+            deleted.EmailVerificationToken = token;
+            deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+            await _unitOfWork.SaveChangesAsync();
+            var link = _frontendUrlService.GetPortalEmailVerificationUrl(token, deleted.Email, PortalUserType.Tenant);
+            try { await _emailService.SendPortalVerifyWithPasswordEmailAsync(deleted.Email, deleted.FirstName, link, dto.Password); }
+            catch { }
+            return deleted;
+        }
+
         var tenant = new Tenant
         {
             Id = Guid.NewGuid(),
@@ -201,7 +232,10 @@ public class TenantService : ITenantService
         var tenant = await _unitOfWork.Tenants.GetByIdAsync(id);
         if (tenant == null) return false;
 
-        await _unitOfWork.Tenants.DeleteAsync(tenant);
+        tenant.IsDeleted = true;
+        tenant.DeletedAt = DateTime.UtcNow;
+        tenant.IsActive = false;
+        await _unitOfWork.Tenants.UpdateAsync(tenant);
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation("Tenant deleted: {Id}", id);

@@ -110,7 +110,9 @@ public class ExplorerController : ControllerBase
         if (explorer == null)
             return NotFound(new { success = false, message = "Explorer not found." });
 
-        _context.Explorers.Remove(explorer);
+        explorer.IsDeleted = true;
+        explorer.DeletedAt = DateTime.UtcNow;
+        explorer.IsActive = false;
         await _context.SaveChangesAsync();
         return Ok(new { success = true, message = "Explorer deleted." });
     }
