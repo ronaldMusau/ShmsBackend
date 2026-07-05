@@ -1,4 +1,6 @@
-﻿namespace ShmsBackend.Api.Services.Common;
+﻿using ShmsBackend.Data.Enums;
+
+namespace ShmsBackend.Api.Services.Common;
 
 public interface IFrontendUrlService
 {
@@ -8,6 +10,6 @@ public interface IFrontendUrlService
     string GetLoginUrl();
     string GetEmailVerificationPath(string token, string email);
     string GetPortalBaseUrl();
-    string GetPortalEmailVerificationUrl(string token, string email);
+    string GetPortalEmailVerificationUrl(string token, string email, PortalUserType portalUserType);
     string GetPortalLoginUrl();
 }

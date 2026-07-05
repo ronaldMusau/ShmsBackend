@@ -366,6 +366,7 @@ public class PortalAuthService : IPortalAuthService
             var user = await _context.PortalUsers
                 .FirstOrDefaultAsync(u =>
                     u.Email == dto.Email &&
+                    u.PortalUserType == dto.PortalUserType &&
                     u.EmailVerificationToken == dto.Token &&
                     u.EmailVerificationTokenExpiry > DateTime.UtcNow);
 
@@ -398,7 +399,7 @@ public class PortalAuthService : IPortalAuthService
         try
         {
             var user = await _context.PortalUsers
-                .FirstOrDefaultAsync(u => u.Email == dto.Email);
+                .FirstOrDefaultAsync(u => u.Email == dto.Email && u.PortalUserType == dto.PortalUserType);
 
             if (user == null)
                 return ApiResponse<string>.FailureResponse("User not found.");

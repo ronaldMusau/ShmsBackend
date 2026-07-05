@@ -7,6 +7,7 @@ using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -68,7 +69,7 @@ public class LandlordService : ILandlordService
         landlord.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
         await _unitOfWork.SaveChangesAsync();
 
-        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, landlord.Email);
+        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, landlord.Email, PortalUserType.Landlord);
         try
         {
             await _emailService.SendPortalVerifyWithPasswordEmailAsync(landlord.Email, landlord.FirstName, verificationLink, dto.Password);

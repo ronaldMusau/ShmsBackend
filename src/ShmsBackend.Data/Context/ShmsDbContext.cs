@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Enums;
+using ShmsBackend.Data.Models.Interfaces;
 
 namespace ShmsBackend.Data.Context;
 
@@ -35,6 +36,9 @@ public class ShmsDbContext : DbContext
 
     // Notifications
     public DbSet<Notification> Notifications { get; set; }
+
+    // Tenant house history
+    public DbSet<TenantHouseHistory> TenantHouseHistories { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -208,5 +212,28 @@ public class ShmsDbContext : DbContext
             entity.HasIndex(e => e.IsRead);
             entity.ToTable("Notifications");
         });
+
+        // ── TenantHouseHistory Configuration ────────────────────────────────
+        modelBuilder.Entity<TenantHouseHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.House)
+                .WithMany()
+                .HasForeignKey(e => e.HouseId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(e => e.TenantFirstName).HasMaxLength(100);
+            entity.Property(e => e.TenantLastName).HasMaxLength(100);
+            entity.Property(e => e.TenantEmail).HasMaxLength(255);
+            entity.Property(e => e.TenantPhone).HasMaxLength(20);
+            entity.Property(e => e.HouseNumber).HasMaxLength(50);
+            entity.Property(e => e.FlatName).HasMaxLength(200);
+        });
+
+        // ── Global soft-delete filters ───────────────────────────────────────
+        modelBuilder.Entity<PortalUser>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Admin>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Flat>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<House>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Notification>().HasQueryFilter(e => !e.IsDeleted);
     }
 }

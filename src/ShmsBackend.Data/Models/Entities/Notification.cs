@@ -1,4 +1,5 @@
 using System;
+using ShmsBackend.Data.Models.Interfaces;
 
 namespace ShmsBackend.Data.Models.Entities;
 
@@ -19,7 +20,7 @@ public enum NotificationAudience
     SpecificUser
 }
 
-public class Notification
+public class Notification : ISoftDelete
 {
     public Guid Id { get; set; }
 
@@ -42,4 +43,6 @@ public class Notification
 
     // When a specific user marks it read
     public DateTime? ReadAt { get; set; }
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeletedAt { get; set; }
 }

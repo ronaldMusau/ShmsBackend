@@ -1,9 +1,10 @@
 using System;
 using ShmsBackend.Data.Enums;
+using ShmsBackend.Data.Models.Interfaces;
 
 namespace ShmsBackend.Data.Models.Entities.Portal;
 
-public abstract class PortalUser
+public abstract class PortalUser : ISoftDelete
 {
     public Guid Id { get; set; }
     public string Email { get; set; } = string.Empty;
@@ -27,4 +28,6 @@ public abstract class PortalUser
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public PortalUserType PortalUserType { get; set; }
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeletedAt { get; set; }
 }

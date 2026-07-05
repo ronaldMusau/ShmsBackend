@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Options;
 using ShmsBackend.Api.Configuration;
+using ShmsBackend.Data.Enums;
 
 namespace ShmsBackend.Api.Services.Common;
 
@@ -56,9 +57,9 @@ public class FrontendUrlService : IFrontendUrlService
 
     public string GetPortalBaseUrl() => _portalFrontendUrl;
 
-    public string GetPortalEmailVerificationUrl(string token, string email)
+    public string GetPortalEmailVerificationUrl(string token, string email, PortalUserType portalUserType)
     {
-        return $"{_portalFrontendUrl}/public/verify-email?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(email)}";
+        return $"{_portalFrontendUrl}/public/verify-email?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(email)}&type={(int)portalUserType}";
     }
 
     public string GetPortalLoginUrl() => $"{_portalFrontendUrl}/public/login";

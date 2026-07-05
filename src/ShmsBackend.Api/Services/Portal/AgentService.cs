@@ -10,6 +10,7 @@ using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -78,7 +79,7 @@ public class AgentService : IAgentService
         agent.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
         await _unitOfWork.SaveChangesAsync();
 
-        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, agent.Email);
+        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, agent.Email, PortalUserType.Agent);
         try
         {
             await _emailService.SendPortalVerifyWithPasswordEmailAsync(agent.Email, agent.FirstName, verificationLink, dto.Password);

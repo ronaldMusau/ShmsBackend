@@ -4,7 +4,8 @@
       "Bash(dotnet ef *)",
       "Bash(dotnet build *)",
       "Bash(Stop-Process -Name \"ShmsBackend.Api\" -Force -ErrorAction SilentlyContinue)",
-      "Bash(Select-String \"error CS|warning CS|Build succeeded|Error\\\\\\(s\\\\\\)\")"
+      "Bash(Select-String \"error CS|warning CS|Build succeeded|Error\\\\\\(s\\\\\\)\")",
+      "Bash(sqlcmd *)"
     ]
   }
 }

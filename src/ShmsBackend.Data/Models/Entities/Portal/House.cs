@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ShmsBackend.Data.Models.Interfaces;
 
 namespace ShmsBackend.Data.Models.Entities.Portal;
 
@@ -26,7 +27,7 @@ public enum PaymentStatus
     PartiallyPaid
 }
 
-public class House
+public class House : ISoftDelete
 {
     public Guid Id { get; set; }
     public string HouseNumber { get; set; } = string.Empty;
@@ -38,6 +39,8 @@ public class House
     public Guid FlatId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeletedAt { get; set; }
 
     public Flat? Flat { get; set; }
     public ICollection<Tenant> Tenants { get; set; } = new List<Tenant>();

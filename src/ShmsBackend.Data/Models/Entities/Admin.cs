@@ -2,10 +2,11 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
 using ShmsBackend.Data.Enums;
+using ShmsBackend.Data.Models.Interfaces;
 
 namespace ShmsBackend.Data.Models.Entities;
 
-public abstract class Admin
+public abstract class Admin : ISoftDelete
 {
     public Guid Id { get; set; }
     public string Email { get; set; } = string.Empty;
@@ -29,6 +30,9 @@ public abstract class Admin
 
     // Discriminator to know which type of admin this is
     public UserType UserType { get; set; }
+
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeletedAt { get; set; }
 
     // Navigation property for who created this user
     [ForeignKey("CreatedBy")]
