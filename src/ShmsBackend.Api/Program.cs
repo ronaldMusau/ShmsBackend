@@ -13,6 +13,7 @@ using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.PortalAuth;
+using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Repositories;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -62,6 +63,13 @@ builder.Services.AddScoped<IFrontendUrlService, FrontendUrlService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// M-Pesa
+builder.Services.Configure<MpesaConfig>(builder.Configuration.GetSection("Mpesa"));
+builder.Services.AddHttpClient("Mpesa");
+builder.Services.AddSingleton<IMpesaService, MpesaService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddHostedService<PaymentSchedulerService>();
 
 // Add JWT Authentication
 var jwtOptions = builder.Configuration.GetSection("JwtOptions").Get<JwtOptions>();

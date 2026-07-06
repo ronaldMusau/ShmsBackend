@@ -40,6 +40,10 @@ public class ShmsDbContext : DbContext
     // Tenant house history
     public DbSet<TenantHouseHistory> TenantHouseHistories { get; set; }
 
+    // Payments
+    public DbSet<Payment> Payments { get; set; }
+    public DbSet<ServiceChargeSetting> ServiceChargeSettings { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -229,11 +233,38 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.FlatName).HasMaxLength(200);
         });
 
+        // ── Payment Configuration ────────────────────────────────────────────
+        modelBuilder.Entity<Payment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.AmountPaid).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.Balance).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.RentAmount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.DepositAmount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.ServiceChargeAmount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.CreditApplied).HasColumnType("decimal(18,2)");
+            entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.House).WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.Flat).WithMany().HasForeignKey(e => e.FlatId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ── ServiceChargeSetting Configuration ──────────────────────────────
+        modelBuilder.Entity<ServiceChargeSetting>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.MinRent).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.MaxRent).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.ServiceCharge).HasColumnType("decimal(18,2)");
+        });
+
         // ── Global soft-delete filters ───────────────────────────────────────
         modelBuilder.Entity<PortalUser>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Admin>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Flat>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<House>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Notification>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ServiceChargeSetting>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Payment>().HasQueryFilter(e => !e.IsDeleted);
     }
 }

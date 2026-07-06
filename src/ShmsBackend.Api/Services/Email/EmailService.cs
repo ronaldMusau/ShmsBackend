@@ -131,6 +131,27 @@ public class EmailService : IEmailService
             GetAccountReactivatedTemplate(firstName));
     }
 
+    public async Task<bool> SendPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt)
+    {
+        _logger.LogInformation("Sending payment receipt email to: {Email}", toEmail);
+        return await SendEmail(toEmail, "Payment Receipt — Romah Estates",
+            GetPaymentReceiptTemplate(firstName, mpesaReceiptNumber, amount, houseNumber, flatName, paidAt));
+    }
+
+    public async Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName)
+    {
+        _logger.LogInformation("Sending payment reminder email to: {Email}", toEmail);
+        return await SendEmail(toEmail, "Payment Reminder — Romah Estates",
+            GetPaymentReminderTemplate(firstName, amountDue, dueDate, houseNumber, flatName));
+    }
+
+    public async Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, decimal amountDue, int daysOverdue, string houseNumber, string flatName)
+    {
+        _logger.LogInformation("Sending payment overdue email to: {Email}", toEmail);
+        return await SendEmail(toEmail, "Payment Overdue — Romah Estates",
+            GetPaymentOverdueTemplate(firstName, amountDue, daysOverdue, houseNumber, flatName));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -460,5 +481,56 @@ public class EmailService : IEmailService
 {SmallNote("If you didn't expect this email, please ignore it or contact your system administrator.")}";
 
         return WrapInLayout("Verify Your Email — Romah Estates", inner);
+    }
+
+    private string GetPaymentReceiptTemplate(string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt)
+    {
+        var inner = $@"
+{H2($"Payment Received, {firstName}!")}
+{Para($"Your payment for <strong style='color:{ColourGold};'>House {houseNumber}</strong> in {flatName} has been received successfully.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>RECEIPT DETAILS</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Amount Paid</td><td style='color:{ColourTextSec};font-weight:700;font-size:14px;text-align:right;'>KES {amount:N2}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
+  </table>
+")}
+{Divider()}
+{SmallNote("Please keep this receipt for your records. If you have any questions, contact your property manager.")}";
+        return WrapInLayout("Payment Receipt — Romah Estates", inner);
+    }
+
+    private string GetPaymentReminderTemplate(string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName)
+    {
+        var inner = $@"
+{H2($"Payment Reminder, {firstName}")}
+{Para($"This is a friendly reminder that your rent payment for <strong style='color:{ColourGold};'>House {houseNumber}</strong> in {flatName} is due soon.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>PAYMENT DUE</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>KES {amountDue:N2}</p>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>Due by: <strong style='color:{ColourTextSec};'>{dueDate:MMMM dd, yyyy}</strong></p>
+")}
+{Para("Please ensure your payment is made on time to avoid overdue charges.")}
+{Divider()}
+{SmallNote("Log in to the Romah Estates portal to make your payment.")}";
+        return WrapInLayout("Payment Reminder — Romah Estates", inner);
+    }
+
+    private string GetPaymentOverdueTemplate(string firstName, decimal amountDue, int daysOverdue, string houseNumber, string flatName)
+    {
+        var inner = $@"
+{H2($"Payment Overdue, {firstName}")}
+{Para($"Your rent payment for <strong style='color:{ColourGold};'>House {houseNumber}</strong> in {flatName} is now <strong style='color:#ef4444;'>{daysOverdue} day(s) overdue</strong>.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>OVERDUE AMOUNT</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:#ef4444;'>KES {amountDue:N2}</p>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>{daysOverdue} day(s) past due date</p>
+")}
+{Para("Please make your payment immediately to avoid further action.")}
+{Divider()}
+{SmallNote("If you have already made this payment, please ignore this email or contact your property manager.")}";
+        return WrapInLayout("Payment Overdue — Romah Estates", inner);
     }
 }

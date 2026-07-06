@@ -12,11 +12,11 @@ public class CreateHouseDto
     public string HouseType { get; set; } = string.Empty;
 
     [Required]
-    [Range(1000, double.MaxValue)]
+    [Range(1, double.MaxValue)]
     public decimal RentFee { get; set; }
 
     [Required]
-    [Range(1000, double.MaxValue)]
+    [Range(1, double.MaxValue)]
     public decimal DepositFee { get; set; }
 
     [Required]

@@ -24,7 +24,8 @@ public enum PaymentStatus
 {
     Paid,
     NotPaid,
-    PartiallyPaid
+    PartiallyPaid,
+    Overdue
 }
 
 public class House : ISoftDelete

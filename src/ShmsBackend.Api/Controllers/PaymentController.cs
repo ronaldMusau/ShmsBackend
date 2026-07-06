@@ -1,0 +1,330 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services.Payment;
+using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities.Portal;
+
+namespace ShmsBackend.Api.Controllers;
+
+[ApiController]
+[Route("api/payments")]
+public class PaymentController : ControllerBase
+{
+    private readonly IPaymentService _paymentService;
+    private readonly IMpesaService _mpesaService;
+    private readonly ShmsDbContext _context;
+    private readonly ILogger<PaymentController> _logger;
+
+    public PaymentController(
+        IPaymentService paymentService,
+        IMpesaService mpesaService,
+        ShmsDbContext context,
+        ILogger<PaymentController> logger)
+    {
+        _paymentService = paymentService;
+        _mpesaService = mpesaService;
+        _context = context;
+        _logger = logger;
+    }
+
+    // POST /api/payments/initiate — create payment record and trigger STK push
+    [HttpPost("initiate")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    public async Task<IActionResult> InitiatePayment([FromBody] InitiatePaymentDto dto)
+    {
+        try
+        {
+            var payment = await _paymentService.CreateInitialPaymentAsync(
+                dto.TenantId, dto.HouseId, dto.PhoneNumber);
+
+            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Payment initiated. Please check your phone.",
+                data = new
+                {
+                    paymentId = payment.Id,
+                    checkoutRequestId = stkResponse.CheckoutRequestID,
+                    merchantRequestId = stkResponse.MerchantRequestID,
+                    amount = payment.Amount,
+                    rentAmount = payment.RentAmount,
+                    depositAmount = payment.DepositAmount,
+                    serviceChargeAmount = payment.ServiceChargeAmount
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initiate payment");
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    // POST /api/payments/retry/{paymentId} — retry a failed/cancelled payment
+    [HttpPost("retry/{paymentId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    public async Task<IActionResult> RetryPayment(Guid paymentId, [FromBody] RetryPaymentDto dto)
+    {
+        try
+        {
+            var payment = await _context.Payments.FindAsync(paymentId);
+            if (payment == null)
+                return NotFound(new { success = false, message = "Payment not found." });
+
+            if (payment.PaymentStatus == PaymentTransactionStatus.Paid)
+                return BadRequest(new { success = false, message = "Payment is already completed." });
+
+            payment.PaymentStatus = PaymentTransactionStatus.Pending;
+            payment.CheckoutRequestId = null;
+            payment.MerchantRequestId = null;
+            payment.MpesaResultCode = null;
+            payment.MpesaResultDesc = null;
+            payment.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            var stkResponse = await _paymentService.InitiatePaymentAsync(paymentId, dto.PhoneNumber);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Payment retry initiated. Please check your phone.",
+                data = new
+                {
+                    paymentId,
+                    checkoutRequestId = stkResponse.CheckoutRequestID,
+                    merchantRequestId = stkResponse.MerchantRequestID
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retry payment {PaymentId}", paymentId);
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    // POST /api/payments/mpesa/callback — M-Pesa callback (no auth)
+    [HttpPost("mpesa/callback")]
+    [AllowAnonymous]
+    public async Task<IActionResult> MpesaCallback([FromBody] MpesaCallback callback)
+    {
+        try
+        {
+            _logger.LogInformation("M-Pesa callback received: {ResultCode}",
+                callback.Body.stkCallback.ResultCode);
+
+            await _paymentService.ProcessCallbackAsync(callback);
+
+            return Ok(new { ResultCode = 0, ResultDesc = "Accepted" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing M-Pesa callback");
+            return Ok(new { ResultCode = 0, ResultDesc = "Accepted" });
+        }
+    }
+
+    // GET /api/payments/status/{checkoutRequestId} — poll payment status
+    [HttpGet("status/{checkoutRequestId}")]
+    [Authorize]
+    public async Task<IActionResult> GetPaymentStatus(string checkoutRequestId)
+    {
+        try
+        {
+            var payment = await _context.Payments
+                .FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId);
+
+            if (payment != null)
+            {
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        status = payment.PaymentStatus.ToString(),
+                        paymentId = payment.Id,
+                        amountPaid = payment.AmountPaid,
+                        balance = payment.Balance,
+                        mpesaReceiptNumber = payment.MpesaReceiptNumber,
+                        resultCode = payment.MpesaResultCode,
+                        resultDesc = payment.MpesaResultDesc,
+                        retryCount = payment.RetryCount
+                    }
+                });
+            }
+
+            // If not in DB yet, query M-Pesa directly
+            var stkStatus = await _paymentService.QueryPaymentStatusAsync(checkoutRequestId);
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    status = stkStatus.ResultCode == "0" ? "Paid" : "Pending",
+                    resultCode = stkStatus.ResultCode,
+                    resultDesc = stkStatus.ResultDesc
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    // GET /api/payments/tenant/{tenantId} — get payment history for a tenant
+    [HttpGet("tenant/{tenantId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetTenantPayments(Guid tenantId)
+    {
+        var payments = await _paymentService.GetTenantPaymentHistoryAsync(tenantId);
+        return Ok(new
+        {
+            success = true,
+            data = payments.Select(p => new
+            {
+                p.Id,
+                p.Amount,
+                p.AmountPaid,
+                p.Balance,
+                p.RentAmount,
+                p.DepositAmount,
+                p.ServiceChargeAmount,
+                p.CreditApplied,
+                Status = p.PaymentStatus.ToString(),
+                Type = p.PaymentType.ToString(),
+                Method = p.PaymentMethod?.ToString(),
+                p.MpesaReceiptNumber,
+                p.PhoneNumber,
+                p.DueDate,
+                p.PaidAt,
+                p.Month,
+                p.Year,
+                p.IsInitialPayment,
+                p.Description,
+                p.RetryCount,
+                p.CreatedAt
+            })
+        });
+    }
+
+    // GET /api/payments/house/{houseId} — get payment history for a house
+    [HttpGet("house/{houseId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetHousePayments(Guid houseId)
+    {
+        var payments = await _paymentService.GetHousePaymentHistoryAsync(houseId);
+        return Ok(new
+        {
+            success = true,
+            data = payments.Select(p => new
+            {
+                p.Id,
+                p.Amount,
+                p.AmountPaid,
+                p.Balance,
+                p.RentAmount,
+                p.ServiceChargeAmount,
+                Status = p.PaymentStatus.ToString(),
+                Type = p.PaymentType.ToString(),
+                p.MpesaReceiptNumber,
+                p.DueDate,
+                p.PaidAt,
+                p.Month,
+                p.Year,
+                p.IsInitialPayment,
+                TenantName = p.Tenant != null
+                    ? $"{p.Tenant.FirstName} {p.Tenant.LastName}"
+                    : null,
+                p.CreatedAt
+            })
+        });
+    }
+
+    // GET /api/payments/service-charges — get service charge settings
+    [HttpGet("service-charges")]
+    [Authorize]
+    public async Task<IActionResult> GetServiceCharges()
+    {
+        var settings = await _context.ServiceChargeSettings
+            .Where(s => s.IsActive)
+            .OrderBy(s => s.MinRent)
+            .ToListAsync();
+
+        return Ok(new { success = true, data = settings });
+    }
+
+    // POST /api/payments/service-charges — create service charge setting
+    [HttpPost("service-charges")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> CreateServiceCharge([FromBody] ServiceChargeDto dto)
+    {
+        var setting = new Data.Models.Entities.ServiceChargeSetting
+        {
+            MinRent = dto.MinRent,
+            MaxRent = dto.MaxRent,
+            ServiceCharge = dto.ServiceCharge,
+            Description = dto.Description,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        await _context.ServiceChargeSettings.AddAsync(setting);
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, data = setting });
+    }
+
+    // PUT /api/payments/service-charges/{id} — update service charge setting
+    [HttpPut("service-charges/{id:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> UpdateServiceCharge(Guid id, [FromBody] ServiceChargeDto dto)
+    {
+        var setting = await _context.ServiceChargeSettings.FindAsync(id);
+        if (setting == null) return NotFound(new { success = false, message = "Not found." });
+
+        setting.MinRent = dto.MinRent;
+        setting.MaxRent = dto.MaxRent;
+        setting.ServiceCharge = dto.ServiceCharge;
+        setting.Description = dto.Description;
+        setting.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, data = setting });
+    }
+
+    // DELETE /api/payments/service-charges/{id} — delete service charge setting
+    [HttpDelete("service-charges/{id:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> DeleteServiceCharge(Guid id)
+    {
+        var setting = await _context.ServiceChargeSettings.FindAsync(id);
+        if (setting == null) return NotFound(new { success = false, message = "Not found." });
+
+        setting.IsDeleted = true;
+        setting.DeletedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, message = "Deleted." });
+    }
+}
+
+public class InitiatePaymentDto
+{
+    public Guid TenantId { get; set; }
+    public Guid HouseId { get; set; }
+    public string PhoneNumber { get; set; } = string.Empty;
+}
+
+public class RetryPaymentDto
+{
+    public string PhoneNumber { get; set; } = string.Empty;
+}
+
+public class ServiceChargeDto
+{
+    public decimal MinRent { get; set; }
+    public decimal MaxRent { get; set; }
+    public decimal ServiceCharge { get; set; }
+    public string? Description { get; set; }
+}
