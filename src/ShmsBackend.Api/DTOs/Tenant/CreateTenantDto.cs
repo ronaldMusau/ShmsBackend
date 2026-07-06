@@ -29,4 +29,6 @@ public class CreateTenantDto
     public string? EmergencyContactName { get; set; }
 
     public string? EmergencyContactPhone { get; set; }
+
+    public Guid? HouseId { get; set; }
 }

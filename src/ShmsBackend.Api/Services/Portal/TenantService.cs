@@ -93,6 +93,7 @@ public class TenantService : ITenantService
             DateOfBirth = dto.DateOfBirth,
             EmergencyContactName = dto.EmergencyContactName,
             EmergencyContactPhone = dto.EmergencyContactPhone,
+            HouseId = dto.HouseId,
             IsActive = false,
             IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
@@ -135,6 +136,40 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send notification for tenant creation {Email}", tenant.Email);
+        }
+
+        if (dto.HouseId.HasValue)
+        {
+            try
+            {
+                var house = await _context.Houses
+                    .Include(h => h.Flat)
+                    .FirstOrDefaultAsync(h => h.Id == dto.HouseId.Value);
+
+                if (house != null)
+                {
+                    var history = new TenantHouseHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        HouseId = house.Id,
+                        TenantId = tenant.Id,
+                        TenantFirstName = tenant.FirstName,
+                        TenantLastName = tenant.LastName,
+                        TenantEmail = tenant.Email,
+                        TenantPhone = tenant.PhoneNumber,
+                        HouseNumber = house.HouseNumber,
+                        FlatName = house.Flat?.FlatName ?? "",
+                        AssignedAt = DateTime.UtcNow,
+                        RemovedAt = null
+                    };
+                    await _context.TenantHouseHistories.AddAsync(history);
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to write initial TenantHouseHistory for tenant {Id}", tenant.Id);
+            }
         }
 
         _logger.LogInformation("Tenant created: {Email}", tenant.Email);
@@ -220,6 +255,54 @@ public class TenantService : ITenantService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send house assignment notifications for tenant {Id}", tenant.Id);
+            }
+        }
+
+        if (dto.HouseId.HasValue && dto.HouseId != oldHouseId)
+        {
+            try
+            {
+                if (oldHouseId.HasValue)
+                {
+                    var openHistory = await _context.TenantHouseHistories
+                        .FirstOrDefaultAsync(h =>
+                            h.TenantId == tenant.Id &&
+                            h.HouseId == oldHouseId.Value &&
+                            h.RemovedAt == null);
+                    if (openHistory != null)
+                    {
+                        openHistory.RemovedAt = DateTime.UtcNow;
+                        await _context.SaveChangesAsync();
+                    }
+                }
+
+                var newHouse = await _context.Houses
+                    .Include(h => h.Flat)
+                    .FirstOrDefaultAsync(h => h.Id == dto.HouseId.Value);
+
+                if (newHouse != null)
+                {
+                    var history = new TenantHouseHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        HouseId = newHouse.Id,
+                        TenantId = tenant.Id,
+                        TenantFirstName = tenant.FirstName,
+                        TenantLastName = tenant.LastName,
+                        TenantEmail = tenant.Email,
+                        TenantPhone = tenant.PhoneNumber,
+                        HouseNumber = newHouse.HouseNumber,
+                        FlatName = newHouse.Flat?.FlatName ?? "",
+                        AssignedAt = DateTime.UtcNow,
+                        RemovedAt = null
+                    };
+                    await _context.TenantHouseHistories.AddAsync(history);
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to write TenantHouseHistory for tenant {Id}", tenant.Id);
             }
         }
 
