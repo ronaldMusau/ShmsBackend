@@ -42,7 +42,7 @@ public class PortalFlatController : ControllerBase
         if (role == "Agent")
         {
             var agentId = GetUserId();
-            var flats = await _context.AgentFlats
+            var agentFlats = await _context.AgentFlats
                 .Include(af => af.Flat)
                     .ThenInclude(f => f.Houses)
                 .Where(af => af.AgentId == agentId)
@@ -54,22 +54,23 @@ public class PortalFlatController : ControllerBase
                     af.Flat.Constituency,
                     af.Flat.Ward,
                     af.Flat.LandlordId,
-                    TotalHouses = af.Flat.Houses.Count,
-                    VacantHouses = af.Flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
-                    OccupiedHouses = af.Flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                    HouseCount = af.Flat.Houses.Count,
+                    VacantCount = af.Flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+                    OccupiedCount = af.Flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
                     Houses = af.Flat.Houses.Select(h => new
                     {
                         h.Id,
                         h.HouseNumber,
                         HouseType = h.HouseType.ToString(),
+                        h.RentFee,
+                        h.DepositFee,
                         OccupancyStatus = h.OccupancyStatus.ToString(),
-                        h.CreatedAt
-                    }),
-                    af.Flat.CreatedAt
+                        PaymentStatus = h.PaymentStatus.ToString()
+                    }).ToList()
                 })
                 .ToListAsync();
 
-            return Ok(new { success = true, data = flats });
+            return Ok(new { success = true, data = agentFlats });
         }
 
         if (User.IsInRole("Landlord"))
@@ -154,17 +155,19 @@ public class PortalFlatController : ControllerBase
                 flat.Constituency,
                 flat.Ward,
                 flat.LandlordId,
-                TotalHouses = flat.Houses.Count,
-                VacantHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
-                OccupiedHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                HouseCount = flat.Houses.Count,
+                VacantCount = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
+                OccupiedCount = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
                 Houses = flat.Houses.Select(h => new
                 {
                     h.Id,
                     h.HouseNumber,
                     HouseType = h.HouseType.ToString(),
+                    h.RentFee,
+                    h.DepositFee,
                     OccupancyStatus = h.OccupancyStatus.ToString(),
-                    h.CreatedAt
-                }),
+                    PaymentStatus = h.PaymentStatus.ToString()
+                }).ToList(),
                 flat.CreatedAt
             }});
         }

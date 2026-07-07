@@ -244,6 +244,50 @@ public class PaymentController : ControllerBase
         });
     }
 
+    // GET /api/payments/house/{houseId}/summary — payment summary for house modal
+    [HttpGet("house/{houseId:guid}/summary")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Landlord")]
+    public async Task<IActionResult> GetHousePaymentSummary(Guid houseId)
+    {
+        var payments = await _context.Payments
+            .Include(p => p.Tenant)
+            .Where(p => p.HouseId == houseId)
+            .OrderByDescending(p => p.Year).ThenByDescending(p => p.Month)
+            .Select(p => new {
+                p.Id,
+                p.Amount,
+                p.AmountPaid,
+                p.Balance,
+                Status = p.PaymentStatus.ToString(),
+                Type = p.PaymentType.ToString(),
+                p.MpesaReceiptNumber,
+                p.DueDate,
+                p.PaidAt,
+                p.Month,
+                p.Year,
+                p.IsInitialPayment,
+                TenantName = p.Tenant != null
+                    ? $"{p.Tenant.FirstName} {p.Tenant.LastName}"
+                    : null,
+                p.CreatedAt
+            })
+            .ToListAsync();
+
+        var summary = new
+        {
+            TotalCollected = payments.Where(p => p.Status == "Paid")
+                .Sum(p => p.AmountPaid),
+            TotalPending = payments.Where(p => p.Status == "Pending" || p.Status == "PartiallyPaid")
+                .Sum(p => (decimal)p.Balance),
+            TotalOverdue = payments.Where(p => p.Status == "Overdue")
+                .Sum(p => (decimal)p.Balance),
+            PaymentCount = payments.Count,
+            Payments = payments
+        };
+
+        return Ok(new { success = true, data = summary });
+    }
+
     // GET /api/payments/service-charges — get service charge settings
     [HttpGet("service-charges")]
     [Authorize]
