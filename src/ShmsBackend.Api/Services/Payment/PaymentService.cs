@@ -1,8 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
-using ShmsBackend.Api.Services.Email;
 using PaymentRecord = ShmsBackend.Data.Models.Entities.Portal.Payment;
 
 namespace ShmsBackend.Api.Services.Payment;
@@ -26,17 +27,20 @@ public class PaymentService : IPaymentService
     private readonly ShmsDbContext _context;
     private readonly IMpesaService _mpesaService;
     private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
     private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
         ShmsDbContext context,
         IMpesaService mpesaService,
         IEmailService emailService,
+        INotificationService notificationService,
         ILogger<PaymentService> logger)
     {
         _context = context;
         _mpesaService = mpesaService;
         _emailService = emailService;
+        _notificationService = notificationService;
         _logger = logger;
     }
 
@@ -213,6 +217,28 @@ public class PaymentService : IPaymentService
                 {
                     _logger.LogError(ex, "Failed to send receipt email");
                 }
+            }
+
+            try
+            {
+                await _notificationService.SendToRolesAsync(
+                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin,
+                            NotificationAudience.Secretary, NotificationAudience.Manager,
+                            NotificationAudience.Accountant },
+                    $"Payment received: KES {details.Amount:N2} from {payment.Tenant?.FirstName} {payment.Tenant?.LastName} — Receipt {details.MpesaReceiptNumber}",
+                    "payment");
+
+                if (payment.LandlordId.HasValue)
+                {
+                    await _notificationService.SendToUserAsync(
+                        payment.LandlordId.Value.ToString(),
+                        $"Rent payment of KES {details.Amount:N2} received for House {payment.House?.HouseNumber}. Receipt: {details.MpesaReceiptNumber}",
+                        "payment");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send payment notifications");
             }
         }
         else if (details.IsCancelled)
@@ -411,9 +437,9 @@ public class PaymentService : IPaymentService
 
             if (payment.Tenant != null)
             {
+                var daysOverdue = (int)(DateTime.UtcNow - payment.DueDate).TotalDays;
                 try
                 {
-                    var daysOverdue = (int)(DateTime.UtcNow - payment.DueDate).TotalDays;
                     await _emailService.SendPaymentOverdueEmailAsync(
                         payment.Tenant.Email,
                         payment.Tenant.FirstName,
@@ -425,6 +451,18 @@ public class PaymentService : IPaymentService
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to send overdue email for payment {PaymentId}", payment.Id);
+                }
+
+                if (house?.Flat?.LandlordId != null)
+                {
+                    try
+                    {
+                        await _notificationService.SendToUserAsync(
+                            house.Flat.LandlordId.ToString(),
+                            $"Rent for House {house.HouseNumber} is {daysOverdue} day(s) overdue.",
+                            "payment");
+                    }
+                    catch { }
                 }
             }
         }

@@ -4,20 +4,26 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Models.DTOs.Tenant;
+using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 
 namespace ShmsBackend.Api.Controllers;
 
 [ApiController]
 [Route("api/portaltenant")]
-[Authorize(Roles = "Tenant")]
 public class PortalTenantController : ControllerBase
 {
     private readonly ShmsDbContext _context;
+    private readonly ITenantService _tenantService;
+    private readonly ILogger<PortalTenantController> _logger;
 
-    public PortalTenantController(ShmsDbContext context)
+    public PortalTenantController(ShmsDbContext context, ITenantService tenantService, ILogger<PortalTenantController> logger)
     {
         _context = context;
+        _tenantService = tenantService;
+        _logger = logger;
     }
 
     private Guid GetUserId()
@@ -29,6 +35,7 @@ public class PortalTenantController : ControllerBase
     // GET /api/portaltenant/my-house
     // Returns the house assigned to this tenant — reads tenantId from JWT, no query param needed.
     [HttpGet("my-house")]
+    [Authorize(Roles = "Tenant")]
     public async Task<IActionResult> GetMyHouse()
     {
         var tenantId = GetUserId();
@@ -75,5 +82,40 @@ public class PortalTenantController : ControllerBase
                 tenant.CreatedAt
             }
         });
+    }
+
+    [HttpPost("create")]
+    [Authorize(Roles = "Agent,Landlord,SuperAdmin,Admin,Secretary")]
+    public async Task<IActionResult> CreateTenant([FromBody] CreateTenantDto dto)
+    {
+        try
+        {
+            var tenant = await _tenantService.CreateAsync(dto);
+            return Ok(new
+            {
+                success = true,
+                message = "Tenant created successfully.",
+                data = new
+                {
+                    tenant.Id,
+                    tenant.FirstName,
+                    tenant.LastName,
+                    tenant.Email,
+                    tenant.PhoneNumber,
+                    tenant.HouseId,
+                    tenant.IsActive,
+                    tenant.CreatedAt
+                }
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create tenant from portal");
+            return StatusCode(500, new { success = false, message = "Failed to create tenant." });
+        }
     }
 }
