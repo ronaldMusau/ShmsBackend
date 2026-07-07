@@ -84,10 +84,13 @@ public class FlatService
         if (houses.Count > 0)
             _context.Houses.AddRange(houses);
 
-        await _context.SaveChangesAsync();
-
         if (dto.AgentId.HasValue)
         {
+            var agentExists = await _context.Agents
+                .AnyAsync(a => a.Id == dto.AgentId.Value && !a.IsDeleted);
+            if (!agentExists)
+                throw new InvalidOperationException($"Agent with ID {dto.AgentId.Value} not found.");
+
             var agentFlat = new AgentFlat
             {
                 AgentId = dto.AgentId.Value,
@@ -95,8 +98,9 @@ public class FlatService
                 AssignedAt = DateTime.UtcNow
             };
             await _context.AgentFlats.AddAsync(agentFlat);
-            await _context.SaveChangesAsync();
         }
+
+        await _context.SaveChangesAsync();
 
         try
         {
@@ -249,6 +253,11 @@ public class FlatService
 
         if (dto.AgentId.HasValue)
         {
+            var agentExists = await _context.Agents
+                .AnyAsync(a => a.Id == dto.AgentId.Value && !a.IsDeleted);
+            if (!agentExists)
+                throw new InvalidOperationException($"Agent with ID {dto.AgentId.Value} not found.");
+
             var existing = await _context.AgentFlats
                 .Where(af => af.FlatId == flat.Id)
                 .ToListAsync();
