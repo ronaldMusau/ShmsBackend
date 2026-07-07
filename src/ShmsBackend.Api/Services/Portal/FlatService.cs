@@ -86,6 +86,18 @@ public class FlatService
 
         await _context.SaveChangesAsync();
 
+        if (dto.AgentId.HasValue)
+        {
+            var agentFlat = new AgentFlat
+            {
+                AgentId = dto.AgentId.Value,
+                FlatId = flat.Id,
+                AssignedAt = DateTime.UtcNow
+            };
+            await _context.AgentFlats.AddAsync(agentFlat);
+            await _context.SaveChangesAsync();
+        }
+
         try
         {
             var houseCount = houses.Count;
@@ -130,6 +142,8 @@ public class FlatService
         return await _context.Flats
             .Include(f => f.Landlord)
             .Include(f => f.Houses)
+            .Include(f => f.AgentFlats)
+                .ThenInclude(af => af.Agent)
             .Select(f => new
             {
                 f.Id,
@@ -149,6 +163,9 @@ public class FlatService
                 TotalHouses = f.Houses.Count,
                 VacantHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
                 OccupiedHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                AgentName = f.AgentFlats
+                    .Select(af => af.Agent.FirstName + " " + af.Agent.LastName)
+                    .FirstOrDefault(),
                 f.CreatedAt,
                 f.UpdatedAt
             })
@@ -160,6 +177,8 @@ public class FlatService
         var flat = await _context.Flats
             .Include(f => f.Landlord)
             .Include(f => f.Houses)
+            .Include(f => f.AgentFlats)
+                .ThenInclude(af => af.Agent)
             .FirstOrDefaultAsync(f => f.Id == id);
 
         if (flat == null) return null;
@@ -194,6 +213,15 @@ public class FlatService
             TotalHouses = flat.Houses.Count,
             VacantHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
             OccupiedHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+            Agents = flat.AgentFlats.Select(af => new
+            {
+                af.Agent.Id,
+                af.Agent.FirstName,
+                af.Agent.LastName,
+                af.Agent.Email,
+                af.Agent.PhoneNumber,
+                af.AssignedAt
+            }).ToList(),
             flat.CreatedAt,
             flat.UpdatedAt
         };
@@ -218,6 +246,35 @@ public class FlatService
 
         flat.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+
+        if (dto.AgentId.HasValue)
+        {
+            var existing = await _context.AgentFlats
+                .Where(af => af.FlatId == flat.Id)
+                .ToListAsync();
+            _context.AgentFlats.RemoveRange(existing);
+
+            var agentFlat = new AgentFlat
+            {
+                AgentId = dto.AgentId.Value,
+                FlatId = flat.Id,
+                AssignedAt = DateTime.UtcNow
+            };
+            await _context.AgentFlats.AddAsync(agentFlat);
+            await _context.SaveChangesAsync();
+        }
+        else if (dto.AgentId == null)
+        {
+            var existing = await _context.AgentFlats
+                .Where(af => af.FlatId == flat.Id)
+                .ToListAsync();
+            if (existing.Any())
+            {
+                _context.AgentFlats.RemoveRange(existing);
+                await _context.SaveChangesAsync();
+            }
+        }
+
         return await GetByIdAsync(id);
     }
 

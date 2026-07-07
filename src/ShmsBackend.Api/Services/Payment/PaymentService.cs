@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Api.Services.Email;
 using PaymentRecord = ShmsBackend.Data.Models.Entities.Portal.Payment;
@@ -177,6 +178,7 @@ public class PaymentService : IPaymentService
                 payment.PaymentStatus = PaymentTransactionStatus.Paid;
                 var house = payment.House!;
                 house.PaymentStatus = PaymentStatus.Paid;
+                house.OccupancyStatus = OccupancyStatus.Occupied;
                 house.UpdatedAt = DateTime.UtcNow;
 
                 var overpayment = payment.AmountPaid - payment.Amount;

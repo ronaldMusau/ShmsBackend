@@ -37,5 +37,7 @@ public class CreateFlatDto
     [Required]
     public Guid LandlordId { get; set; }
 
+    public Guid? AgentId { get; set; }
+
     public List<HouseGroupDto> Houses { get; set; } = new();
 }

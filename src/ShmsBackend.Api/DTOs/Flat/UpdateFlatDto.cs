@@ -6,4 +6,5 @@ public class UpdateFlatDto
     public string? County { get; set; }
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
+    public Guid? AgentId { get; set; }
 }
