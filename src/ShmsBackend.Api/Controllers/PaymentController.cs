@@ -466,6 +466,21 @@ public class PaymentController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok(new { success = true, message = "Deleted." });
     }
+
+    [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> DeletePayment(Guid id)
+    {
+        var payment = await _context.Payments.FindAsync(id);
+        if (payment == null)
+            return NotFound(new { success = false, message = "Payment not found." });
+
+        payment.IsDeleted = true;
+        payment.DeletedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true, message = "Payment deleted." });
+    }
 }
 
 public class InitiatePaymentDto

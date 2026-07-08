@@ -417,15 +417,23 @@ public class PortalAuthService : IPortalAuthService
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            var tenant = await _context.PortalUsers
-                .IgnoreQueryFilters()
-                .OfType<Tenant>()
-                .FirstOrDefaultAsync(t => t.Email == dto.Email &&
-                    t.PortalUserType == PortalUserType.Tenant);
-            if (tenant != null)
+            try
             {
-                tenant.TenantStatus = TenantStatus.Active;
-                await _context.SaveChangesAsync();
+                var tenantUser = await _context.PortalUsers
+                    .IgnoreQueryFilters()
+                    .OfType<Data.Models.Entities.Portal.Tenant>()
+                    .FirstOrDefaultAsync(t => t.Email == dto.Email &&
+                        t.PortalUserType == PortalUserType.Tenant);
+                if (tenantUser != null)
+                {
+                    tenantUser.TenantStatus = Data.Models.Enums.TenantStatus.Active;
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update TenantStatus after set-password for {Email}", dto.Email);
+                // Do NOT rethrow — IsActive is already set to true above
             }
 
             _logger.LogInformation("Portal password set: {Email}", dto.Email);
