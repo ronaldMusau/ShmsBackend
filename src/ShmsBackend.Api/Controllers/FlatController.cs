@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Flat;
 using ShmsBackend.Api.Services.Portal;
 
@@ -12,10 +13,12 @@ namespace ShmsBackend.Api.Controllers;
 public class FlatController : ControllerBase
 {
     private readonly FlatService _flatService;
+    private readonly ILogger<FlatController> _logger;
 
-    public FlatController(FlatService flatService)
+    public FlatController(FlatService flatService, ILogger<FlatController> logger)
     {
         _flatService = flatService;
+        _logger = logger;
     }
 
     [HttpPost]
@@ -30,6 +33,11 @@ public class FlatController : ControllerBase
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create flat: {Message}", ex.Message);
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 

@@ -45,6 +45,7 @@ public class FlatService
             Constituency = dto.Constituency,
             Ward = dto.Ward,
             LandlordId = dto.LandlordId,
+            RentDueDay = dto.RentDueDay,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -83,6 +84,9 @@ public class FlatService
         _context.Flats.Add(flat);
         if (houses.Count > 0)
             _context.Houses.AddRange(houses);
+
+        _logger.LogInformation("Creating flat {FlatName} with AgentId: {AgentId}",
+            flat.FlatName, dto.AgentId?.ToString() ?? "none");
 
         if (dto.AgentId.HasValue)
         {

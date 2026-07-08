@@ -17,11 +17,11 @@ public class HouseGroupDto
     public string HouseNumberPrefix { get; set; } = string.Empty;
 
     [Required]
-    [Range(1000, double.MaxValue)]
+    [Range(1, double.MaxValue)]
     public decimal RentFee { get; set; }
 
     [Required]
-    [Range(1000, double.MaxValue)]
+    [Range(1, double.MaxValue)]
     public decimal DepositFee { get; set; }
 }
 
@@ -38,6 +38,8 @@ public class CreateFlatDto
     public Guid LandlordId { get; set; }
 
     public Guid? AgentId { get; set; }
+
+    public int RentDueDay { get; set; } = 5;
 
     public List<HouseGroupDto> Houses { get; set; } = new();
 }
