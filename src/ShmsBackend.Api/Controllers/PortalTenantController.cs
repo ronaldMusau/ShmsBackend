@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
+using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 
@@ -49,7 +50,7 @@ public class PortalTenantController : ControllerBase
         if (tenant.House == null) return NotFound("No house has been assigned to this tenant yet.");
 
         var h = tenant.House;
-        return Ok(new
+        return Ok(ApiResponse<object>.SuccessResponse(new
         {
             h.Id,
             h.HouseNumber,
@@ -81,7 +82,7 @@ public class PortalTenantController : ControllerBase
                 tenant.IsActive,
                 tenant.CreatedAt
             }
-        });
+        }));
     }
 
     [HttpGet("my-tenants")]

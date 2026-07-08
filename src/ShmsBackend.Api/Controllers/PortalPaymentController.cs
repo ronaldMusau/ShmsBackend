@@ -98,6 +98,41 @@ public class PortalPaymentController : ControllerBase
         });
     }
 
+    // GET /api/portalpayments/house/{houseId}/current-status — agent views current-month payment status for a house
+    [HttpGet("house/{houseId:guid}/current-status")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> GetHouseCurrentPaymentStatus(Guid houseId)
+    {
+        var agentIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(agentIdStr, out var agentId))
+            return Unauthorized();
+
+        var house = await _context.Houses.FindAsync(houseId);
+        if (house == null)
+            return NotFound(new { success = false, message = "House not found." });
+
+        var authorized = await _context.AgentFlats
+            .AnyAsync(af => af.AgentId == agentId && af.FlatId == house.FlatId);
+        if (!authorized)
+            return StatusCode(403, new { success = false, message = "Not authorized for this house." });
+
+        var now = DateTime.UtcNow;
+        var currentPayment = await _context.Payments
+            .Where(p => p.HouseId == houseId && p.Month == now.Month && p.Year == now.Year && !p.IsDeleted)
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new
+            {
+                Status = p.PaymentStatus.ToString(),
+                p.Amount,
+                p.AmountPaid,
+                p.Balance,
+                p.DueDate
+            })
+            .FirstOrDefaultAsync();
+
+        return Ok(new { success = true, data = currentPayment });
+    }
+
     // POST /api/portalpayments/pay — tenant initiates their own payment
     [HttpPost("pay")]
     public async Task<IActionResult> Pay([FromBody] TenantPayDto dto)

@@ -84,7 +84,7 @@ public class HouseController : ControllerBase
     }
 
     [HttpGet("{id:guid}/history")]
-    [Authorize]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetHistory(Guid id)
     {
         var history = await _houseService.GetHistoryAsync(id);

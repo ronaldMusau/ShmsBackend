@@ -325,7 +325,6 @@ public class PaymentController : ControllerBase
         [FromQuery] int pageSize = 50)
     {
         var query = _context.Payments
-            .Include(p => p.Tenant)
             .Include(p => p.House)
             .ThenInclude(h => h!.Flat)
             .AsQueryable();
@@ -371,11 +370,24 @@ public class PaymentController : ControllerBase
 
         var total = await query.CountAsync();
 
-        var payments = await query
+        var pagedPayments = await query
             .OrderByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(p => new
+            .ToListAsync();
+
+        // Load tenant names ignoring soft-delete so deleted tenants still show their identity
+        var tenantIds = pagedPayments.Select(p => p.TenantId).Distinct().ToList();
+        var tenantLookup = await _context.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => tenantIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.FirstName, t.LastName, t.Email })
+            .ToDictionaryAsync(t => t.Id);
+
+        var payments = pagedPayments.Select(p =>
+        {
+            tenantLookup.TryGetValue(p.TenantId, out var tenant);
+            return new
             {
                 p.Id,
                 p.Amount,
@@ -397,17 +409,16 @@ public class PaymentController : ControllerBase
                 p.IsInitialPayment,
                 p.RetryCount,
                 p.CreatedAt,
-                TenantName = p.Tenant != null
-                    ? $"{p.Tenant.FirstName} {p.Tenant.LastName}"
-                    : null,
-                TenantEmail = p.Tenant != null ? p.Tenant.Email : null,
+                TenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : null,
+                TenantEmail = tenant?.Email,
                 HouseNumber = p.House != null ? p.House.HouseNumber : null,
                 FlatName = p.House != null && p.House.Flat != null
                     ? p.House.Flat.FlatName : null,
                 p.HouseId,
                 p.FlatId,
                 p.TenantId
-            }).ToListAsync();
+            };
+        }).ToList();
 
         return Ok(new
         {

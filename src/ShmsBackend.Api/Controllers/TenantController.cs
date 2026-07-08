@@ -1,11 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
 using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Portal;
+using ShmsBackend.Data.Context;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -15,11 +18,13 @@ public class TenantController : ControllerBase
 {
     private readonly ITenantService _tenantService;
     private readonly ILogger<TenantController> _logger;
+    private readonly ShmsDbContext _context;
 
-    public TenantController(ITenantService tenantService, ILogger<TenantController> logger)
+    public TenantController(ITenantService tenantService, ILogger<TenantController> logger, ShmsDbContext context)
     {
         _tenantService = tenantService;
         _logger = logger;
+        _context = context;
     }
 
     [HttpPost]
@@ -105,7 +110,24 @@ public class TenantController : ControllerBase
     {
         try
         {
-            var tenants = await _tenantService.GetAllAsync();
+            var tenants = (await _tenantService.GetAllAsync()).ToList();
+
+            // For any house whose flat was soft-deleted, look up the real name
+            var deletedFlatIds = tenants
+                .Where(t => t.House != null && t.House.Flat == null)
+                .Select(t => t.House!.FlatId)
+                .Distinct()
+                .ToList();
+
+            var deletedFlatNames = new Dictionary<Guid, string>();
+            if (deletedFlatIds.Count > 0)
+            {
+                deletedFlatNames = await _context.Flats
+                    .IgnoreQueryFilters()
+                    .Where(f => deletedFlatIds.Contains(f.Id))
+                    .ToDictionaryAsync(f => f.Id, f => f.FlatName);
+            }
+
             return Ok(ApiResponse<object>.SuccessResponse(tenants.Select(t => new
             {
                 t.Id,
@@ -123,7 +145,9 @@ public class TenantController : ControllerBase
                 HouseName = t.House != null
                     ? (t.House.Flat != null
                         ? $"{t.House.HouseNumber} - {t.House.Flat.FlatName}"
-                        : $"{t.House.HouseNumber} - (Flat Deleted)")
+                        : (deletedFlatNames.TryGetValue(t.House.FlatId, out var fn)
+                            ? $"{t.House.HouseNumber} - {fn}"
+                            : $"{t.House.HouseNumber} - (Flat Deleted)"))
                     : null,
                 t.CreatedAt,
                 t.NationalId,
