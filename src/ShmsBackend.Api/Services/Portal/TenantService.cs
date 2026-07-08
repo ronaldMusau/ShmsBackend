@@ -321,13 +321,28 @@ public class TenantService : ITenantService
 
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var tenant = await _unitOfWork.Tenants.GetByIdAsync(id);
+        var tenant = await _context.Tenants
+            .Include(t => t.House)
+            .FirstOrDefaultAsync(t => t.Id == id);
         if (tenant == null) return false;
+
+        if (tenant.House != null)
+        {
+            tenant.House.OccupancyStatus = OccupancyStatus.Vacant;
+            tenant.House.PaymentStatus = PaymentStatus.NotPaid;
+            tenant.House.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var openHistory = await _context.TenantHouseHistories
+            .Where(h => h.TenantId == id && h.RemovedAt == null)
+            .FirstOrDefaultAsync();
+        if (openHistory != null)
+            openHistory.RemovedAt = DateTime.UtcNow;
 
         tenant.IsDeleted = true;
         tenant.DeletedAt = DateTime.UtcNow;
         tenant.IsActive = false;
-        await _unitOfWork.Tenants.UpdateAsync(tenant);
+
         await _unitOfWork.SaveChangesAsync();
 
         _logger.LogInformation("Tenant deleted: {Id}", id);

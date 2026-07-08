@@ -83,7 +83,12 @@ public class TenantController : ControllerBase
                 tenant.IsEmailVerified,
                 tenant.PortalUserType,
                 tenant.CreatedAt,
-                tenant.UpdatedAt
+                tenant.UpdatedAt,
+                tenant.NationalId,
+                tenant.County,
+                tenant.Constituency,
+                tenant.Ward,
+                TenantStatus = tenant.TenantStatus.ToString()
             }));
         }
         catch (Exception ex)
@@ -120,7 +125,16 @@ public class TenantController : ControllerBase
                         ? $"{t.House.HouseNumber} - {t.House.Flat.FlatName}"
                         : $"{t.House.HouseNumber} - (Flat Deleted)")
                     : null,
-                t.CreatedAt
+                t.CreatedAt,
+                t.NationalId,
+                t.County,
+                t.Constituency,
+                t.Ward,
+                t.DateOfBirth,
+                t.EmergencyContactName,
+                t.EmergencyContactPhone,
+                t.UpdatedAt,
+                PortalUserType = t.PortalUserType.ToString()
             })));
         }
         catch (Exception ex)

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -30,11 +31,27 @@ public class PaymentController : ControllerBase
 
     // POST /api/payments/initiate — create payment record and trigger STK push
     [HttpPost("initiate")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Agent")]
     public async Task<IActionResult> InitiatePayment([FromBody] InitiatePaymentDto dto)
     {
         try
         {
+            if (User.IsInRole("Agent"))
+            {
+                var agentIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (!Guid.TryParse(agentIdStr, out var agentId))
+                    return Unauthorized();
+
+                var house = await _context.Houses.FindAsync(dto.HouseId);
+                if (house == null)
+                    return BadRequest(new { success = false, message = "House not found." });
+
+                var authorized = await _context.AgentFlats
+                    .AnyAsync(af => af.AgentId == agentId && af.FlatId == house.FlatId);
+                if (!authorized)
+                    return StatusCode(403, new { success = false, message = "You are not authorized to initiate payments for this flat." });
+            }
+
             var payment = await _paymentService.CreateInitialPaymentAsync(
                 dto.TenantId, dto.HouseId, dto.PhoneNumber);
 

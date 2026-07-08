@@ -69,6 +69,19 @@ public class PaymentService : IPaymentService
             ?? throw new Exception("House not found");
 
         var flat = house.Flat ?? throw new Exception("Flat not found");
+
+        var existingInitial = await _context.Payments
+            .Where(p => p.TenantId == tenantId
+                && p.HouseId == houseId
+                && p.PaymentType == PaymentType.InitialPayment
+                && p.PaymentStatus != PaymentTransactionStatus.Paid
+                && !p.IsDeleted)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (existingInitial != null)
+            return existingInitial;
+
         var serviceCharge = await GetServiceChargeAsync(house.RentFee);
         var totalAmount = house.DepositFee + house.RentFee + serviceCharge;
         var now = DateTime.UtcNow;
@@ -414,11 +427,14 @@ public class PaymentService : IPaymentService
     private async Task<decimal> GetRemainingCreditAsync(Guid tenantId)
     {
         var totalPaid = await _context.Payments
-            .Where(p => p.TenantId == tenantId && p.PaymentStatus == PaymentTransactionStatus.Paid)
+            .Where(p => p.TenantId == tenantId && !p.IsDeleted)
             .SumAsync(p => p.AmountPaid);
 
         var totalDue = await _context.Payments
-            .Where(p => p.TenantId == tenantId)
+            .Where(p => p.TenantId == tenantId
+                && !p.IsDeleted
+                && p.PaymentStatus != PaymentTransactionStatus.Cancelled
+                && p.PaymentStatus != PaymentTransactionStatus.Failed)
             .SumAsync(p => p.Amount);
 
         return Math.Max(0, totalPaid - totalDue);
