@@ -12,8 +12,10 @@ using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Models.Enums;
 using ShmsBackend.Data.Repositories.Interfaces;
 
 namespace ShmsBackend.Api.Services.PortalAuth;
@@ -414,6 +416,17 @@ public class PortalAuthService : IPortalAuthService
             user.IsActive = true;
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
+
+            var tenant = await _context.PortalUsers
+                .IgnoreQueryFilters()
+                .OfType<Tenant>()
+                .FirstOrDefaultAsync(t => t.Email == dto.Email &&
+                    t.PortalUserType == PortalUserType.Tenant);
+            if (tenant != null)
+            {
+                tenant.TenantStatus = TenantStatus.Active;
+                await _context.SaveChangesAsync();
+            }
 
             _logger.LogInformation("Portal password set: {Email}", dto.Email);
             return ApiResponse<string>.SuccessResponse(

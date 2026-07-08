@@ -11,6 +11,7 @@ using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
+using ShmsBackend.Data.Models.Enums;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Repositories.Interfaces;
 
@@ -63,6 +64,8 @@ public class TenantService : ITenantService
             deleted.IsDeleted = false;
             deleted.DeletedAt = null;
             deleted.IsActive = false;
+            deleted.TenantStatus = TenantStatus.Inactive;
+            deleted.HasCompletedInitialPayment = false;
             deleted.IsEmailVerified = false;
             deleted.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12);
             deleted.EmailVerificationToken = null;
@@ -95,6 +98,8 @@ public class TenantService : ITenantService
             EmergencyContactPhone = dto.EmergencyContactPhone,
             HouseId = dto.HouseId,
             IsActive = false,
+            TenantStatus = TenantStatus.Inactive,
+            HasCompletedInitialPayment = false,
             IsEmailVerified = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -183,7 +188,11 @@ public class TenantService : ITenantService
 
     public async Task<IEnumerable<Tenant>> GetAllAsync()
     {
-        return await _unitOfWork.Tenants.GetAllAsync();
+        return await _context.Tenants
+            .Include(t => t.House)
+            .ThenInclude(h => h!.Flat)
+            .Where(t => !t.IsDeleted)
+            .ToListAsync();
     }
 
     public async Task<Tenant> UpdateAsync(Guid id, UpdateTenantDto dto)

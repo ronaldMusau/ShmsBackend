@@ -4,6 +4,7 @@ using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Models.Enums;
 using PaymentRecord = ShmsBackend.Data.Models.Entities.Portal.Payment;
 
 namespace ShmsBackend.Api.Services.Payment;
@@ -184,6 +185,20 @@ public class PaymentService : IPaymentService
                 house.PaymentStatus = PaymentStatus.Paid;
                 house.OccupancyStatus = OccupancyStatus.Occupied;
                 house.UpdatedAt = DateTime.UtcNow;
+
+                if (payment.IsInitialPayment)
+                {
+                    var tenant = await _context.PortalUsers
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(u => u.Id == payment.TenantId) as Tenant;
+
+                    if (tenant != null)
+                    {
+                        tenant.HasCompletedInitialPayment = true;
+                        tenant.TenantStatus = TenantStatus.Pending;
+                        await _context.SaveChangesAsync();
+                    }
+                }
 
                 var overpayment = payment.AmountPaid - payment.Amount;
                 if (overpayment > 0)

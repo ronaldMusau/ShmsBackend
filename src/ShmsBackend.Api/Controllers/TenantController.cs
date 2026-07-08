@@ -101,7 +101,21 @@ public class TenantController : ControllerBase
         try
         {
             var tenants = await _tenantService.GetAllAsync();
-            return Ok(ApiResponse<object>.SuccessResponse(tenants));
+            return Ok(ApiResponse<object>.SuccessResponse(tenants.Select(t => new
+            {
+                t.Id,
+                t.Email,
+                t.FirstName,
+                t.LastName,
+                t.PhoneNumber,
+                t.IsActive,
+                t.IsEmailVerified,
+                TenantStatus = t.TenantStatus.ToString(),
+                t.HasCompletedInitialPayment,
+                t.HouseId,
+                HouseName = t.House != null ? $"{t.House.HouseNumber} - {t.House.Flat!.FlatName}" : null,
+                t.CreatedAt
+            })));
         }
         catch (Exception ex)
         {

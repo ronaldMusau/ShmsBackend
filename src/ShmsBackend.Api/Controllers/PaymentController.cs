@@ -288,6 +288,121 @@ public class PaymentController : ControllerBase
         return Ok(new { success = true, data = summary });
     }
 
+    [HttpGet("all")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
+    public async Task<IActionResult> GetAllPayments(
+        [FromQuery] string? status,
+        [FromQuery] string? type,
+        [FromQuery] Guid? flatId,
+        [FromQuery] Guid? houseId,
+        [FromQuery] Guid? tenantId,
+        [FromQuery] string? method,
+        [FromQuery] int? month,
+        [FromQuery] int? year,
+        [FromQuery] DateTime? fromDate,
+        [FromQuery] DateTime? toDate,
+        [FromQuery] decimal? minAmount,
+        [FromQuery] decimal? maxAmount,
+        [FromQuery] bool? isInitialPayment,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        var query = _context.Payments
+            .Include(p => p.Tenant)
+            .Include(p => p.House)
+            .ThenInclude(h => h!.Flat)
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(status) && Enum.TryParse<PaymentTransactionStatus>(status, out var ps))
+            query = query.Where(p => p.PaymentStatus == ps);
+
+        if (!string.IsNullOrEmpty(type) && Enum.TryParse<PaymentType>(type, out var pt))
+            query = query.Where(p => p.PaymentType == pt);
+
+        if (flatId.HasValue)
+            query = query.Where(p => p.FlatId == flatId.Value);
+
+        if (houseId.HasValue)
+            query = query.Where(p => p.HouseId == houseId.Value);
+
+        if (tenantId.HasValue)
+            query = query.Where(p => p.TenantId == tenantId.Value);
+
+        if (!string.IsNullOrEmpty(method) && Enum.TryParse<PaymentMethod>(method, out var pm))
+            query = query.Where(p => p.PaymentMethod == pm);
+
+        if (month.HasValue)
+            query = query.Where(p => p.Month == month.Value);
+
+        if (year.HasValue)
+            query = query.Where(p => p.Year == year.Value);
+
+        if (fromDate.HasValue)
+            query = query.Where(p => p.CreatedAt >= fromDate.Value);
+
+        if (toDate.HasValue)
+            query = query.Where(p => p.CreatedAt <= toDate.Value);
+
+        if (minAmount.HasValue)
+            query = query.Where(p => p.Amount >= minAmount.Value);
+
+        if (maxAmount.HasValue)
+            query = query.Where(p => p.Amount <= maxAmount.Value);
+
+        if (isInitialPayment.HasValue)
+            query = query.Where(p => p.IsInitialPayment == isInitialPayment.Value);
+
+        var total = await query.CountAsync();
+
+        var payments = await query
+            .OrderByDescending(p => p.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(p => new
+            {
+                p.Id,
+                p.Amount,
+                p.AmountPaid,
+                p.Balance,
+                p.RentAmount,
+                p.DepositAmount,
+                p.ServiceChargeAmount,
+                p.CreditApplied,
+                Status = p.PaymentStatus.ToString(),
+                Type = p.PaymentType.ToString(),
+                Method = p.PaymentMethod.ToString(),
+                p.MpesaReceiptNumber,
+                p.PhoneNumber,
+                p.DueDate,
+                p.PaidAt,
+                p.Month,
+                p.Year,
+                p.IsInitialPayment,
+                p.RetryCount,
+                p.CreatedAt,
+                TenantName = p.Tenant != null
+                    ? $"{p.Tenant.FirstName} {p.Tenant.LastName}"
+                    : null,
+                TenantEmail = p.Tenant != null ? p.Tenant.Email : null,
+                HouseNumber = p.House != null ? p.House.HouseNumber : null,
+                FlatName = p.House != null && p.House.Flat != null
+                    ? p.House.Flat.FlatName : null,
+                p.HouseId,
+                p.FlatId,
+                p.TenantId
+            }).ToListAsync();
+
+        return Ok(new
+        {
+            success = true,
+            data = payments,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
+    }
+
     // GET /api/payments/service-charges — get service charge settings
     [HttpGet("service-charges")]
     [Authorize]

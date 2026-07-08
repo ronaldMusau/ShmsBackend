@@ -84,6 +84,46 @@ public class PortalTenantController : ControllerBase
         });
     }
 
+    [HttpGet("my-tenants")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> GetMyTenants()
+    {
+        var agentIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(agentIdStr, out var agentId))
+            return Unauthorized();
+
+        var agentFlatIds = await _context.AgentFlats
+            .Where(af => af.AgentId == agentId)
+            .Select(af => af.FlatId)
+            .ToListAsync();
+
+        var tenants = await _context.Tenants
+            .Include(t => t.House)
+            .ThenInclude(h => h!.Flat)
+            .Where(t => t.HouseId != null &&
+                   t.House != null &&
+                   agentFlatIds.Contains(t.House.FlatId))
+            .Select(t => new
+            {
+                t.Id,
+                t.FirstName,
+                t.LastName,
+                t.Email,
+                t.PhoneNumber,
+                t.IsActive,
+                TenantStatus = t.TenantStatus.ToString(),
+                t.HasCompletedInitialPayment,
+                t.CreatedAt,
+                HouseNumber = t.House!.HouseNumber,
+                HouseId = t.House!.Id,
+                FlatName = t.House!.Flat!.FlatName,
+                FlatId = t.House!.Flat!.Id
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, data = tenants });
+    }
+
     [HttpPost("create")]
     [Authorize(Roles = "Agent,Landlord,SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> CreateTenant([FromBody] CreateTenantDto dto)
