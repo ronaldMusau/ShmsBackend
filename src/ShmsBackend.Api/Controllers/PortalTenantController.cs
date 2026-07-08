@@ -116,8 +116,8 @@ public class PortalTenantController : ControllerBase
                 t.CreatedAt,
                 HouseNumber = t.House!.HouseNumber,
                 HouseId = t.House!.Id,
-                FlatName = t.House!.Flat!.FlatName,
-                FlatId = t.House!.Flat!.Id
+                FlatName = t.House!.Flat != null ? t.House!.Flat.FlatName : "(Flat Deleted)",
+                FlatId = t.House!.Flat != null ? t.House!.Flat.Id : (Guid?)null
             })
             .ToListAsync();
 

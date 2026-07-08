@@ -115,7 +115,11 @@ public class TenantController : ControllerBase
                 t.HasCompletedInitialPayment,
                 t.HouseId,
                 HouseNumber = t.House != null ? t.House.HouseNumber : null,
-                HouseName = t.House != null ? $"{t.House.HouseNumber} - {t.House.Flat!.FlatName}" : null,
+                HouseName = t.House != null
+                    ? (t.House.Flat != null
+                        ? $"{t.House.HouseNumber} - {t.House.Flat.FlatName}"
+                        : $"{t.House.HouseNumber} - (Flat Deleted)")
+                    : null,
                 t.CreatedAt
             })));
         }
