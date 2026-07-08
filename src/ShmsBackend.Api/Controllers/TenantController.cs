@@ -111,8 +111,10 @@ public class TenantController : ControllerBase
                 t.IsActive,
                 t.IsEmailVerified,
                 TenantStatus = t.TenantStatus.ToString(),
+                Status = t.TenantStatus.ToString(),
                 t.HasCompletedInitialPayment,
                 t.HouseId,
+                HouseNumber = t.House != null ? t.House.HouseNumber : null,
                 HouseName = t.House != null ? $"{t.House.HouseNumber} - {t.House.Flat!.FlatName}" : null,
                 t.CreatedAt
             })));

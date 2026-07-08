@@ -118,9 +118,8 @@ public class PortalAuthService : IPortalAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during portal login for {Email}", dto.Email);
-            return ApiResponse<PortalAuthResponse>.FailureResponse(
-                "An error occurred during login. Please try again.");
+            _logger.LogError(ex, "Login error: {Message} | Inner: {Inner}", ex.Message, ex.InnerException?.Message);
+            return ApiResponse<PortalAuthResponse>.FailureResponse("Login failed. Please try again.");
         }
     }
 
