@@ -125,6 +125,69 @@ public class PortalTenantController : ControllerBase
         return Ok(new { success = true, data = tenants });
     }
 
+    [HttpPatch("{id:guid}")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> UpdateTenant(Guid id, [FromBody] UpdateTenantDto dto)
+    {
+        var agentIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(agentIdStr, out var agentId))
+            return Unauthorized();
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant == null)
+            return NotFound(new { success = false, message = "Tenant not found." });
+
+        if (tenant.HouseId.HasValue)
+        {
+            var house = await _context.Houses.FindAsync(tenant.HouseId.Value);
+            if (house != null)
+            {
+                var authorized = await _context.AgentFlats
+                    .AnyAsync(af => af.AgentId == agentId && af.FlatId == house.FlatId);
+                if (!authorized)
+                    return StatusCode(403, new { success = false, message = "Not authorized for this tenant." });
+            }
+        }
+
+        if (dto.HouseId.HasValue && dto.HouseId != tenant.HouseId)
+        {
+            var newHouse = await _context.Houses.FindAsync(dto.HouseId.Value);
+            if (newHouse == null)
+                return BadRequest(new { success = false, message = "House not found." });
+            var authorizedNew = await _context.AgentFlats
+                .AnyAsync(af => af.AgentId == agentId && af.FlatId == newHouse.FlatId);
+            if (!authorizedNew)
+                return StatusCode(403, new { success = false, message = "Not authorized to assign this house." });
+        }
+
+        try
+        {
+            var result = await _tenantService.UpdateAsync(id, dto);
+            return Ok(ApiResponse<object>.SuccessResponse(new
+            {
+                result.Id,
+                result.Email,
+                result.FirstName,
+                result.LastName,
+                result.PhoneNumber,
+                result.DateOfBirth,
+                result.EmergencyContactName,
+                result.EmergencyContactPhone,
+                result.IsActive,
+                result.UpdatedAt
+            }, "Tenant updated successfully"));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating tenant: {Id}", id);
+            return StatusCode(500, new { success = false, message = "Failed to update tenant." });
+        }
+    }
+
     [HttpPost("create")]
     [Authorize(Roles = "Agent,Landlord,SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> CreateTenant([FromBody] CreateTenantDto dto)

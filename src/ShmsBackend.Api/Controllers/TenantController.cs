@@ -170,6 +170,7 @@ public class TenantController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [HttpPatch("{id}")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateTenantDto dto)
     {

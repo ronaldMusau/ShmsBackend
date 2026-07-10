@@ -1,9 +1,12 @@
 using System;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.House;
 using ShmsBackend.Api.Services.Portal;
+using ShmsBackend.Data.Context;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -12,10 +15,12 @@ namespace ShmsBackend.Api.Controllers;
 public class HouseController : ControllerBase
 {
     private readonly HouseService _houseService;
+    private readonly ShmsDbContext _context;
 
-    public HouseController(HouseService houseService)
+    public HouseController(HouseService houseService, ShmsDbContext context)
     {
         _houseService = houseService;
+        _context = context;
     }
 
     [HttpPost]
@@ -42,11 +47,25 @@ public class HouseController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Agent")]
     public async Task<IActionResult> GetById(Guid id)
     {
         var result = await _houseService.GetByIdAsync(id);
         if (result == null) return NotFound(new { success = false, message = "House not found." });
+
+        if (User.IsInRole("Agent"))
+        {
+            var agentIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(agentIdStr, out var agentId))
+                return Unauthorized();
+
+            var authorized = await _context.Houses
+                .AnyAsync(h => h.Id == id &&
+                               _context.AgentFlats.Any(af => af.AgentId == agentId && af.FlatId == h.FlatId));
+            if (!authorized)
+                return StatusCode(403, new { success = false, message = "Not authorized for this house." });
+        }
+
         return Ok(new { success = true, data = result });
     }
 
