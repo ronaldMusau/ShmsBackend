@@ -65,7 +65,8 @@ public class PortalFlatController : ControllerBase
                         h.RentFee,
                         h.DepositFee,
                         OccupancyStatus = h.OccupancyStatus.ToString(),
-                        PaymentStatus = h.PaymentStatus.ToString()
+                        PaymentStatus = h.PaymentStatus.ToString(),
+                        ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
                     }).ToList()
                 })
                 .ToListAsync();
@@ -92,7 +93,18 @@ public class PortalFlatController : ControllerBase
                     f.LandlordId,
                     HouseCount = f.Houses.Count,
                     VacantCount = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
-                    OccupiedCount = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied)
+                    OccupiedCount = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                    Houses = f.Houses.Select(h => new
+                    {
+                        h.Id,
+                        h.HouseNumber,
+                        HouseType = h.HouseType.ToString(),
+                        h.RentFee,
+                        h.DepositFee,
+                        OccupancyStatus = h.OccupancyStatus.ToString(),
+                        PaymentStatus = h.PaymentStatus.ToString(),
+                        ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
+                    }).ToList()
                 })
                 .ToListAsync();
 
@@ -123,7 +135,8 @@ public class PortalFlatController : ControllerBase
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
                 PaymentStatus = h.PaymentStatus.ToString(),
-                h.CreatedAt
+                h.CreatedAt,
+                ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
             }),
             flat.CreatedAt
         })});
@@ -166,7 +179,8 @@ public class PortalFlatController : ControllerBase
                     h.RentFee,
                     h.DepositFee,
                     OccupancyStatus = h.OccupancyStatus.ToString(),
-                    PaymentStatus = h.PaymentStatus.ToString()
+                    PaymentStatus = h.PaymentStatus.ToString(),
+                    ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
                 }).ToList(),
                 flat.CreatedAt
             }});
@@ -218,7 +232,8 @@ public class PortalFlatController : ControllerBase
                         t.PhoneNumber,
                         t.Email,
                         t.CreatedAt
-                    }).FirstOrDefault()
+                    }).FirstOrDefault(),
+                    ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
                 }),
                 landlordFlat.CreatedAt
             }});
@@ -250,7 +265,8 @@ public class PortalFlatController : ControllerBase
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
                 PaymentStatus = h.PaymentStatus.ToString(),
-                h.CreatedAt
+                h.CreatedAt,
+                ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
             }),
             result.CreatedAt
         }});

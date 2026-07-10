@@ -219,6 +219,7 @@ app.UseMiddleware<LoggingMiddleware>();
 app.UseMiddleware<TokenValidationMiddleware>();
 
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();

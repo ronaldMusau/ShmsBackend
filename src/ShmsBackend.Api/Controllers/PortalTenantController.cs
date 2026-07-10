@@ -44,6 +44,8 @@ public class PortalTenantController : ControllerBase
         var tenant = await _context.Tenants
             .Include(t => t.House)
                 .ThenInclude(h => h!.Flat)
+            .Include(t => t.House)
+                .ThenInclude(h => h!.Images)
             .FirstOrDefaultAsync(t => t.Id == tenantId);
 
         if (tenant == null) return NotFound("Tenant not found.");
@@ -68,6 +70,7 @@ public class PortalTenantController : ControllerBase
                 h.Flat.Constituency,
                 h.Flat.Ward
             },
+            ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
             TenantProfile = new
             {
                 tenant.FirstName,

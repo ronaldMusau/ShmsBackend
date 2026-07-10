@@ -45,4 +45,5 @@ public class House : ISoftDelete
 
     public Flat? Flat { get; set; }
     public ICollection<Tenant> Tenants { get; set; } = new List<Tenant>();
+    public ICollection<HouseImage> Images { get; set; } = new List<HouseImage>();
 }

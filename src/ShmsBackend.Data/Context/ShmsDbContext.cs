@@ -30,6 +30,7 @@ public class ShmsDbContext : DbContext
     // Property listings
     public DbSet<House> Houses { get; set; }
     public DbSet<Flat> Flats { get; set; }
+    public DbSet<HouseImage> HouseImages { get; set; }
 
     // Agent–Flat assignments
     public DbSet<AgentFlat> AgentFlats { get; set; }
@@ -185,6 +186,17 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.PaymentStatus)
                   .HasConversion<string>()
                   .HasDefaultValue(PaymentStatus.NotPaid);
+        });
+
+        // ── HouseImage Configuration ─────────────────────────────────────────
+        modelBuilder.Entity<HouseImage>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ImagePath).IsRequired().HasMaxLength(500);
+            entity.HasOne(e => e.House)
+                  .WithMany(h => h.Images)
+                  .HasForeignKey(e => e.HouseId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── AgentFlat Configuration ──────────────────────────────────────────

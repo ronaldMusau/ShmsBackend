@@ -81,6 +81,24 @@ public class FlatService
                 throw new InvalidOperationException("Duplicate house numbers detected in the submitted house groups.");
         }
 
+        // Build per-line grouping from the in-memory list before SaveChangesAsync (IDs already assigned)
+        var houseGroups = new List<object>();
+        if (dto.Houses != null && houses.Count > 0)
+        {
+            int index = 0;
+            foreach (var line in dto.Houses)
+            {
+                var groupHouseIds = houses.Skip(index).Take(line.Count).Select(h => h.Id).ToList();
+                houseGroups.Add(new
+                {
+                    line.HouseType,
+                    line.HouseNumberPrefix,
+                    HouseIds = groupHouseIds
+                });
+                index += line.Count;
+            }
+        }
+
         _context.Flats.Add(flat);
         if (houses.Count > 0)
             _context.Houses.AddRange(houses);
@@ -142,7 +160,8 @@ public class FlatService
             _logger.LogError(ex, "Failed to send flat creation notification to landlord");
         }
 
-        return (await GetByIdAsync(flat.Id))!;
+        var flatResult = (await GetByIdAsync(flat.Id))!;
+        return new { flat = flatResult, houseGroups };
     }
 
     public async Task<IEnumerable<object>> GetAllAsync()

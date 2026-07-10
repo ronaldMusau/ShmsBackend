@@ -1,12 +1,17 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.House;
 using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities.Portal;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -108,5 +113,76 @@ public class HouseController : ControllerBase
     {
         var history = await _houseService.GetHistoryAsync(id);
         return Ok(new { success = true, data = history });
+    }
+
+    [HttpPost("upload-images")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Agent")]
+    [RequestSizeLimit(20_000_000)]
+    public async Task<IActionResult> UploadImages([FromForm] List<Guid> houseIds, [FromForm] List<IFormFile> files)
+    {
+        if (houseIds == null || houseIds.Count == 0)
+            return BadRequest(new { success = false, message = "At least one house ID is required." });
+        if (files == null || files.Count == 0)
+            return BadRequest(new { success = false, message = "At least one image file is required." });
+
+        var existingCount = await _context.HouseImages.CountAsync(hi => hi.HouseId == houseIds[0]);
+        if (existingCount + files.Count > 5)
+            return BadRequest(new { success = false, message = $"Maximum 5 images per house. This house already has {existingCount}." });
+
+        var savedPaths = new List<string>();
+        var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "house-images");
+        Directory.CreateDirectory(uploadsRoot);
+
+        foreach (var file in files)
+        {
+            var ext = Path.GetExtension(file.FileName);
+            if (!new[] { ".jpg", ".jpeg", ".png", ".webp" }.Contains(ext.ToLower()))
+                continue;
+
+            var fileName = $"{Guid.NewGuid()}{ext}";
+            var filePath = Path.Combine(uploadsRoot, fileName);
+            using (var stream = new FileStream(filePath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+            savedPaths.Add($"/house-images/{fileName}");
+        }
+
+        int sortOrder = existingCount;
+        foreach (var houseId in houseIds)
+        {
+            foreach (var path in savedPaths)
+            {
+                _context.HouseImages.Add(new HouseImage
+                {
+                    Id = Guid.NewGuid(),
+                    HouseId = houseId,
+                    ImagePath = path,
+                    SortOrder = sortOrder,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            sortOrder++;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, message = "Images uploaded successfully.", data = savedPaths });
+    }
+
+    [HttpDelete("images/{imageId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Agent")]
+    public async Task<IActionResult> DeleteImage(Guid imageId)
+    {
+        var image = await _context.HouseImages.FindAsync(imageId);
+        if (image == null)
+            return NotFound(new { success = false, message = "Image not found." });
+
+        var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", image.ImagePath.TrimStart('/'));
+        if (System.IO.File.Exists(filePath))
+            System.IO.File.Delete(filePath);
+
+        _context.HouseImages.Remove(image);
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, message = "Image deleted." });
     }
 }
