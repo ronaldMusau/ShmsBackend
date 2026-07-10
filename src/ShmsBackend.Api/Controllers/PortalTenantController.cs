@@ -125,6 +125,47 @@ public class PortalTenantController : ControllerBase
         return Ok(new { success = true, data = tenants });
     }
 
+    [HttpGet("{id:guid}")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> GetTenantById(Guid id)
+    {
+        var agentIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(agentIdStr, out var agentId))
+            return Unauthorized();
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == id);
+        if (tenant == null)
+            return NotFound(new { success = false, message = "Tenant not found." });
+
+        if (tenant.HouseId.HasValue)
+        {
+            var house = await _context.Houses.FindAsync(tenant.HouseId.Value);
+            if (house != null)
+            {
+                var authorized = await _context.AgentFlats
+                    .AnyAsync(af => af.AgentId == agentId && af.FlatId == house.FlatId);
+                if (!authorized)
+                    return StatusCode(403, new { success = false, message = "Not authorized for this tenant." });
+            }
+        }
+
+        return Ok(ApiResponse<object>.SuccessResponse(new
+        {
+            tenant.Id,
+            tenant.Email,
+            tenant.FirstName,
+            tenant.LastName,
+            tenant.PhoneNumber,
+            tenant.NationalId,
+            tenant.DateOfBirth,
+            tenant.EmergencyContactName,
+            tenant.EmergencyContactPhone,
+            tenant.HouseId,
+            tenant.IsActive,
+            tenant.HasCompletedInitialPayment
+        }));
+    }
+
     [HttpPatch("{id:guid}")]
     [Authorize(Roles = "Agent")]
     public async Task<IActionResult> UpdateTenant(Guid id, [FromBody] UpdateTenantDto dto)
