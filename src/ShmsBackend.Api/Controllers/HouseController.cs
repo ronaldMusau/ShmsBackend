@@ -115,9 +115,35 @@ public class HouseController : ControllerBase
     }
 
     [HttpGet("{id:guid}/history")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Landlord,Agent")]
     public async Task<IActionResult> GetHistory(Guid id)
     {
+        if (User.IsInRole("Landlord") || User.IsInRole("Agent"))
+        {
+            var house = await _context.Houses
+                .Include(h => h.Flat)
+                .FirstOrDefaultAsync(h => h.Id == id);
+            if (house == null)
+                return NotFound(new { success = false, message = "House not found." });
+
+            var callerIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(callerIdStr, out var callerId))
+                return Unauthorized();
+
+            if (User.IsInRole("Landlord"))
+            {
+                if (house.Flat == null || house.Flat.LandlordId != callerId)
+                    return StatusCode(403, new { success = false, message = "Not authorized for this house." });
+            }
+            else
+            {
+                var authorized = await _context.AgentFlats
+                    .AnyAsync(af => af.AgentId == callerId && af.FlatId == house.FlatId);
+                if (!authorized)
+                    return StatusCode(403, new { success = false, message = "Not authorized for this house." });
+            }
+        }
+
         var history = await _houseService.GetHistoryAsync(id);
         return Ok(new { success = true, data = history });
     }

@@ -35,7 +35,11 @@ public class PortalPaymentController : ControllerBase
         if (!Guid.TryParse(userIdStr, out var userId))
             return Unauthorized();
 
-        var payments = await _paymentService.GetTenantPaymentHistoryAsync(userId);
+        var tenant = await _context.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == userId);
+        if (tenant == null) return Unauthorized();
+
+        var allPayments = await _paymentService.GetTenantPaymentHistoryAsync(userId);
+        var payments = allPayments.Where(p => p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted).ToList();
         return Ok(new
         {
             success = true,
@@ -74,7 +78,20 @@ public class PortalPaymentController : ControllerBase
         if (!Guid.TryParse(userIdStr, out var userId))
             return Unauthorized();
 
-        var payment = await _paymentService.GetCurrentMonthPaymentAsync(userId);
+        var tenant = await _context.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == userId);
+        if (tenant == null) return Unauthorized();
+
+        var now = DateTime.UtcNow;
+        var payment = await _context.Payments
+            .Where(p => p.TenantId == userId &&
+                        p.Month == now.Month &&
+                        p.Year == now.Year &&
+                        !p.IsInitialPayment &&
+                        p.TenancyCycle == tenant.TenancyCycle &&
+                        !p.IsDeleted)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+
         if (payment == null)
             return Ok(new { success = true, data = (object?)null, message = "No payment due this month." });
 

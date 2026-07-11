@@ -78,6 +78,7 @@ public class Payment : ISoftDelete
     public string? Description { get; set; }
     public string? Notes { get; set; }
     public bool IsInitialPayment { get; set; } = false;
+    public int TenancyCycle { get; set; } = 1;
 
     // Soft delete
     public bool IsDeleted { get; set; } = false;

@@ -12,6 +12,8 @@ public class Tenant : PortalUser
     public House? House { get; set; }
     public TenantStatus TenantStatus { get; set; } = TenantStatus.Inactive;
     public bool HasCompletedInitialPayment { get; set; } = false;
+    public int TenancyCycle { get; set; } = 1;
+    public string? TemporaryInitialPassword { get; set; }
 
     public Tenant()
     {

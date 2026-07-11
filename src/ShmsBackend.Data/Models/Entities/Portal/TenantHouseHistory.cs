@@ -15,6 +15,7 @@ public class TenantHouseHistory
     public string FlatName { get; set; } = string.Empty;
     public DateTime AssignedAt { get; set; } = DateTime.UtcNow;
     public DateTime? RemovedAt { get; set; }
+    public int TenancyCycle { get; set; } = 1;
 
     // Navigation
     public House? House { get; set; }

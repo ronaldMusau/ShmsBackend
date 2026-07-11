@@ -61,12 +61,15 @@ public class TenantService : ITenantService
             deleted.DateOfBirth = dto.DateOfBirth;
             deleted.EmergencyContactName = dto.EmergencyContactName;
             deleted.EmergencyContactPhone = dto.EmergencyContactPhone;
+            deleted.HouseId = dto.HouseId;
             deleted.IsDeleted = false;
             deleted.DeletedAt = null;
             deleted.IsActive = false;
             deleted.TenantStatus = TenantStatus.Inactive;
             deleted.HasCompletedInitialPayment = false;
             deleted.IsEmailVerified = false;
+            deleted.TenancyCycle += 1;
+            deleted.TemporaryInitialPassword = dto.Password;
             deleted.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12);
             deleted.EmailVerificationToken = null;
             deleted.EmailVerificationTokenExpiry = null;
@@ -78,9 +81,16 @@ public class TenantService : ITenantService
             deleted.EmailVerificationToken = token;
             deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
             await _unitOfWork.SaveChangesAsync();
-            var link = _frontendUrlService.GetPortalEmailVerificationUrl(token, deleted.Email, PortalUserType.Tenant);
-            try { await _emailService.SendPortalVerifyWithPasswordEmailAsync(deleted.Email, deleted.FirstName, link, dto.Password); }
-            catch { }
+
+            if (dto.HouseId.HasValue)
+            {
+                try { await WriteHouseHistoryAsync(deleted, dto.HouseId.Value); }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to write TenantHouseHistory for tenant {TenantId}, house {HouseId}", deleted.Id, dto.HouseId);
+                }
+            }
+
             return deleted;
         }
 
@@ -101,6 +111,7 @@ public class TenantService : ITenantService
             TenantStatus = TenantStatus.Inactive,
             HasCompletedInitialPayment = false,
             IsEmailVerified = false,
+            TemporaryInitialPassword = dto.Password,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -112,16 +123,6 @@ public class TenantService : ITenantService
         tenant.EmailVerificationToken = verificationToken;
         tenant.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
         await _unitOfWork.SaveChangesAsync();
-
-        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, tenant.Email, PortalUserType.Tenant);
-        try
-        {
-            await _emailService.SendPortalVerifyWithPasswordEmailAsync(tenant.Email, tenant.FirstName, verificationLink, dto.Password);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send verification email to tenant {Email}", tenant.Email);
-        }
 
         try
         {
@@ -145,35 +146,10 @@ public class TenantService : ITenantService
 
         if (dto.HouseId.HasValue)
         {
-            try
-            {
-                var house = await _context.Houses
-                    .Include(h => h.Flat)
-                    .FirstOrDefaultAsync(h => h.Id == dto.HouseId.Value);
-
-                if (house != null)
-                {
-                    var history = new TenantHouseHistory
-                    {
-                        Id = Guid.NewGuid(),
-                        HouseId = house.Id,
-                        TenantId = tenant.Id,
-                        TenantFirstName = tenant.FirstName,
-                        TenantLastName = tenant.LastName,
-                        TenantEmail = tenant.Email,
-                        TenantPhone = tenant.PhoneNumber,
-                        HouseNumber = house.HouseNumber,
-                        FlatName = house.Flat?.FlatName ?? "",
-                        AssignedAt = DateTime.UtcNow,
-                        RemovedAt = null
-                    };
-                    await _context.TenantHouseHistories.AddAsync(history);
-                    await _context.SaveChangesAsync();
-                }
-            }
+            try { await WriteHouseHistoryAsync(tenant, dto.HouseId.Value); }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to write initial TenantHouseHistory for tenant {Id}", tenant.Id);
+                _logger.LogError(ex, "Failed to write TenantHouseHistory for tenant {TenantId}, house {HouseId}", tenant.Id, dto.HouseId);
             }
         }
 
@@ -303,7 +279,8 @@ public class TenantService : ITenantService
                         HouseNumber = newHouse.HouseNumber,
                         FlatName = newHouse.Flat?.FlatName ?? "",
                         AssignedAt = DateTime.UtcNow,
-                        RemovedAt = null
+                        RemovedAt = null,
+                        TenancyCycle = tenant.TenancyCycle
                     };
                     await _context.TenantHouseHistories.AddAsync(history);
                     await _context.SaveChangesAsync();
@@ -311,7 +288,7 @@ public class TenantService : ITenantService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to write TenantHouseHistory for tenant {Id}", tenant.Id);
+                _logger.LogError(ex, "Failed to write TenantHouseHistory for tenant {TenantId}, house {HouseId}", tenant.Id, dto.HouseId);
             }
         }
 
@@ -325,6 +302,16 @@ public class TenantService : ITenantService
             .Include(t => t.House)
             .FirstOrDefaultAsync(t => t.Id == id);
         if (tenant == null) return false;
+
+        var hasAnyHistory = await _context.TenantHouseHistories.AnyAsync(h => h.TenantId == id);
+        var hasAnyPayments = await _context.Payments.AnyAsync(p => p.TenantId == id);
+
+        if (!hasAnyHistory && !hasAnyPayments && tenant.HouseId == null)
+        {
+            _context.Tenants.Remove(tenant);
+            await _context.SaveChangesAsync();
+            return true;
+        }
 
         if (tenant.House != null)
         {
@@ -402,5 +389,33 @@ public class TenantService : ITenantService
 
         _logger.LogInformation("Tenant status toggled: {Id}, IsActive: {IsActive}", id, tenant.IsActive);
         return true;
+    }
+
+    private async Task WriteHouseHistoryAsync(Tenant tenant, Guid houseId)
+    {
+        var house = await _context.Houses
+            .Include(h => h.Flat)
+            .FirstOrDefaultAsync(h => h.Id == houseId);
+
+        if (house != null)
+        {
+            var history = new TenantHouseHistory
+            {
+                Id = Guid.NewGuid(),
+                HouseId = house.Id,
+                TenantId = tenant.Id,
+                TenantFirstName = tenant.FirstName,
+                TenantLastName = tenant.LastName,
+                TenantEmail = tenant.Email,
+                TenantPhone = tenant.PhoneNumber,
+                HouseNumber = house.HouseNumber,
+                FlatName = house.Flat?.FlatName ?? "",
+                AssignedAt = DateTime.UtcNow,
+                RemovedAt = null,
+                TenancyCycle = tenant.TenancyCycle
+            };
+            await _context.TenantHouseHistories.AddAsync(history);
+            await _context.SaveChangesAsync();
+        }
     }
 }

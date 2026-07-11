@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using ShmsBackend.Data.Models.Enums;
@@ -29,6 +31,7 @@ public class PaymentService : IPaymentService
     private readonly IMpesaService _mpesaService;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
+    private readonly IFrontendUrlService _frontendUrlService;
     private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
@@ -36,12 +39,14 @@ public class PaymentService : IPaymentService
         IMpesaService mpesaService,
         IEmailService emailService,
         INotificationService notificationService,
+        IFrontendUrlService frontendUrlService,
         ILogger<PaymentService> logger)
     {
         _context = context;
         _mpesaService = mpesaService;
         _emailService = emailService;
         _notificationService = notificationService;
+        _frontendUrlService = frontendUrlService;
         _logger = logger;
     }
 
@@ -109,6 +114,7 @@ public class PaymentService : IPaymentService
             Month = now.Month,
             Year = now.Year,
             IsInitialPayment = true,
+            TenancyCycle = tenant.TenancyCycle,
             Description = "Initial payment: Deposit + Rent + Service Charge",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -209,7 +215,31 @@ public class PaymentService : IPaymentService
                     {
                         tenant.HasCompletedInitialPayment = true;
                         tenant.TenantStatus = TenantStatus.Pending;
+
+                        // Capture and clear the temp password atomically before sending email
+                        string? verificationLink = null;
+                        var tempPassword = tenant.TemporaryInitialPassword;
+                        if (!string.IsNullOrEmpty(tenant.EmailVerificationToken) &&
+                            !string.IsNullOrEmpty(tempPassword))
+                        {
+                            verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(
+                                tenant.EmailVerificationToken, tenant.Email, PortalUserType.Tenant);
+                        }
+                        tenant.TemporaryInitialPassword = null;
                         await _context.SaveChangesAsync();
+
+                        if (verificationLink != null)
+                        {
+                            try
+                            {
+                                await _emailService.SendPortalVerifyWithPasswordEmailAsync(
+                                    tenant.Email, tenant.FirstName, verificationLink, tempPassword!);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Failed to send verification email to tenant {Email}", tenant.Email);
+                            }
+                        }
                     }
                 }
 
@@ -424,6 +454,7 @@ public class PaymentService : IPaymentService
                     DueDate = dueDate,
                     Month = now.Month,
                     Year = now.Year,
+                    TenancyCycle = tenant.TenancyCycle,
                     Description = $"Monthly rent - {now:MMMM yyyy}",
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
