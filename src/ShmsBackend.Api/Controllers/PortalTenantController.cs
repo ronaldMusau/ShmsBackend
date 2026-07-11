@@ -70,7 +70,7 @@ public class PortalTenantController : ControllerBase
                 h.Flat.Constituency,
                 h.Flat.Ward
             },
-            ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+            Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
             TenantProfile = new
             {
                 tenant.FirstName,

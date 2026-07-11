@@ -223,6 +223,7 @@ public class FlatService
                 TotalHouses = f.Houses.Count,
                 VacantHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
                 OccupiedHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+                HasPhotos = f.Houses.Any(h => h.Images.Any()),
                 AgentName = f.AgentFlats
                     .Select(af => af.Agent.FirstName + " " + af.Agent.LastName)
                     .FirstOrDefault(),
@@ -279,7 +280,7 @@ public class FlatService
                 OccupancyStatus = h.OccupancyStatus.ToString(),
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
-                ImagePaths = h.Images.Select(hi => hi.ImagePath).ToList(),
+                Images = h.Images.OrderBy(hi => hi.SortOrder).Select(hi => new { hi.Id, hi.ImagePath }).ToList(),
                 EverOccupied = everOccupiedSet.Contains(h.Id)
             }),
             TotalHouses = flat.Houses.Count,
