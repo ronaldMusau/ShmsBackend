@@ -14,7 +14,7 @@ namespace ShmsBackend.Api.Services.Payment;
 public interface IPaymentService
 {
     Task<PaymentRecord> CreateInitialPaymentAsync(Guid tenantId, Guid houseId, string phoneNumber);
-    Task<STKPushResponse> InitiatePaymentAsync(Guid paymentId, string phoneNumber);
+    Task<STKPushResponse> InitiatePaymentAsync(Guid paymentId, string phoneNumber, decimal? overrideAmount = null);
     Task ProcessCallbackAsync(MpesaCallback callback);
     Task<STKQueryResponse> QueryPaymentStatusAsync(string checkoutRequestId);
     Task<List<PaymentRecord>> GetTenantPaymentHistoryAsync(Guid tenantId);
@@ -125,7 +125,7 @@ public class PaymentService : IPaymentService
         return payment;
     }
 
-    public async Task<STKPushResponse> InitiatePaymentAsync(Guid paymentId, string phoneNumber)
+    public async Task<STKPushResponse> InitiatePaymentAsync(Guid paymentId, string phoneNumber, decimal? overrideAmount = null)
     {
         var payment = await _context.Payments
             .Include(p => p.House)
@@ -149,7 +149,7 @@ public class PaymentService : IPaymentService
         var stkResponse = await _mpesaService.InitiateSTKPushAsync(new STKPushRequest
         {
             PhoneNumber = phoneNumber,
-            Amount = payment.Balance > 0 ? payment.Balance : payment.Amount,
+            Amount = overrideAmount ?? (payment.Balance > 0 ? payment.Balance : payment.Amount),
             AccountReference = reference,
             TransactionDesc = description,
             TenantId = payment.TenantId.ToString(),
@@ -192,6 +192,7 @@ public class PaymentService : IPaymentService
 
         if (details.IsSuccess && details.Amount.HasValue)
         {
+            List<(int month, int year, decimal applied)>? itemizedBreakdown = null;
             payment.AmountPaid += details.Amount.Value;
             payment.Balance = Math.Max(0, payment.Amount - payment.AmountPaid);
             payment.MpesaReceiptNumber = details.MpesaReceiptNumber;
@@ -246,8 +247,8 @@ public class PaymentService : IPaymentService
                 var overpayment = payment.AmountPaid - payment.Amount;
                 if (overpayment > 0)
                 {
-                    await DistributeCreditAsync(payment.TenantId, payment.HouseId,
-                        payment.FlatId, overpayment);
+                    itemizedBreakdown = await DistributePaymentAsync(payment.TenantId, payment.HouseId,
+                        overpayment, payment.TenancyCycle);
                 }
             }
             else
@@ -262,14 +263,25 @@ public class PaymentService : IPaymentService
             {
                 try
                 {
-                    await _emailService.SendPaymentReceiptEmailAsync(
-                        payment.Tenant.Email,
-                        payment.Tenant.FirstName,
-                        details.MpesaReceiptNumber,
-                        details.Amount.Value,
-                        payment.House!.HouseNumber,
-                        payment.House.Flat?.FlatName ?? "",
-                        DateTime.UtcNow);
+                    if (itemizedBreakdown != null && itemizedBreakdown.Count > 0)
+                        await _emailService.SendItemizedPaymentReceiptEmailAsync(
+                            payment.Tenant.Email,
+                            payment.Tenant.FirstName,
+                            details.MpesaReceiptNumber,
+                            details.Amount.Value,
+                            itemizedBreakdown,
+                            payment.House!.HouseNumber,
+                            payment.House.Flat?.FlatName ?? "",
+                            DateTime.UtcNow);
+                    else
+                        await _emailService.SendPaymentReceiptEmailAsync(
+                            payment.Tenant.Email,
+                            payment.Tenant.FirstName,
+                            details.MpesaReceiptNumber,
+                            details.Amount.Value,
+                            payment.House!.HouseNumber,
+                            payment.House.Flat?.FlatName ?? "",
+                            DateTime.UtcNow);
                 }
                 catch (Exception ex)
                 {
@@ -313,36 +325,96 @@ public class PaymentService : IPaymentService
         await _context.SaveChangesAsync();
     }
 
-    private async Task DistributeCreditAsync(Guid tenantId, Guid houseId, Guid flatId, decimal credit)
+    private async Task<List<(int month, int year, decimal applied)>> DistributePaymentAsync(
+        Guid tenantId, Guid houseId, decimal excessAmount, int tenancyCycle)
     {
-        var upcomingPayments = await _context.Payments
-            .Where(p => p.TenantId == tenantId &&
-                        p.HouseId == houseId &&
-                        p.PaymentStatus == PaymentTransactionStatus.Pending &&
-                        !p.IsInitialPayment)
+        var remaining = excessAmount;
+        var itemized = new List<(int month, int year, decimal applied)>();
+        var currentDate = DateTime.UtcNow;
+
+        var existingUnpaid = await _context.Payments
+            .Where(p => p.TenantId == tenantId && p.HouseId == houseId
+                     && p.TenancyCycle == tenancyCycle
+                     && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted)
             .OrderBy(p => p.Year).ThenBy(p => p.Month)
             .ToListAsync();
 
-        var remainingCredit = credit;
+        var house = await _context.Houses
+            .Include(h => h.Flat)
+            .FirstOrDefaultAsync(h => h.Id == houseId)
+            ?? throw new Exception($"House {houseId} not found during payment distribution");
 
-        foreach (var upcoming in upcomingPayments)
+        foreach (var row in existingUnpaid)
         {
-            if (remainingCredit <= 0) break;
-            var applied = Math.Min(remainingCredit, upcoming.Balance);
-            upcoming.CreditApplied = (upcoming.CreditApplied ?? 0) + applied;
-            upcoming.AmountPaid += applied;
-            upcoming.Balance = Math.Max(0, upcoming.Amount - upcoming.AmountPaid);
-            remainingCredit -= applied;
-
-            if (upcoming.Balance <= 0)
-                upcoming.PaymentStatus = PaymentTransactionStatus.Paid;
+            if (remaining <= 0) break;
+            var applyAmount = Math.Min(remaining, row.Balance);
+            row.AmountPaid += applyAmount;
+            row.Balance = Math.Max(0, row.Amount - row.AmountPaid);
+            if (row.Balance <= 0)
+            {
+                row.PaymentStatus = PaymentTransactionStatus.Paid;
+                house.PaymentStatus = PaymentStatus.Paid;
+                house.OccupancyStatus = OccupancyStatus.Occupied;
+                house.UpdatedAt = DateTime.UtcNow;
+            }
+            remaining -= applyAmount;
+            itemized.Add((row.Month, row.Year, applyAmount));
         }
 
-        if (remainingCredit > 0)
-            _logger.LogInformation("Remaining credit {Credit} for tenant {TenantId} will apply to future months",
-                remainingCredit, tenantId);
+        var serviceCharge = await GetServiceChargeAsync(house.RentFee);
+        var cursorMonth = currentDate.Month;
+        var cursorYear = currentDate.Year;
+        var totalIterations = 0;
+
+        while (remaining > 0)
+        {
+            if (++totalIterations > 60) break;
+            if (itemized.Count > 36) break;
+
+            var already = await _context.Payments.AnyAsync(p =>
+                p.TenantId == tenantId && p.HouseId == houseId
+                && p.TenancyCycle == tenancyCycle
+                && p.Month == cursorMonth && p.Year == cursorYear && !p.IsDeleted);
+
+            if (!already)
+            {
+                var monthlyTotal = house.RentFee + serviceCharge;
+                var applyAmount = Math.Min(remaining, monthlyTotal);
+                var newPayment = new PaymentRecord
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    HouseId = houseId,
+                    FlatId = house.FlatId,
+                    LandlordId = house.Flat?.LandlordId,
+                    TenancyCycle = tenancyCycle,
+                    Amount = monthlyTotal,
+                    AmountPaid = applyAmount,
+                    Balance = monthlyTotal - applyAmount,
+                    RentAmount = house.RentFee,
+                    ServiceChargeAmount = serviceCharge,
+                    Month = cursorMonth,
+                    Year = cursorYear,
+                    IsInitialPayment = false,
+                    PaymentType = PaymentType.Rent,
+                    PaymentStatus = applyAmount >= monthlyTotal
+                        ? PaymentTransactionStatus.Paid
+                        : PaymentTransactionStatus.PartiallyPaid,
+                    Description = $"Monthly rent - {new DateTime(cursorYear, cursorMonth, 1):MMMM yyyy}",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _context.Payments.Add(newPayment);
+                remaining -= applyAmount;
+                itemized.Add((cursorMonth, cursorYear, applyAmount));
+            }
+
+            cursorMonth++;
+            if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
+        }
 
         await _context.SaveChangesAsync();
+        return itemized;
     }
 
     public async Task<STKQueryResponse> QueryPaymentStatusAsync(string checkoutRequestId)

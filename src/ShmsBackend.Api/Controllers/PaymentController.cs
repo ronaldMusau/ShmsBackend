@@ -52,10 +52,31 @@ public class PaymentController : ControllerBase
                     return StatusCode(403, new { success = false, message = "You are not authorized to initiate payments for this flat." });
             }
 
-            var payment = await _paymentService.CreateInitialPaymentAsync(
-                dto.TenantId, dto.HouseId, dto.PhoneNumber);
+            Payment payment;
+            if (dto.Amount.HasValue)
+            {
+                var tenant = await _context.Tenants
+                    .FirstOrDefaultAsync(t => t.Id == dto.TenantId);
+                if (tenant == null)
+                    return BadRequest(new { success = false, message = "Tenant not found." });
 
-            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber);
+                var targetPayment = await _context.Payments
+                    .Where(p => p.TenantId == dto.TenantId && p.HouseId == dto.HouseId
+                             && p.TenancyCycle == tenant.TenancyCycle
+                             && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted)
+                    .OrderBy(p => p.Year).ThenBy(p => p.Month)
+                    .FirstOrDefaultAsync();
+
+                payment = targetPayment
+                    ?? await _paymentService.CreateInitialPaymentAsync(dto.TenantId, dto.HouseId, dto.PhoneNumber);
+            }
+            else
+            {
+                payment = await _paymentService.CreateInitialPaymentAsync(
+                    dto.TenantId, dto.HouseId, dto.PhoneNumber);
+            }
+
+            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber, dto.Amount);
 
             return Ok(new
             {
@@ -66,7 +87,7 @@ public class PaymentController : ControllerBase
                     paymentId = payment.Id,
                     checkoutRequestId = stkResponse.CheckoutRequestID,
                     merchantRequestId = stkResponse.MerchantRequestID,
-                    amount = payment.Amount,
+                    amount = dto.Amount ?? payment.Amount,
                     rentAmount = payment.RentAmount,
                     depositAmount = payment.DepositAmount,
                     serviceChargeAmount = payment.ServiceChargeAmount
@@ -516,6 +537,7 @@ public class InitiatePaymentDto
     public Guid TenantId { get; set; }
     public Guid HouseId { get; set; }
     public string PhoneNumber { get; set; } = string.Empty;
+    public decimal? Amount { get; set; }
 }
 
 public class RetryPaymentDto

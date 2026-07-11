@@ -51,7 +51,6 @@ public class PortalPaymentController : ControllerBase
                 p.Balance,
                 p.RentAmount,
                 p.DepositAmount,
-                p.ServiceChargeAmount,
                 p.CreditApplied,
                 Status = p.PaymentStatus.ToString(),
                 Type = p.PaymentType.ToString(),
@@ -105,7 +104,6 @@ public class PortalPaymentController : ControllerBase
                 payment.AmountPaid,
                 payment.Balance,
                 payment.RentAmount,
-                payment.ServiceChargeAmount,
                 Status = payment.PaymentStatus.ToString(),
                 payment.DueDate,
                 payment.Month,
@@ -169,13 +167,8 @@ public class PortalPaymentController : ControllerBase
             if (payment.PaymentStatus == PaymentTransactionStatus.Paid)
                 return BadRequest(new { success = false, message = "Payment already completed." });
 
-            if (dto.Amount.HasValue)
-            {
-                if (dto.Amount.Value <= 0)
-                    return BadRequest(new { success = false, message = "Amount must be positive." });
-                if (dto.Amount.Value > payment.Balance)
-                    return BadRequest(new { success = false, message = "Amount exceeds outstanding balance." });
-            }
+            if (dto.Amount.HasValue && dto.Amount.Value <= 0)
+                return BadRequest(new { success = false, message = "Amount must be positive." });
 
             var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber);
 

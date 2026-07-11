@@ -138,6 +138,13 @@ public class EmailService : IEmailService
             GetPaymentReceiptTemplate(firstName, mpesaReceiptNumber, amount, houseNumber, flatName, paidAt));
     }
 
+    public async Task<bool> SendItemizedPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt)
+    {
+        _logger.LogInformation("Sending itemized payment receipt email to: {Email}", toEmail);
+        return await SendEmail(toEmail, "Payment Receipt — Romah Estates",
+            GetItemizedPaymentReceiptTemplate(firstName, mpesaReceiptNumber, totalAmount, breakdown, houseNumber, flatName, paidAt));
+    }
+
     public async Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName)
     {
         _logger.LogInformation("Sending payment reminder email to: {Email}", toEmail);
@@ -514,6 +521,35 @@ public class EmailService : IEmailService
   <table style='width:100%;border-collapse:collapse;'>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Amount Paid</td><td style='color:{ColourTextSec};font-weight:700;font-size:14px;text-align:right;'>KES {amount:N2}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
+  </table>
+")}
+{Divider()}
+{SmallNote("Please keep this receipt for your records. If you have any questions, contact your property manager.")}";
+        return WrapInLayout("Payment Receipt — Romah Estates", inner);
+    }
+
+    private string GetItemizedPaymentReceiptTemplate(string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt)
+    {
+        var rows = string.Join("", breakdown.Select(b =>
+            $"<tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>" +
+            $"{new DateTime(b.year, b.month, 1):MMMM yyyy}</td>" +
+            $"<td style='color:{ColourTextSec};font-weight:600;font-size:14px;text-align:right;'>KES {b.applied:N2}</td></tr>"));
+
+        var inner = $@"
+{H2($"Payment Received, {firstName}!")}
+{Para($"Your payment for <strong style='color:{ColourGold};'>House {houseNumber}</strong> in {flatName} has been received and applied across the following months:")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 12px 0;'>PAYMENT BREAKDOWN</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    {rows}
+    <tr><td colspan='2'><hr style='border:none;border-top:1px solid {ColourBorderGold};margin:8px 0;'></td></tr>
+    <tr>
+      <td style='color:{ColourTextSec};font-size:14px;font-weight:700;padding:4px 0;'>Total Paid</td>
+      <td style='color:{ColourGold};font-weight:700;font-size:16px;text-align:right;'>KES {totalAmount:N2}</td>
+    </tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
   </table>
