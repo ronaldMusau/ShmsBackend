@@ -195,6 +195,8 @@ public class PortalFlatController : ControllerBase
             var landlordFlat = await _context.Flats
                 .Include(f => f.Houses)
                     .ThenInclude(h => h.Tenants)
+                .Include(f => f.Houses)
+                    .ThenInclude(h => h.Images)
                 .FirstOrDefaultAsync(f => f.Id == id && f.LandlordId == landlordId);
 
             if (landlordFlat == null)

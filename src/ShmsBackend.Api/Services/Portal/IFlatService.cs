@@ -14,4 +14,5 @@ public interface IFlatService
     Task<IEnumerable<object>> GetByLocationAsync(string county, string constituency, string ward);
     Task<object?> UpdateAsync(Guid id, UpdateFlatDto dto);
     Task<bool> DeleteAsync(Guid id);
+    Task<object?> AddHouseLinesAsync(Guid flatId, List<HouseGroupDto> houseLines);
 }

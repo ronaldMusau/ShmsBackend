@@ -31,6 +31,7 @@ public class ShmsDbContext : DbContext
     public DbSet<House> Houses { get; set; }
     public DbSet<Flat> Flats { get; set; }
     public DbSet<HouseImage> HouseImages { get; set; }
+    public DbSet<PendingRentChange> PendingRentChanges { get; set; }
 
     // Agent–Flat assignments
     public DbSet<AgentFlat> AgentFlats { get; set; }
@@ -195,6 +196,19 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.ImagePath).IsRequired().HasMaxLength(500);
             entity.HasOne(e => e.House)
                   .WithMany(h => h.Images)
+                  .HasForeignKey(e => e.HouseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── PendingRentChange Configuration ─────────────────────────────────
+        modelBuilder.Entity<PendingRentChange>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.NewRentFee).HasColumnType("decimal(10,2)");
+            entity.Property(e => e.NewDepositFee).HasColumnType("decimal(10,2)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasOne(e => e.House)
+                  .WithMany()
                   .HasForeignKey(e => e.HouseId)
                   .OnDelete(DeleteBehavior.Cascade);
         });

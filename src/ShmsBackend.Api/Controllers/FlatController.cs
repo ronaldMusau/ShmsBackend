@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -100,5 +101,26 @@ public class FlatController : ControllerBase
         var result = await _flatService.DeleteAsync(id);
         if (!result) return NotFound(new { success = false, message = "Flat not found." });
         return Ok(new { success = true, message = "Flat deleted successfully." });
+    }
+
+    [HttpPost("{flatId:guid}/houses")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> AddHouseLines(Guid flatId, [FromBody] List<HouseGroupDto> houseLines)
+    {
+        try
+        {
+            var result = await _flatService.AddHouseLinesAsync(flatId, houseLines);
+            if (result == null) return NotFound(new { success = false, message = "Flat not found." });
+            return Ok(new { success = true, data = result });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to add house lines to flat {FlatId}: {Message}", flatId, ex.Message);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
     }
 }

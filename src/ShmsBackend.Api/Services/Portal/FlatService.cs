@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Flat;
+using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
@@ -16,12 +17,14 @@ public class FlatService
 {
     private readonly ShmsDbContext _context;
     private readonly INotificationService _notificationService;
+    private readonly IEmailService _emailService;
     private readonly ILogger<FlatService> _logger;
 
-    public FlatService(ShmsDbContext context, INotificationService notificationService, ILogger<FlatService> logger)
+    public FlatService(ShmsDbContext context, INotificationService notificationService, IEmailService emailService, ILogger<FlatService> logger)
     {
         _context = context;
         _notificationService = notificationService;
+        _emailService = emailService;
         _logger = logger;
     }
 
@@ -160,6 +163,36 @@ public class FlatService
             _logger.LogError(ex, "Failed to send flat creation notification to landlord");
         }
 
+        try
+        {
+            await _emailService.SendFlatCreatedLandlordEmailAsync(
+                landlord.Email, landlord.FirstName, flat.FlatName, houses.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send flat creation email to landlord");
+        }
+
+        if (dto.AgentId.HasValue)
+        {
+            try
+            {
+                var agent = await _context.Agents.FindAsync(dto.AgentId.Value);
+                if (agent != null)
+                {
+                    await _emailService.SendFlatAssignedAgentEmailAsync(agent.Email, agent.FirstName, flat.FlatName);
+                    await _notificationService.SendToUserAsync(
+                        agent.Id.ToString(),
+                        $"A new flat '{flat.FlatName}' has been added for you to manage.",
+                        "property");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send flat assignment notification to agent");
+            }
+        }
+
         var flatResult = (await GetByIdAsync(flat.Id))!;
         return new { flat = flatResult, houseGroups };
     }
@@ -204,11 +237,21 @@ public class FlatService
         var flat = await _context.Flats
             .Include(f => f.Landlord)
             .Include(f => f.Houses)
+                .ThenInclude(h => h.Images)
             .Include(f => f.AgentFlats)
                 .ThenInclude(af => af.Agent)
             .FirstOrDefaultAsync(f => f.Id == id);
 
         if (flat == null) return null;
+
+        var houseIds = flat.Houses.Select(h => h.Id).ToList();
+        var everOccupiedSet = new HashSet<Guid>(
+            await _context.TenantHouseHistories
+                .Where(th => houseIds.Contains(th.HouseId))
+                .Select(th => th.HouseId)
+                .Distinct()
+                .ToListAsync()
+        );
 
         return new
         {
@@ -235,7 +278,9 @@ public class FlatService
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
                 PaymentStatus = h.PaymentStatus.ToString(),
-                h.CreatedAt
+                h.CreatedAt,
+                ImagePaths = h.Images.Select(hi => hi.ImagePath).ToList(),
+                EverOccupied = everOccupiedSet.Contains(h.Id)
             }),
             TotalHouses = flat.Houses.Count,
             VacantHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
@@ -295,7 +340,7 @@ public class FlatService
             await _context.AgentFlats.AddAsync(agentFlat);
             await _context.SaveChangesAsync();
         }
-        else if (dto.AgentId == null)
+        else if (dto.ClearAgent)
         {
             var existing = await _context.AgentFlats
                 .Where(af => af.FlatId == flat.Id)
@@ -360,5 +405,58 @@ public class FlatService
                 f.CreatedAt
             })
             .ToListAsync<object>();
+    }
+
+    public async Task<object?> AddHouseLinesAsync(Guid flatId, List<HouseGroupDto> houseLines)
+    {
+        var flat = await _context.Flats.FindAsync(flatId);
+        if (flat == null) return null;
+
+        var houses = new List<House>();
+        foreach (var group in houseLines)
+        {
+            if (!Enum.TryParse<HouseType>(group.HouseType, true, out var houseType))
+                throw new InvalidOperationException($"Invalid house type: {group.HouseType}");
+
+            for (int i = 1; i <= group.Count; i++)
+            {
+                houses.Add(new House
+                {
+                    Id = Guid.NewGuid(),
+                    HouseNumber = $"{group.HouseNumberPrefix}{i}",
+                    HouseType = houseType,
+                    RentFee = group.RentFee,
+                    DepositFee = group.DepositFee,
+                    OccupancyStatus = OccupancyStatus.Vacant,
+                    PaymentStatus = PaymentStatus.NotPaid,
+                    FlatId = flatId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        var numbers = houses.Select(h => h.HouseNumber).ToList();
+        if (numbers.Count != numbers.Distinct().Count())
+            throw new InvalidOperationException("Duplicate house numbers detected in the submitted house groups.");
+
+        _context.Houses.AddRange(houses);
+        await _context.SaveChangesAsync();
+
+        var houseGroups = new List<object>();
+        int index = 0;
+        foreach (var line in houseLines)
+        {
+            var groupHouseIds = houses.Skip(index).Take(line.Count).Select(h => h.Id).ToList();
+            houseGroups.Add(new
+            {
+                line.HouseType,
+                line.HouseNumberPrefix,
+                HouseIds = groupHouseIds
+            });
+            index += line.Count;
+        }
+
+        return houseGroups;
     }
 }

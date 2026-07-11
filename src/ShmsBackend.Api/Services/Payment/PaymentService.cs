@@ -356,6 +356,22 @@ public class PaymentService : IPaymentService
         var now = DateTime.UtcNow;
         _logger.LogInformation("Generating monthly payments for {Month}/{Year}", now.Month, now.Year);
 
+        var duePriceChanges = await _context.PendingRentChanges
+            .Where(pc => pc.AppliedAt == null && pc.EffectiveMonth == now.Month && pc.EffectiveYear == now.Year)
+            .ToListAsync();
+        foreach (var change in duePriceChanges)
+        {
+            var house = await _context.Houses.FindAsync(change.HouseId);
+            if (house != null)
+            {
+                house.RentFee = change.NewRentFee;
+                house.DepositFee = change.NewDepositFee;
+            }
+            change.AppliedAt = DateTime.UtcNow;
+        }
+        if (duePriceChanges.Any())
+            await _context.SaveChangesAsync();
+
         var tenants = await _context.Tenants
             .Include(t => t.House)
             .ThenInclude(h => h!.Flat)

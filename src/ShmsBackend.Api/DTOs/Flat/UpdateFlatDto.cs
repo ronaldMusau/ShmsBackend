@@ -7,4 +7,5 @@ public class UpdateFlatDto
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
     public Guid? AgentId { get; set; }
+    public bool ClearAgent { get; set; } = false;
 }

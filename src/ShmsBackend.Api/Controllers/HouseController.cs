@@ -9,6 +9,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.House;
+using ShmsBackend.Api.Models.Responses;
+using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
@@ -21,11 +24,15 @@ public class HouseController : ControllerBase
 {
     private readonly HouseService _houseService;
     private readonly ShmsDbContext _context;
+    private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
 
-    public HouseController(HouseService houseService, ShmsDbContext context)
+    public HouseController(HouseService houseService, ShmsDbContext context, IEmailService emailService, INotificationService notificationService)
     {
         _houseService = houseService;
         _context = context;
+        _emailService = emailService;
+        _notificationService = notificationService;
     }
 
     [HttpPost]
@@ -184,5 +191,58 @@ public class HouseController : ControllerBase
         _context.HouseImages.Remove(image);
         await _context.SaveChangesAsync();
         return Ok(new { success = true, message = "Image deleted." });
+    }
+
+    [HttpPost("bulk-price-change")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> BulkPriceChange([FromBody] BulkPriceChangeDto dto)
+    {
+        var results = new List<object>();
+        foreach (var houseId in dto.HouseIds)
+        {
+            var house = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == houseId);
+            if (house == null) continue;
+
+            var everOccupied = await _context.TenantHouseHistories.AnyAsync(h => h.HouseId == houseId);
+            if (!everOccupied)
+            {
+                house.RentFee = dto.NewRentFee;
+                house.DepositFee = dto.NewDepositFee;
+                results.Add(new { houseId, applied = "immediate" });
+            }
+            else
+            {
+                if (!dto.EffectiveMonth.HasValue || !dto.EffectiveYear.HasValue)
+                    return BadRequest(new { success = false, message = $"House {house.HouseNumber} has tenant history — an effective month is required." });
+
+                _context.PendingRentChanges.Add(new PendingRentChange
+                {
+                    Id = Guid.NewGuid(),
+                    HouseId = houseId,
+                    NewRentFee = dto.NewRentFee,
+                    NewDepositFee = dto.NewDepositFee,
+                    EffectiveMonth = dto.EffectiveMonth.Value,
+                    EffectiveYear = dto.EffectiveYear.Value,
+                    CreatedByUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)
+                });
+                results.Add(new { houseId, applied = "scheduled" });
+
+                var currentTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.HouseId == houseId && t.IsActive);
+                if (currentTenant != null)
+                {
+                    await _emailService.SendRentChangeNoticeAsync(currentTenant.Email, currentTenant.FirstName,
+                        house.HouseNumber, dto.NewRentFee, dto.EffectiveMonth.Value, dto.EffectiveYear.Value);
+                    await _notificationService.SendToUserAsync(currentTenant.Id.ToString(),
+                        $"Your rent for House {house.HouseNumber} will change to KES {dto.NewRentFee} starting {dto.EffectiveMonth}/{dto.EffectiveYear}.", "rent_change");
+                }
+                if (house.Flat?.LandlordId != null)
+                {
+                    await _notificationService.SendToUserAsync(house.Flat.LandlordId.ToString(),
+                        $"Rent for House {house.HouseNumber} in {house.Flat.FlatName} will change to KES {dto.NewRentFee} starting {dto.EffectiveMonth}/{dto.EffectiveYear}.", "rent_change");
+                }
+            }
+        }
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<object>.SuccessResponse(results));
     }
 }

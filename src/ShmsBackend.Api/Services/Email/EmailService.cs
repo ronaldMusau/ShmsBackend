@@ -152,6 +152,27 @@ public class EmailService : IEmailService
             GetPaymentOverdueTemplate(firstName, amountDue, daysOverdue, houseNumber, flatName));
     }
 
+    public async Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear)
+    {
+        _logger.LogInformation("Sending rent change notice to: {Email}", toEmail);
+        return await SendEmail(toEmail, "Upcoming Rent Change — Romah Estates",
+            GetRentChangeNoticeTemplate(firstName, houseNumber, newRentFee, effectiveMonth, effectiveYear));
+    }
+
+    public async Task<bool> SendFlatCreatedLandlordEmailAsync(string toEmail, string firstName, string flatName, int houseCount)
+    {
+        _logger.LogInformation("Sending flat created email to landlord: {Email}", toEmail);
+        return await SendEmail(toEmail, $"Your flat '{flatName}' has been created — Romah Estates",
+            GetFlatCreatedLandlordTemplate(firstName, flatName, houseCount));
+    }
+
+    public async Task<bool> SendFlatAssignedAgentEmailAsync(string toEmail, string firstName, string flatName)
+    {
+        _logger.LogInformation("Sending flat assigned email to agent: {Email}", toEmail);
+        return await SendEmail(toEmail, "New flat assigned to you — Romah Estates",
+            GetFlatAssignedAgentTemplate(firstName, flatName));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -532,5 +553,45 @@ public class EmailService : IEmailService
 {Divider()}
 {SmallNote("If you have already made this payment, please ignore this email or contact your property manager.")}";
         return WrapInLayout("Payment Overdue — Romah Estates", inner);
+    }
+
+    private string GetRentChangeNoticeTemplate(string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear)
+    {
+        var monthName = new DateTime(effectiveYear, effectiveMonth, 1).ToString("MMMM yyyy");
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Please be informed that the rent for <strong style='color:{ColourGold};'>House {houseNumber}</strong> will change to the amount shown below, effective <strong style='color:{ColourGold};'>{monthName}</strong>.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>NEW RENT AMOUNT</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>KES {newRentFee:N2}</p>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>Effective from: <strong style='color:{ColourTextSec};'>{monthName}</strong></p>
+")}
+{Para("If you have any questions regarding this change, please contact your property manager.")}
+{Divider()}
+{SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
+        return WrapInLayout("Upcoming Rent Change — Romah Estates", inner);
+    }
+
+    private string GetFlatCreatedLandlordTemplate(string firstName, string flatName, int houseCount)
+    {
+        var houseText = houseCount > 0 ? $" with {houseCount} house{(houseCount == 1 ? "" : "s")}" : "";
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your flat <strong style='color:{ColourGold};'>'{flatName}'</strong> has been successfully created{houseText} on the Romah Estates Smart Housing Management System.")}
+{Para("You can now view and manage your flat and its units from the landlord portal.")}
+{Divider()}
+{SmallNote("If you have any questions, please contact the Romah Estates management team.")}";
+        return WrapInLayout("Flat Created — Romah Estates", inner);
+    }
+
+    private string GetFlatAssignedAgentTemplate(string firstName, string flatName)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A new flat <strong style='color:{ColourGold};'>'{flatName}'</strong> has been assigned to you on Romah Estates for management.")}
+{Para("Please log in to your agent portal to view the flat details and begin managing it.")}
+{Divider()}
+{SmallNote("If you did not expect this assignment, please contact your administrator.")}";
+        return WrapInLayout("New Flat Assigned — Romah Estates", inner);
     }
 }
