@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities.Portal;
 using System.Security.Claims;
 
@@ -158,19 +159,29 @@ public class PortalPaymentController : ControllerBase
 
         try
         {
-            var payment = await _context.Payments
-                .FirstOrDefaultAsync(p => p.Id == dto.PaymentId && p.TenantId == userId);
-
-            if (payment == null)
-                return NotFound(new { success = false, message = "Payment not found." });
-
-            if (payment.PaymentStatus == PaymentTransactionStatus.Paid)
-                return BadRequest(new { success = false, message = "Payment already completed." });
-
             if (dto.Amount.HasValue && dto.Amount.Value <= 0)
                 return BadRequest(new { success = false, message = "Amount must be positive." });
 
-            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber);
+            Payment payment;
+
+            if (dto.PaymentId.HasValue)
+            {
+                var existing = await _context.Payments
+                    .FirstOrDefaultAsync(p => p.Id == dto.PaymentId.Value && p.TenantId == userId);
+
+                if (existing != null && existing.PaymentStatus == PaymentTransactionStatus.Paid)
+                    return BadRequest(new { success = false, message = "Payment already completed." });
+
+                payment = existing ?? await CreateAdvancePaymentRowAsync(userId)
+                    ?? throw new Exception("No house assigned to your account.");
+            }
+            else
+            {
+                payment = await CreateAdvancePaymentRowAsync(userId)
+                    ?? throw new Exception("No house assigned to your account.");
+            }
+
+            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber, dto.Amount);
 
             return Ok(new
             {
@@ -190,11 +201,75 @@ public class PortalPaymentController : ControllerBase
             return BadRequest(new { success = false, message = ex.Message });
         }
     }
+
+    private async Task<Payment?> CreateAdvancePaymentRowAsync(Guid userId)
+    {
+        var tenant = await _context.Tenants
+            .Include(t => t.House)
+                .ThenInclude(h => h!.Flat)
+            .FirstOrDefaultAsync(t => t.Id == userId);
+
+        if (tenant?.House == null || tenant.House.Flat == null)
+            return null;
+
+        var house = tenant.House;
+        var flat = house.Flat;
+        var serviceCharge = await _paymentService.GetServiceChargeAsync(house.RentFee);
+        var totalDue = house.RentFee + serviceCharge;
+        var now = DateTime.UtcNow;
+
+        // Find earliest month with no existing non-initial payment row for this tenant+cycle
+        var cursorMonth = now.Month;
+        var cursorYear = now.Year;
+        for (var i = 0; i < 12; i++)
+        {
+            var already = await _context.Payments.AnyAsync(p =>
+                p.TenantId == userId && p.HouseId == house.Id
+                && p.TenancyCycle == tenant.TenancyCycle
+                && p.Month == cursorMonth && p.Year == cursorYear
+                && !p.IsInitialPayment && !p.IsDeleted);
+
+            if (!already) break;
+
+            cursorMonth++;
+            if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
+        }
+
+        var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth));
+        var newPayment = new Payment
+        {
+            Id = Guid.NewGuid(),
+            TenantId = userId,
+            HouseId = house.Id,
+            FlatId = flat.Id,
+            LandlordId = flat.LandlordId,
+            Amount = totalDue,
+            AmountPaid = 0,
+            Balance = totalDue,
+            RentAmount = house.RentFee,
+            ServiceChargeAmount = serviceCharge,
+            PaymentStatus = PaymentTransactionStatus.Pending,
+            PaymentType = PaymentType.Rent,
+            PhoneNumber = tenant.PhoneNumber,
+            DueDate = new DateTime(cursorYear, cursorMonth, rentDueDay),
+            Month = cursorMonth,
+            Year = cursorYear,
+            TenancyCycle = tenant.TenancyCycle,
+            IsInitialPayment = false,
+            Description = $"Monthly rent - {new DateTime(cursorYear, cursorMonth, 1):MMMM yyyy}",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        await _context.Payments.AddAsync(newPayment);
+        await _context.SaveChangesAsync();
+        return newPayment;
+    }
 }
 
 public class TenantPayDto
 {
-    public Guid PaymentId { get; set; }
+    public Guid? PaymentId { get; set; }
     public string PhoneNumber { get; set; } = string.Empty;
     public decimal? Amount { get; set; }
 }

@@ -351,12 +351,7 @@ public class PaymentService : IPaymentService
             row.AmountPaid += applyAmount;
             row.Balance = Math.Max(0, row.Amount - row.AmountPaid);
             if (row.Balance <= 0)
-            {
                 row.PaymentStatus = PaymentTransactionStatus.Paid;
-                house.PaymentStatus = PaymentStatus.Paid;
-                house.OccupancyStatus = OccupancyStatus.Occupied;
-                house.UpdatedAt = DateTime.UtcNow;
-            }
             remaining -= applyAmount;
             itemized.Add((row.Month, row.Year, applyAmount));
         }
@@ -411,6 +406,24 @@ public class PaymentService : IPaymentService
 
             cursorMonth++;
             if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
+        }
+
+        var currentMonthPayment = await _context.Payments
+            .Where(p => p.TenantId == tenantId && p.HouseId == houseId && p.TenancyCycle == tenancyCycle
+                && p.Month == currentDate.Month && p.Year == currentDate.Year
+                && !p.IsInitialPayment && !p.IsDeleted)
+            .OrderByDescending(p => p.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (currentMonthPayment != null)
+        {
+            house.PaymentStatus = currentMonthPayment.Balance <= 0
+                ? PaymentStatus.Paid
+                : (currentMonthPayment.DueDate != default && currentMonthPayment.DueDate < currentDate.AddDays(-3)
+                    ? PaymentStatus.Overdue
+                    : PaymentStatus.PartiallyPaid);
+            house.OccupancyStatus = OccupancyStatus.Occupied;
+            house.UpdatedAt = currentDate;
         }
 
         await _context.SaveChangesAsync();
