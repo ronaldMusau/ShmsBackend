@@ -7,8 +7,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Agent;
 using ShmsBackend.Api.Models.Responses;
+using ShmsBackend.Api.Services.Common;
+using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Enums;
+using ShmsBackend.Data.Models.Entities.Portal;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -19,12 +23,21 @@ public class AgentController : ControllerBase
     private readonly IAgentService _agentService;
     private readonly ILogger<AgentController> _logger;
     private readonly ShmsDbContext _context;
+    private readonly IFrontendUrlService _frontendUrlService;
+    private readonly IEmailService _emailService;
 
-    public AgentController(IAgentService agentService, ILogger<AgentController> logger, ShmsDbContext context)
+    public AgentController(
+        IAgentService agentService,
+        ILogger<AgentController> logger,
+        ShmsDbContext context,
+        IFrontendUrlService frontendUrlService,
+        IEmailService emailService)
     {
         _agentService = agentService;
         _logger = logger;
         _context = context;
+        _frontendUrlService = frontendUrlService;
+        _emailService = emailService;
     }
 
     [HttpPost]
@@ -239,5 +252,51 @@ public class AgentController : ControllerBase
             return StatusCode(500, ApiResponse<object>.FailureResponse(
                 "An error occurred while assigning flats"));
         }
+    }
+
+    [HttpPost("{id:guid}/resend-verification")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    public async Task<IActionResult> ResendVerificationEmail(Guid id)
+    {
+        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Id == id);
+        if (agent == null)
+            return NotFound(new { success = false, message = "Agent not found." });
+
+        if (agent.IsEmailVerified)
+            return BadRequest(new { success = false, message = "This agent has already verified their email." });
+
+        if (string.IsNullOrEmpty(agent.TemporaryInitialPassword))
+            return BadRequest(new { success = false, message = "No temporary password on record — cannot resend. Contact support." });
+
+        agent.EmailVerificationToken = Guid.NewGuid().ToString("N");
+        agent.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
+        await _context.SaveChangesAsync();
+
+        var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(
+            agent.EmailVerificationToken, agent.Email, PortalUserType.Agent);
+
+        var emailSent = false;
+        for (var attempt = 1; attempt <= 3 && !emailSent; attempt++)
+        {
+            try
+            {
+                await _emailService.SendPortalVerifyWithPasswordEmailAsync(
+                    agent.Email, agent.FirstName, verificationLink, agent.TemporaryInitialPassword);
+                emailSent = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Resend verification email failed for agent {Email} (attempt {Attempt}/3)", agent.Email, attempt);
+                if (attempt < 3) await Task.Delay(2000);
+            }
+        }
+
+        if (!emailSent)
+            return BadRequest(new { success = false, message = "Failed to send verification email after 3 attempts." });
+
+        agent.VerificationEmailSentAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true, message = "Verification email sent." });
     }
 }

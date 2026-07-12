@@ -425,7 +425,7 @@ public class EmailService : IEmailService
 
 {Para("Click the button below to verify your email. You will be prompted to enter your temporary password and choose a new one.")}
 {GoldButton(verificationLink, "VERIFY EMAIL & SET PASSWORD")}
-{Para($"This link will expire in <strong style='color:{ColourGold};'>48 hours</strong>.")}
+{Para($"This link will expire in <strong style='color:{ColourGold};'>2 weeks</strong>.")}
 {Divider()}
 {SmallNote("If you did not expect this email, please contact your system administrator.")}";
 

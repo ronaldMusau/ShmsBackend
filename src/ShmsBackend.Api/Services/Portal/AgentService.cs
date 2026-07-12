@@ -76,11 +76,29 @@ public class AgentService : IAgentService
             var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
                 .Replace("+", "-").Replace("/", "_").Replace("=", "");
             deleted.EmailVerificationToken = token;
-            deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+            deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
+            deleted.TemporaryInitialPassword = dto.Password;
             await _unitOfWork.SaveChangesAsync();
             var link = _frontendUrlService.GetPortalEmailVerificationUrl(token, deleted.Email, PortalUserType.Agent);
-            try { await _emailService.SendPortalVerifyWithPasswordEmailAsync(deleted.Email, deleted.FirstName, link, dto.Password); }
-            catch { }
+            var deletedEmailSent = false;
+            for (var attempt = 1; attempt <= 3 && !deletedEmailSent; attempt++)
+            {
+                try
+                {
+                    await _emailService.SendPortalVerifyWithPasswordEmailAsync(deleted.Email, deleted.FirstName, link, dto.Password);
+                    deletedEmailSent = true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send verification email to agent {Email} (attempt {Attempt}/3)", deleted.Email, attempt);
+                    if (attempt < 3) await Task.Delay(2000);
+                }
+            }
+            if (deletedEmailSent)
+            {
+                deleted.VerificationEmailSentAt = DateTime.UtcNow;
+                await _unitOfWork.SaveChangesAsync();
+            }
             return deleted;
         }
 
@@ -109,17 +127,29 @@ public class AgentService : IAgentService
 
         var verificationToken = Guid.NewGuid().ToString("N");
         agent.EmailVerificationToken = verificationToken;
-        agent.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+        agent.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
+        agent.TemporaryInitialPassword = dto.Password;
         await _unitOfWork.SaveChangesAsync();
 
         var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, agent.Email, PortalUserType.Agent);
-        try
+        var agentEmailSent = false;
+        for (var attempt = 1; attempt <= 3 && !agentEmailSent; attempt++)
         {
-            await _emailService.SendPortalVerifyWithPasswordEmailAsync(agent.Email, agent.FirstName, verificationLink, dto.Password);
+            try
+            {
+                await _emailService.SendPortalVerifyWithPasswordEmailAsync(agent.Email, agent.FirstName, verificationLink, dto.Password);
+                agentEmailSent = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send verification email to agent {Email} (attempt {Attempt}/3)", agent.Email, attempt);
+                if (attempt < 3) await Task.Delay(2000);
+            }
         }
-        catch (Exception ex)
+        if (agentEmailSent)
         {
-            _logger.LogError(ex, "Failed to send verification email to agent {Email}", agent.Email);
+            agent.VerificationEmailSentAt = DateTime.UtcNow;
+            await _unitOfWork.SaveChangesAsync();
         }
 
         if (dto.FlatIds != null && dto.FlatIds.Any())

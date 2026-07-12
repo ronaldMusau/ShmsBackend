@@ -387,6 +387,14 @@ public class PortalAuthService : IPortalAuthService
             {
                 tenantUser.TemporaryInitialPassword = null;
             }
+            else if (user is Landlord landlordUser)
+            {
+                landlordUser.TemporaryInitialPassword = null;
+            }
+            else if (user is Agent agentUser)
+            {
+                agentUser.TemporaryInitialPassword = null;
+            }
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 

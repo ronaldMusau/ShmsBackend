@@ -66,11 +66,29 @@ public class LandlordService : ILandlordService
             var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
                 .Replace("+", "-").Replace("/", "_").Replace("=", "");
             deleted.EmailVerificationToken = token;
-            deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+            deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
+            deleted.TemporaryInitialPassword = dto.Password;
             await _unitOfWork.SaveChangesAsync();
             var link = _frontendUrlService.GetPortalEmailVerificationUrl(token, deleted.Email, PortalUserType.Landlord);
-            try { await _emailService.SendPortalVerifyWithPasswordEmailAsync(deleted.Email, deleted.FirstName, link, dto.Password); }
-            catch { }
+            var deletedEmailSent = false;
+            for (var attempt = 1; attempt <= 3 && !deletedEmailSent; attempt++)
+            {
+                try
+                {
+                    await _emailService.SendPortalVerifyWithPasswordEmailAsync(deleted.Email, deleted.FirstName, link, dto.Password);
+                    deletedEmailSent = true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send verification email to landlord {Email} (attempt {Attempt}/3)", deleted.Email, attempt);
+                    if (attempt < 3) await Task.Delay(2000);
+                }
+            }
+            if (deletedEmailSent)
+            {
+                deleted.VerificationEmailSentAt = DateTime.UtcNow;
+                await _unitOfWork.SaveChangesAsync();
+            }
             return deleted;
         }
 
@@ -95,17 +113,29 @@ public class LandlordService : ILandlordService
 
         var verificationToken = Guid.NewGuid().ToString("N");
         landlord.EmailVerificationToken = verificationToken;
-        landlord.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+        landlord.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
+        landlord.TemporaryInitialPassword = dto.Password;
         await _unitOfWork.SaveChangesAsync();
 
         var verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(verificationToken, landlord.Email, PortalUserType.Landlord);
-        try
+        var landlordEmailSent = false;
+        for (var attempt = 1; attempt <= 3 && !landlordEmailSent; attempt++)
         {
-            await _emailService.SendPortalVerifyWithPasswordEmailAsync(landlord.Email, landlord.FirstName, verificationLink, dto.Password);
+            try
+            {
+                await _emailService.SendPortalVerifyWithPasswordEmailAsync(landlord.Email, landlord.FirstName, verificationLink, dto.Password);
+                landlordEmailSent = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send verification email to landlord {Email} (attempt {Attempt}/3)", landlord.Email, attempt);
+                if (attempt < 3) await Task.Delay(2000);
+            }
         }
-        catch (Exception ex)
+        if (landlordEmailSent)
         {
-            _logger.LogError(ex, "Failed to send verification email to landlord {Email}", landlord.Email);
+            landlord.VerificationEmailSentAt = DateTime.UtcNow;
+            await _unitOfWork.SaveChangesAsync();
         }
 
         try
