@@ -52,6 +52,12 @@ public class PaymentController : ControllerBase
                     return StatusCode(403, new { success = false, message = "You are not authorized to initiate payments for this flat." });
             }
 
+            var existingProcessing = await _context.Payments
+                .Where(p => p.TenantId == dto.TenantId && p.PaymentStatus == PaymentTransactionStatus.Processing && !p.IsDeleted)
+                .FirstOrDefaultAsync();
+            if (existingProcessing != null)
+                return BadRequest(new { success = false, message = "A payment is already being processed for this tenant. Please wait a moment or check their phone." });
+
             Payment payment;
             if (dto.Amount.HasValue)
             {
@@ -76,7 +82,17 @@ public class PaymentController : ControllerBase
                     dto.TenantId, dto.HouseId, dto.PhoneNumber);
             }
 
-            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber, dto.Amount);
+            decimal? actualChargeAmount = null;
+            if (dto.Amount.HasValue)
+            {
+                var serviceCharge = payment.ServiceChargeAmount ?? 0m;
+                actualChargeAmount = dto.Amount.Value + serviceCharge;
+                payment.RequestedDistributionAmount = dto.Amount.Value;
+                payment.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
+
+            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber, actualChargeAmount);
 
             return Ok(new
             {
@@ -87,7 +103,7 @@ public class PaymentController : ControllerBase
                     paymentId = payment.Id,
                     checkoutRequestId = stkResponse.CheckoutRequestID,
                     merchantRequestId = stkResponse.MerchantRequestID,
-                    amount = dto.Amount ?? payment.Amount,
+                    amount = actualChargeAmount ?? payment.Amount,
                     rentAmount = payment.RentAmount,
                     depositAmount = payment.DepositAmount,
                     serviceChargeAmount = payment.ServiceChargeAmount
@@ -391,6 +407,11 @@ public class PaymentController : ControllerBase
 
         var total = await query.CountAsync();
 
+        var totalCollected = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid).SumAsync(p => p.AmountPaid);
+        var totalPending = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid).SumAsync(p => p.Balance);
+        var totalOverdue = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue).SumAsync(p => p.Balance);
+        var totalServiceCharge = await query.SumAsync(p => p.ServiceChargeAmount ?? 0);
+
         var pagedPayments = await query
             .OrderByDescending(p => p.CreatedAt)
             .Skip((page - 1) * pageSize)
@@ -448,7 +469,8 @@ public class PaymentController : ControllerBase
             total,
             page,
             pageSize,
-            totalPages = (int)Math.Ceiling((double)total / pageSize)
+            totalPages = (int)Math.Ceiling((double)total / pageSize),
+            totals = new { totalCollected, totalPending, totalOverdue, totalServiceCharge }
         });
     }
 

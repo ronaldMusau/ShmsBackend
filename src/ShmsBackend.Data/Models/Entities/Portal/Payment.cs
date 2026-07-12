@@ -52,6 +52,7 @@ public class Payment : ISoftDelete
     public decimal? DepositAmount { get; set; }
     public decimal? ServiceChargeAmount { get; set; }
     public decimal? CreditApplied { get; set; }
+    public decimal? RequestedDistributionAmount { get; set; }
 
     // Payment details
     public PaymentTransactionStatus PaymentStatus { get; set; } = PaymentTransactionStatus.Pending;

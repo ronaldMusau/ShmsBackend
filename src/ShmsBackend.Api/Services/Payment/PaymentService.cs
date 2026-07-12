@@ -244,7 +244,8 @@ public class PaymentService : IPaymentService
                     }
                 }
 
-                var overpayment = payment.AmountPaid - payment.Amount;
+                var distributionBase = payment.RequestedDistributionAmount ?? payment.AmountPaid;
+                var overpayment = distributionBase - payment.Amount;
                 if (overpayment > 0)
                 {
                     itemizedBreakdown = await DistributePaymentAsync(payment.TenantId, payment.HouseId,

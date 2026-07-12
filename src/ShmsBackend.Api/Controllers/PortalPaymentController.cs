@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Enums;
@@ -162,6 +163,12 @@ public class PortalPaymentController : ControllerBase
             if (dto.Amount.HasValue && dto.Amount.Value <= 0)
                 return BadRequest(new { success = false, message = "Amount must be positive." });
 
+            var existingProcessing = await _context.Payments
+                .Where(p => p.TenantId == userId && p.PaymentStatus == PaymentTransactionStatus.Processing && !p.IsDeleted)
+                .FirstOrDefaultAsync();
+            if (existingProcessing != null)
+                return BadRequest(new { success = false, message = "A payment is already being processed. Please wait a moment or check your phone." });
+
             Payment payment;
 
             if (dto.PaymentId.HasValue)
@@ -181,7 +188,17 @@ public class PortalPaymentController : ControllerBase
                     ?? throw new Exception("No house assigned to your account.");
             }
 
-            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber, dto.Amount);
+            decimal? actualChargeAmount = null;
+            if (dto.Amount.HasValue)
+            {
+                var serviceCharge = payment.ServiceChargeAmount ?? 0m;
+                actualChargeAmount = dto.Amount.Value + serviceCharge;
+                payment.RequestedDistributionAmount = dto.Amount.Value;
+                payment.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
+
+            var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber, actualChargeAmount);
 
             return Ok(new
             {
@@ -191,7 +208,7 @@ public class PortalPaymentController : ControllerBase
                 {
                     paymentId = payment.Id,
                     checkoutRequestId = stkResponse.CheckoutRequestID,
-                    amount = dto.Amount ?? payment.Balance
+                    amount = actualChargeAmount ?? payment.Balance
                 }
             });
         }
@@ -200,6 +217,97 @@ public class PortalPaymentController : ControllerBase
             _logger.LogError(ex, "Failed to initiate payment");
             return BadRequest(new { success = false, message = ex.Message });
         }
+    }
+
+    // GET /api/portalpayments/landlord/my-payments — landlord views payments across their properties
+    [HttpGet("landlord/my-payments")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordPayments(
+        [FromQuery] Guid? flatId,
+        [FromQuery] string? status,
+        [FromQuery] string? stage,
+        [FromQuery] int? month,
+        [FromQuery] int? year,
+        [FromQuery] DateTime? fromDate,
+        [FromQuery] DateTime? toDate,
+        [FromQuery] decimal? minAmount,
+        [FromQuery] decimal? maxAmount)
+    {
+        var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(landlordIdStr, out var landlordId))
+            return Unauthorized();
+
+        var query = _context.Payments
+            .Include(p => p.House)
+                .ThenInclude(h => h!.Flat)
+            .Include(p => p.Tenant)
+            .Where(p => p.LandlordId == landlordId && !p.IsDeleted)
+            .AsQueryable();
+
+        if (flatId.HasValue)
+            query = query.Where(p => p.FlatId == flatId.Value);
+
+        if (!string.IsNullOrEmpty(status) && Enum.TryParse<PaymentTransactionStatus>(status, out var ps))
+            query = query.Where(p => p.PaymentStatus == ps);
+
+        if (!string.IsNullOrEmpty(stage))
+        {
+            if (stage.Equals("Initial", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(p => p.IsInitialPayment);
+            else if (stage.Equals("Monthly", StringComparison.OrdinalIgnoreCase))
+                query = query.Where(p => !p.IsInitialPayment);
+        }
+
+        if (month.HasValue)
+            query = query.Where(p => p.Month == month.Value);
+
+        if (year.HasValue)
+            query = query.Where(p => p.Year == year.Value);
+
+        if (fromDate.HasValue)
+            query = query.Where(p => p.PaidAt >= fromDate.Value);
+
+        if (toDate.HasValue)
+            query = query.Where(p => p.PaidAt <= toDate.Value);
+
+        if (minAmount.HasValue)
+            query = query.Where(p => p.Amount >= minAmount.Value);
+
+        if (maxAmount.HasValue)
+            query = query.Where(p => p.Amount <= maxAmount.Value);
+
+        var allPayments = await query.OrderByDescending(p => p.CreatedAt).ToListAsync();
+
+        var totalCollected = allPayments
+            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid)
+            .Sum(p => p.AmountPaid);
+        var totalOverdue = allPayments
+            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue)
+            .Sum(p => p.Balance);
+        var totalPaid = allPayments
+            .Count(p => p.PaymentStatus == PaymentTransactionStatus.Paid);
+
+        return Ok(ApiResponse<object>.SuccessResponse(new
+        {
+            totals = new { totalCollected, totalOverdue, totalPaid },
+            data = allPayments.Select(p => new
+            {
+                p.Id,
+                p.Month,
+                p.Year,
+                p.IsInitialPayment,
+                p.Amount,
+                p.AmountPaid,
+                p.Balance,
+                Status = p.PaymentStatus.ToString(),
+                p.MpesaReceiptNumber,
+                p.PaidAt,
+                p.FlatId,
+                HouseNumber = p.House?.HouseNumber,
+                FlatName = p.House?.Flat?.FlatName,
+                TenantName = p.Tenant != null ? $"{p.Tenant.FirstName} {p.Tenant.LastName}" : null
+            })
+        }));
     }
 
     private async Task<Payment?> CreateAdvancePaymentRowAsync(Guid userId)
