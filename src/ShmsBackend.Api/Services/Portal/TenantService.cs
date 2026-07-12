@@ -79,7 +79,7 @@ public class TenantService : ITenantService
             var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
                 .Replace("+", "-").Replace("/", "_").Replace("=", "");
             deleted.EmailVerificationToken = token;
-            deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+            deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
             await _unitOfWork.SaveChangesAsync();
 
             if (dto.HouseId.HasValue)
@@ -121,7 +121,7 @@ public class TenantService : ITenantService
 
         var verificationToken = Guid.NewGuid().ToString("N");
         tenant.EmailVerificationToken = verificationToken;
-        tenant.EmailVerificationTokenExpiry = DateTime.UtcNow.AddHours(48);
+        tenant.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
         await _unitOfWork.SaveChangesAsync();
 
         try

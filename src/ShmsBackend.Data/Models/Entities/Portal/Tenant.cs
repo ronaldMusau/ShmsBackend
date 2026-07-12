@@ -14,6 +14,7 @@ public class Tenant : PortalUser
     public bool HasCompletedInitialPayment { get; set; } = false;
     public int TenancyCycle { get; set; } = 1;
     public string? TemporaryInitialPassword { get; set; }
+    public DateTime? VerificationEmailSentAt { get; set; }
 
     public Tenant()
     {

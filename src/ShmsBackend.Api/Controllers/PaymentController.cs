@@ -300,12 +300,36 @@ public class PaymentController : ControllerBase
 
     // GET /api/payments/house/{houseId}/summary — payment summary for house modal
     [HttpGet("house/{houseId:guid}/summary")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Landlord")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Landlord,Agent")]
     public async Task<IActionResult> GetHousePaymentSummary(Guid houseId)
     {
-        var payments = await _context.Payments
+        if (User.IsInRole("Agent"))
+        {
+            var agentIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(agentIdStr, out var agentId))
+                return Unauthorized();
+
+            var house = await _context.Houses.FindAsync(houseId);
+            if (house == null)
+                return BadRequest(new { success = false, message = "House not found." });
+
+            var authorized = await _context.AgentFlats
+                .AnyAsync(af => af.AgentId == agentId && af.FlatId == house.FlatId);
+            if (!authorized)
+                return StatusCode(403, new { success = false, message = "You are not authorized to view this house's payment summary." });
+        }
+        var currentTenant = await _context.Tenants
+            .FirstOrDefaultAsync(t => t.HouseId == houseId);
+
+        var paymentsQuery = _context.Payments
             .Include(p => p.Tenant)
-            .Where(p => p.HouseId == houseId)
+            .Where(p => p.HouseId == houseId);
+
+        paymentsQuery = currentTenant != null
+            ? paymentsQuery.Where(p => p.TenantId == currentTenant.Id && p.TenancyCycle == currentTenant.TenancyCycle)
+            : paymentsQuery.Where(p => false);
+
+        var payments = await paymentsQuery
             .OrderByDescending(p => p.Year).ThenByDescending(p => p.Month)
             .Select(p => new {
                 p.Id,
@@ -329,6 +353,11 @@ public class PaymentController : ControllerBase
 
         var summary = new
         {
+            TenantId = currentTenant?.Id,
+            TenantName = currentTenant != null
+                ? $"{currentTenant.FirstName} {currentTenant.LastName}"
+                : null,
+            TenantPhoneNumber = currentTenant?.PhoneNumber,
             TotalCollected = payments.Where(p => p.Status == "Paid")
                 .Sum(p => p.AmountPaid),
             TotalPending = payments.Where(p => p.Status == "Pending" || p.Status == "PartiallyPaid")

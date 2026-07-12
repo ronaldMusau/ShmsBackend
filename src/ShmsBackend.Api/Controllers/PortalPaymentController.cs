@@ -374,7 +374,7 @@ public class PortalPaymentController : ControllerBase
                 p.TenantId == userId && p.HouseId == house.Id
                 && p.TenancyCycle == tenant.TenancyCycle
                 && p.Month == cursorMonth && p.Year == cursorYear
-                && !p.IsInitialPayment && !p.IsDeleted);
+                && !p.IsDeleted);
 
             if (!already) break;
 

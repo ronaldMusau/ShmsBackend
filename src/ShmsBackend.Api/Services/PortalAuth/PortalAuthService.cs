@@ -383,6 +383,10 @@ public class PortalAuthService : IPortalAuthService
             user.IsEmailVerified = true;
             user.EmailVerificationToken = null;
             user.EmailVerificationTokenExpiry = null;
+            if (user is Tenant tenantUser)
+            {
+                tenantUser.TemporaryInitialPassword = null;
+            }
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 

@@ -193,20 +193,27 @@ public class PaymentService : IPaymentService
         if (details.IsSuccess && details.Amount.HasValue)
         {
             List<(int month, int year, decimal applied)>? itemizedBreakdown = null;
-            payment.AmountPaid += details.Amount.Value - (payment.ServiceChargeAmount ?? 0m);
+            var netCollected = details.Amount.Value - (payment.ServiceChargeAmount ?? 0m);
+            var priorAmountPaid = payment.AmountPaid;
+            var capacity = Math.Max(0, payment.Amount - priorAmountPaid);
+            var appliedToThisRow = Math.Min(netCollected, capacity);
+
+            payment.AmountPaid = priorAmountPaid + appliedToThisRow;
             payment.Balance = Math.Max(0, payment.Amount - payment.AmountPaid);
             payment.MpesaReceiptNumber = details.MpesaReceiptNumber;
             payment.PaidAt = DateTime.UtcNow;
 
-            var netAppliedToThisRow = details.Amount.Value - (payment.ServiceChargeAmount ?? 0m);
-            _context.PaymentApplications.Add(new PaymentApplication
+            if (appliedToThisRow > 0)
             {
-                PaymentId = payment.Id,
-                MpesaReceiptNumber = details.MpesaReceiptNumber ?? string.Empty,
-                AmountApplied = netAppliedToThisRow,
-                CheckoutRequestId = checkoutRequestId,
-                AppliedAt = DateTime.UtcNow
-            });
+                _context.PaymentApplications.Add(new PaymentApplication
+                {
+                    PaymentId = payment.Id,
+                    MpesaReceiptNumber = details.MpesaReceiptNumber ?? string.Empty,
+                    AmountApplied = appliedToThisRow,
+                    CheckoutRequestId = checkoutRequestId,
+                    AppliedAt = DateTime.UtcNow
+                });
+            }
 
             if (payment.Balance <= 0)
             {
@@ -227,7 +234,9 @@ public class PaymentService : IPaymentService
                         tenant.HasCompletedInitialPayment = true;
                         tenant.TenantStatus = TenantStatus.Pending;
 
-                        // Capture and clear the temp password atomically before sending email
+                        // TemporaryInitialPassword is intentionally NOT cleared here — it stays intact until
+                        // the tenant actually verifies (see PortalAuthService.VerifyEmailAsync), so a resend
+                        // remains possible indefinitely if this send fails or the tenant never clicks the link.
                         string? verificationLink = null;
                         var tempPassword = tenant.TemporaryInitialPassword;
                         if (!string.IsNullOrEmpty(tenant.EmailVerificationToken) &&
@@ -236,26 +245,36 @@ public class PaymentService : IPaymentService
                             verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(
                                 tenant.EmailVerificationToken, tenant.Email, PortalUserType.Tenant);
                         }
-                        tenant.TemporaryInitialPassword = null;
-                        await _context.SaveChangesAsync();
 
                         if (verificationLink != null)
                         {
-                            try
+                            var emailSent = false;
+                            for (var attempt = 1; attempt <= 3 && !emailSent; attempt++)
                             {
-                                await _emailService.SendPortalVerifyWithPasswordEmailAsync(
-                                    tenant.Email, tenant.FirstName, verificationLink, tempPassword!);
+                                try
+                                {
+                                    await _emailService.SendPortalVerifyWithPasswordEmailAsync(
+                                        tenant.Email, tenant.FirstName, verificationLink, tempPassword!);
+                                    emailSent = true;
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Failed to send verification email to tenant {Email} (attempt {Attempt}/3)", tenant.Email, attempt);
+                                    if (attempt < 3) await Task.Delay(2000);
+                                }
                             }
-                            catch (Exception ex)
+
+                            if (emailSent)
                             {
-                                _logger.LogError(ex, "Failed to send verification email to tenant {Email}", tenant.Email);
+                                tenant.VerificationEmailSentAt = DateTime.UtcNow;
                             }
                         }
+                        await _context.SaveChangesAsync();
                     }
                 }
 
                 var distributionBase = payment.RequestedDistributionAmount ?? payment.AmountPaid;
-                var overpayment = distributionBase - payment.Amount;
+                var overpayment = distributionBase - capacity;
                 if (overpayment > 0)
                 {
                     itemizedBreakdown = await DistributePaymentAsync(payment.TenantId, payment.HouseId,
@@ -538,8 +557,7 @@ public class PaymentService : IPaymentService
                 var exists = await _context.Payments.AnyAsync(p =>
                     p.TenantId == tenant.Id &&
                     p.Month == now.Month &&
-                    p.Year == now.Year &&
-                    !p.IsInitialPayment);
+                    p.Year == now.Year);
 
                 if (exists) continue;
 
