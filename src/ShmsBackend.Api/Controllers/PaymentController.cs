@@ -538,6 +538,25 @@ public class PaymentController : ControllerBase
         return Ok(new { success = true, message = "Deleted." });
     }
 
+    [HttpGet("{id}/applications")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetPaymentApplications(Guid id)
+    {
+        var applications = await _context.PaymentApplications
+            .Where(a => a.PaymentId == id)
+            .OrderBy(a => a.AppliedAt)
+            .Select(a => new
+            {
+                a.Id,
+                a.MpesaReceiptNumber,
+                a.AmountApplied,
+                a.AppliedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, data = applications });
+    }
+
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "SuperAdmin")]
     public async Task<IActionResult> DeletePayment(Guid id)

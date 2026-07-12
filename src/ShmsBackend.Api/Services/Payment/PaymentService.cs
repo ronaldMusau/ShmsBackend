@@ -88,7 +88,7 @@ public class PaymentService : IPaymentService
             return existingInitial;
 
         var serviceCharge = await GetServiceChargeAsync(house.RentFee);
-        var totalAmount = house.DepositFee + house.RentFee + serviceCharge;
+        var totalAmount = house.DepositFee + house.RentFee;
         var now = DateTime.UtcNow;
         var dueDate = new DateTime(now.Year, now.Month,
             Math.Min(flat.RentDueDay, DateTime.DaysInMonth(now.Year, now.Month)));
@@ -115,7 +115,7 @@ public class PaymentService : IPaymentService
             Year = now.Year,
             IsInitialPayment = true,
             TenancyCycle = tenant.TenancyCycle,
-            Description = "Initial payment: Deposit + Rent + Service Charge",
+            Description = "Initial payment: Deposit + Rent",
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -149,7 +149,7 @@ public class PaymentService : IPaymentService
         var stkResponse = await _mpesaService.InitiateSTKPushAsync(new STKPushRequest
         {
             PhoneNumber = phoneNumber,
-            Amount = overrideAmount ?? (payment.Balance > 0 ? payment.Balance : payment.Amount),
+            Amount = overrideAmount ?? ((payment.Balance > 0 ? payment.Balance : payment.Amount) + (payment.ServiceChargeAmount ?? 0m)),
             AccountReference = reference,
             TransactionDesc = description,
             TenantId = payment.TenantId.ToString(),
@@ -193,10 +193,20 @@ public class PaymentService : IPaymentService
         if (details.IsSuccess && details.Amount.HasValue)
         {
             List<(int month, int year, decimal applied)>? itemizedBreakdown = null;
-            payment.AmountPaid += details.Amount.Value;
+            payment.AmountPaid += details.Amount.Value - (payment.ServiceChargeAmount ?? 0m);
             payment.Balance = Math.Max(0, payment.Amount - payment.AmountPaid);
             payment.MpesaReceiptNumber = details.MpesaReceiptNumber;
             payment.PaidAt = DateTime.UtcNow;
+
+            var netAppliedToThisRow = details.Amount.Value - (payment.ServiceChargeAmount ?? 0m);
+            _context.PaymentApplications.Add(new PaymentApplication
+            {
+                PaymentId = payment.Id,
+                MpesaReceiptNumber = details.MpesaReceiptNumber ?? string.Empty,
+                AmountApplied = netAppliedToThisRow,
+                CheckoutRequestId = checkoutRequestId,
+                AppliedAt = DateTime.UtcNow
+            });
 
             if (payment.Balance <= 0)
             {
@@ -249,7 +259,7 @@ public class PaymentService : IPaymentService
                 if (overpayment > 0)
                 {
                     itemizedBreakdown = await DistributePaymentAsync(payment.TenantId, payment.HouseId,
-                        overpayment, payment.TenancyCycle);
+                        overpayment, payment.TenancyCycle, details.MpesaReceiptNumber, checkoutRequestId);
                 }
             }
             else
@@ -327,7 +337,8 @@ public class PaymentService : IPaymentService
     }
 
     private async Task<List<(int month, int year, decimal applied)>> DistributePaymentAsync(
-        Guid tenantId, Guid houseId, decimal excessAmount, int tenancyCycle)
+        Guid tenantId, Guid houseId, decimal excessAmount, int tenancyCycle,
+        string? receiptNumber = null, string? checkoutRequestId = null)
     {
         var remaining = excessAmount;
         var itemized = new List<(int month, int year, decimal applied)>();
@@ -353,6 +364,19 @@ public class PaymentService : IPaymentService
             row.Balance = Math.Max(0, row.Amount - row.AmountPaid);
             if (row.Balance <= 0)
                 row.PaymentStatus = PaymentTransactionStatus.Paid;
+            if (!string.IsNullOrEmpty(receiptNumber))
+            {
+                row.MpesaReceiptNumber = receiptNumber;
+                row.PaidAt = DateTime.UtcNow;
+                _context.PaymentApplications.Add(new PaymentApplication
+                {
+                    PaymentId = row.Id,
+                    MpesaReceiptNumber = receiptNumber,
+                    AmountApplied = applyAmount,
+                    CheckoutRequestId = checkoutRequestId,
+                    AppliedAt = DateTime.UtcNow
+                });
+            }
             remaining -= applyAmount;
             itemized.Add((row.Month, row.Year, applyAmount));
         }
@@ -374,7 +398,7 @@ public class PaymentService : IPaymentService
 
             if (!already)
             {
-                var monthlyTotal = house.RentFee + serviceCharge;
+                var monthlyTotal = house.RentFee;
                 var applyAmount = Math.Min(remaining, monthlyTotal);
                 var newPayment = new PaymentRecord
                 {
@@ -401,6 +425,19 @@ public class PaymentService : IPaymentService
                     UpdatedAt = DateTime.UtcNow
                 };
                 _context.Payments.Add(newPayment);
+                if (!string.IsNullOrEmpty(receiptNumber))
+                {
+                    newPayment.MpesaReceiptNumber = receiptNumber;
+                    newPayment.PaidAt = DateTime.UtcNow;
+                    _context.PaymentApplications.Add(new PaymentApplication
+                    {
+                        PaymentId = newPayment.Id,
+                        MpesaReceiptNumber = receiptNumber,
+                        AmountApplied = applyAmount,
+                        CheckoutRequestId = checkoutRequestId,
+                        AppliedAt = DateTime.UtcNow
+                    });
+                }
                 remaining -= applyAmount;
                 itemized.Add((cursorMonth, cursorYear, applyAmount));
             }
@@ -512,7 +549,7 @@ public class PaymentService : IPaymentService
                 var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(now.Year, now.Month));
                 var dueDate = new DateTime(now.Year, now.Month, rentDueDay);
 
-                var totalDue = house.RentFee + serviceCharge;
+                var totalDue = house.RentFee;
                 var creditApplied = 0m;
 
                 var existingCredit = await GetRemainingCreditAsync(tenant.Id);

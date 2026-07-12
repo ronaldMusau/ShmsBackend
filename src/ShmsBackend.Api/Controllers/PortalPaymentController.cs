@@ -299,6 +299,8 @@ public class PortalPaymentController : ControllerBase
                 p.Amount,
                 p.AmountPaid,
                 p.Balance,
+                p.RentAmount,
+                p.DepositAmount,
                 Status = p.PaymentStatus.ToString(),
                 p.MpesaReceiptNumber,
                 p.PaidAt,
@@ -308,6 +310,43 @@ public class PortalPaymentController : ControllerBase
                 TenantName = p.Tenant != null ? $"{p.Tenant.FirstName} {p.Tenant.LastName}" : null
             })
         }));
+    }
+
+    [HttpGet("{id}/applications")]
+    public async Task<IActionResult> GetMyPaymentApplications(Guid id)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized();
+
+        var payment = await _context.Payments
+            .Include(p => p.House)
+                .ThenInclude(h => h!.Flat)
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (payment == null)
+            return NotFound(new { success = false, message = "Payment not found." });
+
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        var authorized = (role == "Tenant" && payment.TenantId == userId)
+            || (role == "Landlord" && payment.House?.Flat?.LandlordId == userId);
+
+        if (!authorized)
+            return StatusCode(403, new { success = false, message = "You do not have permission to view this payment." });
+
+        var applications = await _context.PaymentApplications
+            .Where(a => a.PaymentId == id)
+            .OrderBy(a => a.AppliedAt)
+            .Select(a => new
+            {
+                a.Id,
+                a.MpesaReceiptNumber,
+                a.AmountApplied,
+                a.AppliedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, data = applications });
     }
 
     private async Task<Payment?> CreateAdvancePaymentRowAsync(Guid userId)
@@ -323,7 +362,7 @@ public class PortalPaymentController : ControllerBase
         var house = tenant.House;
         var flat = house.Flat;
         var serviceCharge = await _paymentService.GetServiceChargeAsync(house.RentFee);
-        var totalDue = house.RentFee + serviceCharge;
+        var totalDue = house.RentFee;
         var now = DateTime.UtcNow;
 
         // Find earliest month with no existing non-initial payment row for this tenant+cycle

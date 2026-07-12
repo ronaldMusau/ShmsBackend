@@ -43,6 +43,7 @@ public class Payment : ISoftDelete
     public Guid FlatId { get; set; }
     public Flat? Flat { get; set; }
     public Guid? LandlordId { get; set; }
+    public ICollection<PaymentApplication> Applications { get; set; } = new List<PaymentApplication>();
 
     // Amount tracking
     public decimal Amount { get; set; }
