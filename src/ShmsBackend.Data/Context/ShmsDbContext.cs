@@ -199,17 +199,20 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.House)
                   .WithMany(h => h.Images)
                   .HasForeignKey(e => e.HouseId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .IsRequired(false);
         });
 
         modelBuilder.Entity<PaymentApplication>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.MpesaReceiptNumber).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.AmountApplied).HasColumnType("decimal(18,2)");
             entity.HasOne(e => e.Payment)
                   .WithMany(p => p.Applications)
                   .HasForeignKey(e => e.PaymentId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .IsRequired(false);
         });
 
         modelBuilder.Entity<PaymentCheckoutAttempt>(entity =>
@@ -219,7 +222,8 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.Payment)
                   .WithMany()
                   .HasForeignKey(e => e.PaymentId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .IsRequired(false);
         });
 
         // ── PendingRentChange Configuration ─────────────────────────────────
@@ -232,7 +236,8 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.House)
                   .WithMany()
                   .HasForeignKey(e => e.HouseId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .IsRequired(false);
         });
 
         // ── AgentFlat Configuration ──────────────────────────────────────────
@@ -242,7 +247,8 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.Agent)
                   .WithMany(a => a.AgentFlats)
                   .HasForeignKey(e => e.AgentId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .IsRequired(false);
             entity.HasOne(e => e.Flat)
                   .WithMany(f => f.AgentFlats)
                   .HasForeignKey(e => e.FlatId)
@@ -272,7 +278,8 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.House)
                 .WithMany()
                 .HasForeignKey(e => e.HouseId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired(false);
             entity.Property(e => e.TenantFirstName).HasMaxLength(100);
             entity.Property(e => e.TenantLastName).HasMaxLength(100);
             entity.Property(e => e.TenantEmail).HasMaxLength(255);
@@ -292,6 +299,7 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.DepositAmount).HasColumnType("decimal(18,2)");
             entity.Property(e => e.ServiceChargeAmount).HasColumnType("decimal(18,2)");
             entity.Property(e => e.CreditApplied).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.RequestedDistributionAmount).HasColumnType("decimal(18,2)");
             entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.House).WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.Flat).WithMany().HasForeignKey(e => e.FlatId).OnDelete(DeleteBehavior.Restrict);
