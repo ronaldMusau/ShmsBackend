@@ -328,7 +328,7 @@ public class PaymentService : IPaymentService
                 if (overpayment > 0)
                 {
                     itemizedBreakdown = await DistributePaymentAsync(payment.TenantId, payment.HouseId,
-                        overpayment, payment.TenancyCycle, details.MpesaReceiptNumber, checkoutRequestId);
+                        overpayment, payment.TenancyCycle, details.MpesaReceiptNumber, checkoutRequestId, payment.Id);
                 }
             }
             else
@@ -412,7 +412,7 @@ public class PaymentService : IPaymentService
 
     private async Task<List<(int month, int year, decimal applied)>> DistributePaymentAsync(
         Guid tenantId, Guid houseId, decimal excessAmount, int tenancyCycle,
-        string? receiptNumber = null, string? checkoutRequestId = null)
+        string? receiptNumber = null, string? checkoutRequestId = null, Guid? excludePaymentId = null)
     {
         var remaining = excessAmount;
         var itemized = new List<(int month, int year, decimal applied)>();
@@ -421,7 +421,8 @@ public class PaymentService : IPaymentService
         var existingUnpaid = await _context.Payments
             .Where(p => p.TenantId == tenantId && p.HouseId == houseId
                      && p.TenancyCycle == tenancyCycle
-                     && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted)
+                     && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted
+                     && p.Id != excludePaymentId)
             .OrderBy(p => p.Year).ThenBy(p => p.Month)
             .ToListAsync();
 
@@ -438,7 +439,7 @@ public class PaymentService : IPaymentService
             row.Balance = Math.Max(0, row.Amount - row.AmountPaid);
             if (row.Balance <= 0)
                 row.PaymentStatus = PaymentTransactionStatus.Paid;
-            if (!string.IsNullOrEmpty(receiptNumber))
+            if (!string.IsNullOrEmpty(receiptNumber) && applyAmount > 0)
             {
                 row.MpesaReceiptNumber = receiptNumber;
                 row.PaidAt = DateTime.UtcNow;
@@ -499,7 +500,7 @@ public class PaymentService : IPaymentService
                     UpdatedAt = DateTime.UtcNow
                 };
                 _context.Payments.Add(newPayment);
-                if (!string.IsNullOrEmpty(receiptNumber))
+                if (!string.IsNullOrEmpty(receiptNumber) && applyAmount > 0)
                 {
                     newPayment.MpesaReceiptNumber = receiptNumber;
                     newPayment.PaidAt = DateTime.UtcNow;
