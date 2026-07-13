@@ -45,6 +45,7 @@ public class ShmsDbContext : DbContext
     // Payments
     public DbSet<Payment> Payments { get; set; }
     public DbSet<PaymentApplication> PaymentApplications { get; set; }
+    public DbSet<PaymentCheckoutAttempt> PaymentCheckoutAttempts { get; set; }
     public DbSet<ServiceChargeSetting> ServiceChargeSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -207,6 +208,16 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.MpesaReceiptNumber).IsRequired().HasMaxLength(100);
             entity.HasOne(e => e.Payment)
                   .WithMany(p => p.Applications)
+                  .HasForeignKey(e => e.PaymentId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PaymentCheckoutAttempt>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CheckoutRequestId).IsRequired().HasMaxLength(100);
+            entity.HasOne(e => e.Payment)
+                  .WithMany()
                   .HasForeignKey(e => e.PaymentId)
                   .OnDelete(DeleteBehavior.Cascade);
         });

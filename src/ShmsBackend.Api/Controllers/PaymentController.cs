@@ -117,6 +117,27 @@ public class PaymentController : ControllerBase
         }
     }
 
+    // POST /api/payments/mark-timeout/{checkoutRequestId} — explicitly mark a stuck/timed-out payment as failed
+    [HttpPost("mark-timeout/{checkoutRequestId}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Agent")]
+    public async Task<IActionResult> MarkPaymentTimeout(string checkoutRequestId)
+    {
+        var payment = await _context.Payments.FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId);
+        if (payment == null)
+            return NotFound(new { success = false, message = "Payment not found." });
+
+        if (payment.PaymentStatus == PaymentTransactionStatus.Processing)
+        {
+            payment.PaymentStatus = PaymentTransactionStatus.Failed;
+            payment.MpesaResultDesc = "No response from user.";
+            payment.RetryCount++;
+            payment.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true, status = payment.PaymentStatus.ToString() });
+    }
+
     // POST /api/payments/retry/{paymentId} — retry a failed/cancelled payment
     [HttpPost("retry/{paymentId:guid}")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary")]

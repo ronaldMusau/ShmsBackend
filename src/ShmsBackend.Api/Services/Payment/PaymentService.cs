@@ -160,6 +160,13 @@ public class PaymentService : IPaymentService
         payment.CheckoutRequestId = stkResponse.CheckoutRequestID;
         payment.MerchantRequestId = stkResponse.MerchantRequestID;
         payment.UpdatedAt = DateTime.UtcNow;
+
+        _context.PaymentCheckoutAttempts.Add(new PaymentCheckoutAttempt
+        {
+            PaymentId = payment.Id,
+            CheckoutRequestId = stkResponse.CheckoutRequestID
+        });
+
         await _context.SaveChangesAsync();
 
         return stkResponse;
@@ -173,16 +180,59 @@ public class PaymentService : IPaymentService
         _logger.LogInformation("Processing M-Pesa callback for {CheckoutRequestId}, ResultCode: {ResultCode}",
             checkoutRequestId, details.ResultCode);
 
-        var payment = await _context.Payments
-            .Include(p => p.Tenant)
-            .Include(p => p.House)
-            .ThenInclude(h => h!.Flat)
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId);
+        var checkoutAttempt = await _context.PaymentCheckoutAttempts
+            .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+
+        if (checkoutAttempt != null && checkoutAttempt.ProcessedAt != null)
+        {
+            _logger.LogWarning("Duplicate callback received for already-processed CheckoutRequestId: {CheckoutRequestId} — ignoring.", checkoutRequestId);
+            return;
+        }
+
+        var payment = checkoutAttempt != null
+            ? await _context.Payments
+                .Include(p => p.Tenant)
+                .Include(p => p.House)
+                .ThenInclude(h => h!.Flat)
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(p => p.Id == checkoutAttempt.PaymentId)
+            : await _context.Payments
+                .Include(p => p.Tenant)
+                .Include(p => p.House)
+                .ThenInclude(h => h!.Flat)
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId);
 
         if (payment == null)
         {
             _logger.LogWarning("Payment not found for CheckoutRequestId: {CheckoutRequestId}", checkoutRequestId);
+            return;
+        }
+
+        var isSupersededAttempt = payment.CheckoutRequestId != checkoutRequestId;
+        if (isSupersededAttempt && details.IsSuccess && payment.PaymentStatus == PaymentTransactionStatus.Paid)
+        {
+            _logger.LogWarning(
+                "Late SUCCESS callback for superseded CheckoutRequestId {CheckoutRequestId} on Payment {PaymentId} — payment already completed via a newer attempt. Tenant may have been charged twice on M-Pesa. Flagging for manual reconciliation, no money applied.",
+                checkoutRequestId, payment.Id);
+
+            try
+            {
+                await _notificationService.SendToRolesAsync(
+                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Accountant },
+                    $"Possible duplicate M-Pesa charge detected for {payment.Tenant?.FirstName} {payment.Tenant?.LastName} (House {payment.House?.HouseNumber}) — a late successful payment callback arrived for an already-completed payment. Please verify with the tenant and reconcile manually. CheckoutRequestId: {checkoutRequestId}",
+                    "payment");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send duplicate-charge reconciliation notification");
+            }
+
+            if (checkoutAttempt != null)
+            {
+                checkoutAttempt.ProcessedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+            }
             return;
         }
 
@@ -350,6 +400,11 @@ public class PaymentService : IPaymentService
         {
             payment.PaymentStatus = PaymentTransactionStatus.Failed;
             payment.RetryCount++;
+        }
+
+        if (checkoutAttempt != null)
+        {
+            checkoutAttempt.ProcessedAt = DateTime.UtcNow;
         }
 
         await _context.SaveChangesAsync();

@@ -219,6 +219,33 @@ public class PortalPaymentController : ControllerBase
         }
     }
 
+    // POST /api/portalpayments/mark-timeout/{checkoutRequestId} — tenant marks their own stuck payment as failed
+    [HttpPost("mark-timeout/{checkoutRequestId}")]
+    public async Task<IActionResult> MarkPaymentTimeout(string checkoutRequestId)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized();
+
+        var payment = await _context.Payments.FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId);
+        if (payment == null)
+            return NotFound(new { success = false, message = "Payment not found." });
+
+        if (payment.TenantId != userId)
+            return StatusCode(403, new { success = false, message = "You do not have permission to update this payment." });
+
+        if (payment.PaymentStatus == PaymentTransactionStatus.Processing)
+        {
+            payment.PaymentStatus = PaymentTransactionStatus.Failed;
+            payment.MpesaResultDesc = "No response from user.";
+            payment.RetryCount++;
+            payment.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true, status = payment.PaymentStatus.ToString() });
+    }
+
     // GET /api/portalpayments/landlord/my-payments — landlord views payments across their properties
     [HttpGet("landlord/my-payments")]
     [Authorize(Roles = "Landlord")]
