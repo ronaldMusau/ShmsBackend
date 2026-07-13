@@ -188,7 +188,8 @@ public class ShmsDbContext : DbContext
                   .HasDefaultValue(OccupancyStatus.Vacant);
             entity.Property(e => e.PaymentStatus)
                   .HasConversion<string>()
-                  .HasDefaultValue(PaymentStatus.NotPaid);
+                  .HasDefaultValue(PaymentStatus.NotPaid)
+                  .HasSentinel(PaymentStatus.NotPaid);
         });
 
         // ── HouseImage Configuration ─────────────────────────────────────────
@@ -252,7 +253,8 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.Flat)
                   .WithMany(f => f.AgentFlats)
                   .HasForeignKey(e => e.FlatId)
-                  .OnDelete(DeleteBehavior.Cascade);
+                  .OnDelete(DeleteBehavior.Cascade)
+                  .IsRequired(false);
             entity.Property(e => e.AssignedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.ToTable("AgentFlats");
         });
