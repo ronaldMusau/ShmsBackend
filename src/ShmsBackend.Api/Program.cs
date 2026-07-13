@@ -151,7 +151,9 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:4200", "http://localhost:4201")
+        policy.WithOrigins(
+                "http://localhost:4200", "http://localhost:4201",
+                "https://0z6t539l-4200.inc1.devtunnels.ms", "https://0z6t539l-4201.inc1.devtunnels.ms")
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials();
@@ -218,7 +220,10 @@ app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<LoggingMiddleware>();
 app.UseMiddleware<TokenValidationMiddleware>();
 
-app.UseHttpsRedirection();
+// TEMPORARILY DISABLED for VS Code Dev Tunnel testing — port 5001 (HTTP) is being used
+// because port 7001 (HTTPS) breaks TLS/SNI through the tunnel. This redirect was sending
+// tunnel traffic back to the broken HTTPS port, causing CORS preflights to fail silently.
+// RESTORE THIS before production: app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseCors("AllowAll");
 app.UseAuthentication();
