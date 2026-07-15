@@ -46,6 +46,7 @@ public class PortalFlatController : ControllerBase
                 .Include(af => af.Flat)
                     .ThenInclude(f => f.Houses)
                 .Where(af => af.AgentId == agentId)
+                .AsSplitQuery()
                 .Select(af => new
                 {
                     af.Flat.Id,
@@ -83,6 +84,7 @@ public class PortalFlatController : ControllerBase
             var landlordFlats = await _context.Flats
                 .Include(f => f.Houses)
                 .Where(f => f.LandlordId == landlordId)
+                .AsSplitQuery()
                 .Select(f => new
                 {
                     f.Id,
@@ -113,6 +115,8 @@ public class PortalFlatController : ControllerBase
 
         var allFlats = await _context.Flats
             .Include(f => f.Houses)
+                .ThenInclude(h => h.Images)
+            .AsSplitQuery()
             .ToListAsync();
 
         return Ok(new { success = true, data = allFlats.Select(flat => new

@@ -6,7 +6,12 @@
       "Bash(Stop-Process -Name \"ShmsBackend.Api\" -Force -ErrorAction SilentlyContinue)",
       "Bash(Select-String \"error CS|warning CS|Build succeeded|Error\\\\\\(s\\\\\\)\")",
       "Bash(sqlcmd *)",
-      "Bash(Select-String \"error CS\")"
+      "Bash(Select-String \"error CS\")",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Select-String *)",
+      "PowerShell($dll = \"$env:USERPROFILE\\\\.nuget\\\\packages\\\\microsoft.entityframeworkcore\\\\8.0.8\\\\lib\\\\net8.0\\\\Microsoft.EntityFrameworkCore.dll\"; Add-Type -Path $dll; [Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId] | Get-Member -Static -MemberType Property | Where-Object { $_.Name -match \"Required|QueryFilter|Incorrect\" } | Select-Object Name)",
+      "PowerShell(Get-Content *)"
     ]
   }
 }

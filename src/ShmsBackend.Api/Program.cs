@@ -30,7 +30,10 @@ builder.Services.Configure<AppSettings>(builder.Configuration.GetSection("AppSet
 
 // Add DbContext
 builder.Services.AddDbContext<ShmsDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.PossibleIncorrectRequiredNavigationWithQueryFilterInteractionWarning));
+});
 
 // Add Redis for Distributed Caching
 builder.Services.AddStackExchangeRedisCache(options =>
@@ -218,16 +221,17 @@ if (app.Environment.IsDevelopment())
 // Custom Middleware
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<LoggingMiddleware>();
-app.UseMiddleware<TokenValidationMiddleware>();
 
 // TEMPORARILY DISABLED for VS Code Dev Tunnel testing — port 5001 (HTTP) is being used
 // because port 7001 (HTTPS) breaks TLS/SNI through the tunnel. This redirect was sending
 // tunnel traffic back to the broken HTTPS port, causing CORS preflights to fail silently.
 // RESTORE THIS before production: app.UseHttpsRedirection();
 app.UseStaticFiles();
+app.UseRouting();
 app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<TokenValidationMiddleware>();
 
 app.MapControllers();
 

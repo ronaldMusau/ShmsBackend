@@ -200,8 +200,7 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.House)
                   .WithMany(h => h.Images)
                   .HasForeignKey(e => e.HouseId)
-                  .OnDelete(DeleteBehavior.Cascade)
-                  .IsRequired(false);
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PaymentApplication>(entity =>
@@ -212,8 +211,7 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.Payment)
                   .WithMany(p => p.Applications)
                   .HasForeignKey(e => e.PaymentId)
-                  .OnDelete(DeleteBehavior.Cascade)
-                  .IsRequired(false);
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<PaymentCheckoutAttempt>(entity =>
@@ -223,8 +221,7 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.Payment)
                   .WithMany()
                   .HasForeignKey(e => e.PaymentId)
-                  .OnDelete(DeleteBehavior.Cascade)
-                  .IsRequired(false);
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── PendingRentChange Configuration ─────────────────────────────────
@@ -237,8 +234,7 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.House)
                   .WithMany()
                   .HasForeignKey(e => e.HouseId)
-                  .OnDelete(DeleteBehavior.Cascade)
-                  .IsRequired(false);
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── AgentFlat Configuration ──────────────────────────────────────────
@@ -248,13 +244,11 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.Agent)
                   .WithMany(a => a.AgentFlats)
                   .HasForeignKey(e => e.AgentId)
-                  .OnDelete(DeleteBehavior.Cascade)
-                  .IsRequired(false);
+                  .OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(e => e.Flat)
                   .WithMany(f => f.AgentFlats)
                   .HasForeignKey(e => e.FlatId)
-                  .OnDelete(DeleteBehavior.Cascade)
-                  .IsRequired(false);
+                  .OnDelete(DeleteBehavior.Cascade);
             entity.Property(e => e.AssignedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.ToTable("AgentFlats");
         });
@@ -280,8 +274,7 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.House)
                 .WithMany()
                 .HasForeignKey(e => e.HouseId)
-                .OnDelete(DeleteBehavior.Cascade)
-                .IsRequired(false);
+                .OnDelete(DeleteBehavior.Cascade);
             entity.Property(e => e.TenantFirstName).HasMaxLength(100);
             entity.Property(e => e.TenantLastName).HasMaxLength(100);
             entity.Property(e => e.TenantEmail).HasMaxLength(255);
