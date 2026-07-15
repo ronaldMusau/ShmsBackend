@@ -42,9 +42,15 @@ public class PortalPaymentController : ControllerBase
 
         var allPayments = await _paymentService.GetTenantPaymentHistoryAsync(userId);
         var payments = allPayments.Where(p => p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted).ToList();
+
+        var totalCollected = payments.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid).Sum(p => p.AmountPaid);
+        var totalOverdue = payments.Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue).Sum(p => p.Balance);
+        var totalPaidCount = payments.Count(p => p.PaymentStatus == PaymentTransactionStatus.Paid);
+
         return Ok(new
         {
             success = true,
+            totals = new { totalCollected, totalOverdue, totalPaidCount },
             data = payments.Select(p => new
             {
                 p.Id,
@@ -308,15 +314,18 @@ public class PortalPaymentController : ControllerBase
         var totalCollected = allPayments
             .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid)
             .Sum(p => p.AmountPaid);
+        var totalPending = allPayments
+            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid)
+            .Sum(p => p.Balance);
         var totalOverdue = allPayments
             .Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue)
             .Sum(p => p.Balance);
-        var totalPaid = allPayments
+        var totalPaidCount = allPayments
             .Count(p => p.PaymentStatus == PaymentTransactionStatus.Paid);
 
         return Ok(ApiResponse<object>.SuccessResponse(new
         {
-            totals = new { totalCollected, totalOverdue, totalPaid },
+            totals = new { totalCollected, totalPending, totalOverdue, totalPaidCount },
             data = allPayments.Select(p => new
             {
                 p.Id,
