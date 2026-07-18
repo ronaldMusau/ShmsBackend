@@ -128,6 +128,42 @@ public class PortalTenantController : ControllerBase
         return Ok(new { success = true, data = tenants });
     }
 
+    [HttpGet("landlord/my-tenants")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordTenants()
+    {
+        var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(landlordIdStr, out var landlordId))
+            return Unauthorized();
+
+        var tenants = await _context.Tenants
+            .Include(t => t.House)
+                .ThenInclude(h => h!.Flat)
+            .Where(t => t.HouseId != null &&
+                   t.House != null &&
+                   t.House.Flat != null &&
+                   t.House.Flat.LandlordId == landlordId)
+            .Select(t => new
+            {
+                t.Id,
+                t.FirstName,
+                t.LastName,
+                t.Email,
+                t.PhoneNumber,
+                t.IsActive,
+                TenantStatus = t.TenantStatus.ToString(),
+                t.HasCompletedInitialPayment,
+                t.CreatedAt,
+                HouseNumber = t.House!.HouseNumber,
+                HouseId = t.House!.Id,
+                FlatName = t.House!.Flat != null ? t.House!.Flat.FlatName : "(Flat Deleted)",
+                FlatId = t.House!.Flat != null ? t.House!.Flat.Id : (Guid?)null
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, data = tenants });
+    }
+
     [HttpGet("{id:guid}")]
     [Authorize(Roles = "Agent")]
     public async Task<IActionResult> GetTenantById(Guid id)
