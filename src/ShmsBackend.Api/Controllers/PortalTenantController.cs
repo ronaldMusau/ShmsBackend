@@ -62,6 +62,7 @@ public class PortalTenantController : ControllerBase
             h.DepositFee,
             PaymentStatus = h.PaymentStatus.ToString(),
             h.FlatId,
+            LandlordId = h.Flat != null ? h.Flat.LandlordId : (Guid?)null,
             Flat = h.Flat == null ? null : new
             {
                 h.Flat.Id,
