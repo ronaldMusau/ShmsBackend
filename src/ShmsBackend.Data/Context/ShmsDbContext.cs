@@ -48,6 +48,15 @@ public class ShmsDbContext : DbContext
     public DbSet<PaymentCheckoutAttempt> PaymentCheckoutAttempts { get; set; }
     public DbSet<ServiceChargeSetting> ServiceChargeSettings { get; set; }
 
+    // Complaints
+    public DbSet<ComplaintType> ComplaintTypes { get; set; }
+    public DbSet<ApprovalSequenceStep> ApprovalSequenceSteps { get; set; }
+    public DbSet<Complaint> Complaints { get; set; }
+    public DbSet<ComplaintAttachment> ComplaintAttachments { get; set; }
+    public DbSet<ComplaintApprovalAction> ComplaintApprovalActions { get; set; }
+    public DbSet<ComplaintStatusHistoryEntry> ComplaintStatusHistory { get; set; }
+    public DbSet<Deduction> Deductions { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -309,6 +318,65 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.ServiceCharge).HasColumnType("decimal(18,2)");
         });
 
+        // ── ComplaintType Configuration ──────────────────────────────────────
+        modelBuilder.Entity<ComplaintType>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+        });
+
+        // ── ApprovalSequenceStep Configuration ──────────────────────────────
+        modelBuilder.Entity<ApprovalSequenceStep>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Module).IsRequired().HasMaxLength(100);
+        });
+
+        // ── Complaint Configuration ──────────────────────────────────────────
+        modelBuilder.Entity<Complaint>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TicketNumber).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.BillableAmount).HasColumnType("decimal(18,2)");
+        });
+
+        // ── ComplaintAttachment Configuration ───────────────────────────────
+        modelBuilder.Entity<ComplaintAttachment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Complaint)
+                  .WithMany(c => c.Attachments)
+                  .HasForeignKey(e => e.ComplaintId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ComplaintApprovalAction Configuration ───────────────────────────
+        modelBuilder.Entity<ComplaintApprovalAction>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Complaint)
+                  .WithMany(c => c.ApprovalActions)
+                  .HasForeignKey(e => e.ComplaintId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ComplaintStatusHistoryEntry Configuration ────────────────────────
+        modelBuilder.Entity<ComplaintStatusHistoryEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Complaint)
+                  .WithMany(c => c.StatusHistory)
+                  .HasForeignKey(e => e.ComplaintId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── Deduction Configuration ──────────────────────────────────────────
+        modelBuilder.Entity<Deduction>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+        });
+
         // ── Global soft-delete filters ───────────────────────────────────────
         modelBuilder.Entity<PortalUser>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Admin>().HasQueryFilter(e => !e.IsDeleted);
@@ -317,5 +385,7 @@ public class ShmsDbContext : DbContext
         modelBuilder.Entity<Notification>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ServiceChargeSetting>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Payment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<ComplaintType>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Complaint>().HasQueryFilter(e => !e.IsDeleted);
     }
 }
