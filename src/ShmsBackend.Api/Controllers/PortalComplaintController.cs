@@ -94,6 +94,7 @@ public class PortalComplaintController : ControllerBase
             {
                 id = c.Id,
                 ticketNumber = c.TicketNumber,
+                complaintTypeId = c.ComplaintTypeId,
                 complaintTypeName = c.ComplaintType.Name,
                 description = c.Description,
                 status = c.Status,
@@ -119,6 +120,7 @@ public class PortalComplaintController : ControllerBase
             from c in _context.Complaints
             join h in _context.Houses on c.HouseId equals h.Id
             join f in _context.Flats on h.FlatId equals f.Id
+            join t in _context.Tenants on c.TenantId equals t.Id
             where c.LandlordId == landlordId
             orderby c.CreatedAt descending
             select new
@@ -132,7 +134,9 @@ public class PortalComplaintController : ControllerBase
                 billableTarget = c.BillableTarget,
                 createdAt = c.CreatedAt,
                 houseNumber = h.HouseNumber,
-                flatName = f.FlatName
+                flatName = f.FlatName,
+                tenantFirstName = t.FirstName,
+                tenantLastName = t.LastName
             }
         ).ToListAsync();
 
