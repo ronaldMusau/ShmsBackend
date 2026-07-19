@@ -338,6 +338,10 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.TicketNumber).IsRequired().HasMaxLength(30);
             entity.Property(e => e.BillableAmount).HasColumnType("decimal(18,2)");
+            entity.HasOne(c => c.ComplaintType)
+                  .WithMany()
+                  .HasForeignKey(c => c.ComplaintTypeId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ── ComplaintAttachment Configuration ───────────────────────────────

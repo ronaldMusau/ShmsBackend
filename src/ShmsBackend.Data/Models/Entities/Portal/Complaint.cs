@@ -11,6 +11,7 @@ public class Complaint : ISoftDelete
     public Guid FlatId { get; set; }
     public Guid LandlordId { get; set; }
     public Guid ComplaintTypeId { get; set; }
+    public ComplaintType ComplaintType { get; set; } = null!;
     public string Description { get; set; } = string.Empty;
     public string Status { get; set; } = "Open";
     public bool? IsBillable { get; set; }

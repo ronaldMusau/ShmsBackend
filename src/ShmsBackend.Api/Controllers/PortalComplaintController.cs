@@ -9,7 +9,6 @@ namespace ShmsBackend.Api.Controllers;
 
 [ApiController]
 [Route("api/portalcomplaint")]
-[Authorize(Roles = "Tenant")]
 public class PortalComplaintController : ControllerBase
 {
     private readonly ShmsDbContext _context;
@@ -27,6 +26,7 @@ public class PortalComplaintController : ControllerBase
 
     // POST /api/portalcomplaint
     [HttpPost]
+    [Authorize(Roles = "Tenant")]
     public async Task<IActionResult> Create([FromBody] CreateComplaintDto dto)
     {
         var tenantId = GetUserId();
@@ -75,6 +75,68 @@ public class PortalComplaintController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { success = true, data = new { complaint.Id, complaint.TicketNumber, complaint.Status } });
+    }
+
+    // GET /api/portalcomplaint/my-complaints
+    [HttpGet("my-complaints")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetMyComplaints()
+    {
+        var tenantId = GetUserId();
+        if (tenantId == Guid.Empty)
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var complaints = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Where(c => c.TenantId == tenantId)
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new
+            {
+                id = c.Id,
+                ticketNumber = c.TicketNumber,
+                complaintTypeName = c.ComplaintType.Name,
+                description = c.Description,
+                status = c.Status,
+                isBillable = c.IsBillable,
+                billableTarget = c.BillableTarget,
+                createdAt = c.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, complaints });
+    }
+
+    // GET /api/portalcomplaint/landlord/my-complaints
+    [HttpGet("landlord/my-complaints")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordComplaints()
+    {
+        var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(landlordIdStr, out var landlordId))
+            return Unauthorized();
+
+        var complaints = await (
+            from c in _context.Complaints
+            join h in _context.Houses on c.HouseId equals h.Id
+            join f in _context.Flats on h.FlatId equals f.Id
+            where c.LandlordId == landlordId
+            orderby c.CreatedAt descending
+            select new
+            {
+                id = c.Id,
+                ticketNumber = c.TicketNumber,
+                complaintTypeName = c.ComplaintType.Name,
+                description = c.Description,
+                status = c.Status,
+                isBillable = c.IsBillable,
+                billableTarget = c.BillableTarget,
+                createdAt = c.CreatedAt,
+                houseNumber = h.HouseNumber,
+                flatName = f.FlatName
+            }
+        ).ToListAsync();
+
+        return Ok(new { success = true, complaints });
     }
 }
 
