@@ -7,8 +7,20 @@ public static class TicketNumberHelper
 {
     public static async Task<string> GenerateAsync(ShmsDbContext context, string houseNumber)
     {
-        var sequenceValue = await context.Database
-            .SqlQuery<int>($"SELECT NEXT VALUE FOR ComplaintTicketSequence AS Value").SingleAsync();
+        var connection = context.Database.GetDbConnection();
+        bool wasClosed = connection.State != System.Data.ConnectionState.Open;
+        if (wasClosed)
+        {
+            await connection.OpenAsync();
+        }
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT NEXT VALUE FOR ComplaintTicketSequence";
+        var result = await command.ExecuteScalarAsync();
+        long sequenceValue = Convert.ToInt64(result);
+        if (wasClosed)
+        {
+            await connection.CloseAsync();
+        }
 
         var datePart = DateTime.UtcNow.ToString("yyyyMMdd");
         var sequencePart = sequenceValue.ToString("D7");
