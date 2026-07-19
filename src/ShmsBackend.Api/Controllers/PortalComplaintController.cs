@@ -127,6 +127,7 @@ public class PortalComplaintController : ControllerBase
             {
                 id = c.Id,
                 ticketNumber = c.TicketNumber,
+                complaintTypeId = c.ComplaintTypeId,
                 complaintTypeName = c.ComplaintType.Name,
                 description = c.Description,
                 status = c.Status,
@@ -134,6 +135,7 @@ public class PortalComplaintController : ControllerBase
                 billableTarget = c.BillableTarget,
                 createdAt = c.CreatedAt,
                 houseNumber = h.HouseNumber,
+                flatId = f.Id,
                 flatName = f.FlatName,
                 tenantFirstName = t.FirstName,
                 tenantLastName = t.LastName
