@@ -180,6 +180,20 @@ public class EmailService : IEmailService
             GetFlatAssignedAgentTemplate(firstName, flatName));
     }
 
+    public async Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName)
+    {
+        _logger.LogInformation("Sending complaint confirmation email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Complaint Received — {ticketNumber}",
+            GetComplaintConfirmationTemplate(firstName, ticketNumber, complaintTypeName));
+    }
+
+    public async Task SendComplaintManagementAlertEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName)
+    {
+        _logger.LogInformation("Sending complaint management alert email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"New Complaint Raised — {ticketNumber}",
+            GetComplaintManagementAlertTemplate(firstName, ticketNumber, complaintTypeName, tenantName, houseNumber, flatName));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -629,5 +643,46 @@ public class EmailService : IEmailService
 {Divider()}
 {SmallNote("If you did not expect this assignment, please contact your administrator.")}";
         return WrapInLayout("New Flat Assigned — Romah Estates", inner);
+    }
+
+    private string GetComplaintConfirmationTemplate(string firstName, string ticketNumber, string complaintTypeName)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your complaint has been received and logged on the <strong style='color:{ColourGold};'>Romah Estates</strong> system.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+  <p style='margin:12px 0 0;color:{ColourTextMuted};font-size:13px;'>Type: <strong style='color:{ColourTextSec};'>{complaintTypeName}</strong></p>
+")}
+{Para("Our team will review your complaint and update you on its progress. Please keep your ticket number for reference.")}
+{Divider()}
+{SmallNote("If you did not raise this complaint, please contact the Romah Estates management team immediately.")}";
+
+        return WrapInLayout($"Complaint Received — {ticketNumber}", inner);
+    }
+
+    private string GetComplaintManagementAlertTemplate(string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para("A new complaint has been raised and requires your attention.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 12px 0;'>COMPLAINT DETAILS</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Ticket Number</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{ticketNumber}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Type</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{complaintTypeName}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Raised By</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{tenantName}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>House</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{houseNumber}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Flat</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{flatName}</td></tr>
+  </table>
+")}
+{Para("Please log in to the management portal to review this complaint.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"New Complaint — {ticketNumber}", inner);
     }
 }

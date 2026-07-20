@@ -4,7 +4,8 @@
 		<TargetFramework>net8.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-	</PropertyGroup>
+	  <UserSecretsId>7e2d0f55-adcf-4723-9918-8e0b37c3e30b</UserSecretsId>
+  </PropertyGroup>
 
 	<ItemGroup>
 		<!-- Core packages - use existing working versions -->

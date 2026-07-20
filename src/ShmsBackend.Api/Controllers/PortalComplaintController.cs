@@ -2,7 +2,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using System.IO;
 using System.Security.Claims;
@@ -14,10 +18,20 @@ namespace ShmsBackend.Api.Controllers;
 public class PortalComplaintController : ControllerBase
 {
     private readonly ShmsDbContext _context;
+    private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<PortalComplaintController> _logger;
 
-    public PortalComplaintController(ShmsDbContext context)
+    public PortalComplaintController(
+        ShmsDbContext context,
+        IEmailService emailService,
+        INotificationService notificationService,
+        ILogger<PortalComplaintController> logger)
     {
         _context = context;
+        _emailService = emailService;
+        _notificationService = notificationService;
+        _logger = logger;
     }
 
     private Guid GetUserId()
@@ -43,8 +57,8 @@ public class PortalComplaintController : ControllerBase
         if (tenant?.House == null || tenant.House.Flat == null)
             return BadRequest(new { success = false, message = "You do not currently have an assigned house." });
 
-        var typeExists = await _context.ComplaintTypes.AnyAsync(t => t.Id == dto.ComplaintTypeId && t.IsActive);
-        if (!typeExists)
+        var complaintType = await _context.ComplaintTypes.FirstOrDefaultAsync(t => t.Id == dto.ComplaintTypeId && t.IsActive);
+        if (complaintType == null)
             return BadRequest(new { success = false, message = "Invalid complaint type." });
 
         var ticketNumber = await TicketNumberHelper.GenerateAsync(_context, tenant.House.HouseNumber);
@@ -76,6 +90,53 @@ public class PortalComplaintController : ControllerBase
 
         await _context.SaveChangesAsync();
 
+        // Tenant confirmation
+        try
+        {
+            await _emailService.SendComplaintConfirmationEmailAsync(tenant.Email, tenant.FirstName, complaint.TicketNumber, complaintType.Name);
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to send tenant complaint confirmation email"); }
+
+        try
+        {
+            await _notificationService.SendToUserAsync(tenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been received.", "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to send tenant complaint notification"); }
+
+        // Management alert
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+
+            foreach (var mgr in managementUsers)
+            {
+                try
+                {
+                    await _emailService.SendComplaintManagementAlertEmailAsync(
+                        mgr.Email, mgr.FirstName, complaint.TicketNumber, complaintType.Name,
+                        $"{tenant.FirstName} {tenant.LastName}", tenant.House.HouseNumber, tenant.House.Flat.FlatName);
+                }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send management complaint email to {Email}", mgr.Email); }
+            }
+
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                $"New complaint {complaint.TicketNumber} raised by {tenant.FirstName} {tenant.LastName}.",
+                "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to process management complaint alerts"); }
+
+        // Landlord notification
+        try
+        {
+            await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"A complaint has been raised at {tenant.House.HouseNumber} - {tenant.House.Flat.FlatName}.", "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord complaint notification"); }
+
         return Ok(new { success = true, data = new { complaint.Id, complaint.TicketNumber, complaint.Status } });
     }
 
@@ -90,6 +151,7 @@ public class PortalComplaintController : ControllerBase
 
         var complaints = await _context.Complaints
             .Include(c => c.ComplaintType)
+            .Include(c => c.Attachments)
             .Where(c => c.TenantId == tenantId)
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new
@@ -102,7 +164,14 @@ public class PortalComplaintController : ControllerBase
                 status = c.Status,
                 isBillable = c.IsBillable,
                 billableTarget = c.BillableTarget,
-                createdAt = c.CreatedAt
+                createdAt = c.CreatedAt,
+                attachments = c.Attachments.Select(a => new
+                {
+                    a.FilePath,
+                    a.FileType,
+                    a.FileSizeBytes,
+                    a.UploadedAt
+                })
             })
             .ToListAsync();
 
@@ -140,7 +209,11 @@ public class PortalComplaintController : ControllerBase
                 flatId = f.Id,
                 flatName = f.FlatName,
                 tenantFirstName = t.FirstName,
-                tenantLastName = t.LastName
+                tenantLastName = t.LastName,
+                attachments = _context.ComplaintAttachments
+                    .Where(a => a.ComplaintId == c.Id)
+                    .Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt })
+                    .ToList()
             }
         ).ToListAsync();
 

@@ -12,7 +12,8 @@
       "PowerShell(Select-String *)",
       "PowerShell($dll = \"$env:USERPROFILE\\\\.nuget\\\\packages\\\\microsoft.entityframeworkcore\\\\8.0.8\\\\lib\\\\net8.0\\\\Microsoft.EntityFrameworkCore.dll\"; Add-Type -Path $dll; [Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId] | Get-Member -Static -MemberType Property | Where-Object { $_.Name -match \"Required|QueryFilter|Incorrect\" } | Select-Object Name)",
       "PowerShell(Get-Content *)",
-      "Bash(dir C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing *)"
+      "Bash(dir C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing *)",
+      "Bash(dotnet user-secrets *)"
     ]
   }
 }
