@@ -8,4 +8,6 @@ public class UpdateFlatDto
     public string? Ward { get; set; }
     public Guid? AgentId { get; set; }
     public bool ClearAgent { get; set; } = false;
+    public int RentDueDay { get; set; }
+    public int BillableGracePeriodMonths { get; set; }
 }

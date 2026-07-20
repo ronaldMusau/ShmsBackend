@@ -49,6 +49,7 @@ public class FlatService
             Ward = dto.Ward,
             LandlordId = dto.LandlordId,
             RentDueDay = dto.RentDueDay,
+            BillableGracePeriodMonths = dto.BillableGracePeriodMonths,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -316,6 +317,8 @@ public class FlatService
         if (dto.County != null) flat.County = dto.County;
         if (dto.Constituency != null) flat.Constituency = dto.Constituency;
         if (dto.Ward != null) flat.Ward = dto.Ward;
+        flat.RentDueDay = dto.RentDueDay;
+        flat.BillableGracePeriodMonths = dto.BillableGracePeriodMonths;
 
         flat.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();

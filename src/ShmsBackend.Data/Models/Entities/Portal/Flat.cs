@@ -12,6 +12,7 @@ public class Flat : ISoftDelete
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
     public int RentDueDay { get; set; } = 5;
+    public int BillableGracePeriodMonths { get; set; } = 3;
     public Guid LandlordId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

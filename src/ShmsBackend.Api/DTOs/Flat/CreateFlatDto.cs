@@ -40,6 +40,7 @@ public class CreateFlatDto
     public Guid? AgentId { get; set; }
 
     public int RentDueDay { get; set; } = 5;
+    public int BillableGracePeriodMonths { get; set; } = 3;
 
     public List<HouseGroupDto> Houses { get; set; } = new();
 }
