@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
+using System.IO;
 using System.Security.Claims;
 
 namespace ShmsBackend.Api.Controllers;
@@ -143,6 +145,63 @@ public class PortalComplaintController : ControllerBase
         ).ToListAsync();
 
         return Ok(new { success = true, complaints });
+    }
+
+    // POST /api/portalcomplaint/{complaintId}/attachments
+    [HttpPost("{complaintId}/attachments")]
+    [Authorize(Roles = "Tenant")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> UploadAttachments(Guid complaintId, [FromForm] List<IFormFile> images, [FromForm] List<IFormFile> documents)
+    {
+        var tenantId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == complaintId && c.TenantId == tenantId);
+        if (complaint == null)
+            return NotFound(new { success = false, message = "Complaint not found." });
+
+        images ??= new List<IFormFile>();
+        documents ??= new List<IFormFile>();
+
+        if (images.Count > 3)
+            return BadRequest(new { success = false, message = "Maximum 3 images allowed." });
+        if (documents.Count > 3)
+            return BadRequest(new { success = false, message = "Maximum 3 documents allowed." });
+
+        const long maxFileSize = 4 * 1024 * 1024; // 4MB
+        var allFiles = images.Concat(documents).ToList();
+        foreach (var file in allFiles)
+        {
+            if (file.Length > maxFileSize)
+                return BadRequest(new { success = false, message = $"{file.FileName} exceeds the 4MB limit." });
+        }
+
+        var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "complaint-attachments");
+        Directory.CreateDirectory(saveDir);
+
+        var savedAttachments = new List<ComplaintAttachment>();
+        foreach (var file in allFiles)
+        {
+            var ext = Path.GetExtension(file.FileName);
+            var fileName = $"{Guid.NewGuid()}{ext}";
+            var fullPath = Path.Combine(saveDir, fileName);
+            using (var stream = new FileStream(fullPath, FileMode.Create))
+            {
+                await file.CopyToAsync(stream);
+            }
+            savedAttachments.Add(new ComplaintAttachment
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = complaintId,
+                FilePath = $"/complaint-attachments/{fileName}",
+                FileType = images.Contains(file) ? "Image" : "Document",
+                FileSizeBytes = file.Length,
+                UploadedAt = DateTime.UtcNow
+            });
+        }
+
+        _context.ComplaintAttachments.AddRange(savedAttachments);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true, attachmentCount = savedAttachments.Count });
     }
 }
 
