@@ -239,57 +239,44 @@ public class PortalComplaintController : ControllerBase
         if (complaint == null)
             return NotFound(new { success = false, message = "Complaint not found." });
 
-        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == complaint.HouseId);
-        var flat = await _context.Flats.FirstOrDefaultAsync(f => f.Id == complaint.FlatId);
-        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
-        var agent = complaint.EscalatedToAgentId.HasValue
-            ? await _context.Agents.FirstOrDefaultAsync(a => a.Id == complaint.EscalatedToAgentId.Value)
-            : null;
+        var result = await ComplaintDetailHelper.BuildAsync(_context, complaint, "Landlord");
+        return Ok(new { success = true, data = result });
+    }
 
-        var closeHistoryEntry = await _context.ComplaintStatusHistory
-            .Where(h => h.ComplaintId == complaint.Id && h.ToStatus == "Closed")
-            .OrderByDescending(h => h.ChangedAt)
-            .FirstOrDefaultAsync();
+    // GET /api/portalcomplaint/{id}
+    [HttpGet("{id}")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetTenantComplaintDetail(Guid id)
+    {
+        var tenantId = GetUserId();
+        var complaint = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Include(c => c.Attachments)
+            .FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
 
-        return Ok(new
-        {
-            success = true,
-            data = new
-            {
-                complaint.Id,
-                complaint.TicketNumber,
-                complaint.Description,
-                complaint.Status,
-                complaint.CreatedAt,
-                ComplaintTypeName = complaint.ComplaintType.Name,
-                TenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : "-",
-                HouseNumber = house != null ? house.HouseNumber : "-",
-                FlatName = flat != null ? flat.FlatName : "-",
-                complaint.IsBillable,
-                complaint.BillableTarget,
-                complaint.BillableTargetOverrideReason,
-                complaint.ReviewedAt,
-                complaint.EscalatedAt,
-                complaint.EscalationNotes,
-                AgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
-                complaint.AgentCompletionNotes,
-                complaint.AgentCompletedAt,
-                complaint.TenantVerificationStatus,
-                complaint.TenantRejectionReason,
-                complaint.TenantCompletedAt,
-                complaint.AgentRedoCount,
-                complaint.ClosedAt,
-                ClosingComment = closeHistoryEntry?.Notes,
-                Attachments = complaint.Attachments.Select(a => new
-                {
-                    a.FilePath,
-                    a.FileType,
-                    a.FileSizeBytes,
-                    a.UploadedAt,
-                    a.Stage
-                })
-            }
-        });
+        if (complaint == null)
+            return NotFound(new { success = false, message = "Complaint not found." });
+
+        var result = await ComplaintDetailHelper.BuildAsync(_context, complaint, "Tenant");
+        return Ok(new { success = true, data = result });
+    }
+
+    // GET /api/portalcomplaint/agent/{id}
+    [HttpGet("agent/{id}")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> GetAgentComplaintDetail(Guid id)
+    {
+        var agentId = GetUserId();
+        var complaint = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Include(c => c.Attachments)
+            .FirstOrDefaultAsync(c => c.Id == id && c.EscalatedToAgentId == agentId);
+
+        if (complaint == null)
+            return NotFound(new { success = false, message = "Complaint not found or not escalated to you." });
+
+        var result = await ComplaintDetailHelper.BuildAsync(_context, complaint, "Agent");
+        return Ok(new { success = true, data = result });
     }
 
     // POST /api/portalcomplaint/{complaintId}/attachments

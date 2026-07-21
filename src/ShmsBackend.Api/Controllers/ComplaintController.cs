@@ -153,53 +153,8 @@ public class ComplaintController : ControllerBase
         if (complaint == null)
             return NotFound(new { success = false, message = "Complaint not found." });
 
-        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == complaint.HouseId);
-        var flat = await _context.Flats.FirstOrDefaultAsync(f => f.Id == complaint.FlatId);
-        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
-        var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == complaint.LandlordId);
-        var agent = complaint.EscalatedToAgentId.HasValue
-            ? await _context.Agents.FirstOrDefaultAsync(a => a.Id == complaint.EscalatedToAgentId.Value)
-            : null;
-
-        return Ok(new
-        {
-            success = true,
-            data = new
-            {
-                complaint.Id,
-                complaint.TicketNumber,
-                complaint.Description,
-                complaint.Status,
-                complaint.IsBillable,
-                complaint.BillableTarget,
-                complaint.BillableTargetOverrideReason,
-                complaint.BillableAmount,
-                complaint.BillableExplanation,
-                complaint.CreatedAt,
-                ComplaintTypeName = complaint.ComplaintType.Name,
-                HouseNumber = house != null ? house.HouseNumber : "-",
-                FlatName = flat != null ? flat.FlatName : "-",
-                BillableGracePeriodMonths = flat != null ? flat.BillableGracePeriodMonths : 3,
-                TenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : "-",
-                LandlordName = landlord != null ? $"{landlord.FirstName} {landlord.LastName}" : "-",
-                AgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
-                complaint.EscalatedAt,
-                complaint.AgentCompletionNotes,
-                complaint.AgentCompletedAt,
-                complaint.TenantVerificationStatus,
-                complaint.TenantRejectionReason,
-                complaint.TenantCompletedAt,
-                complaint.AgentRedoCount,
-                Attachments = complaint.Attachments.Select(a => new
-                {
-                    a.FilePath,
-                    a.FileType,
-                    a.FileSizeBytes,
-                    a.UploadedAt,
-                    a.Stage
-                })
-            }
-        });
+        var result = await ComplaintDetailHelper.BuildAsync(_context, complaint, "Management");
+        return Ok(new { success = true, data = result });
     }
 
     // PATCH /api/complaint/{id}/billable-decision
