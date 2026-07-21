@@ -113,7 +113,12 @@ public class ComplaintController : ControllerBase
             HouseNumber = houses.GetValueOrDefault(c.HouseId, "-"),
             FlatName = flats.GetValueOrDefault(c.FlatId, "-"),
             TenantName = tenants.GetValueOrDefault(c.TenantId, "-"),
-            c.CreatedAt
+            c.CreatedAt,
+            c.EscalatedAt,
+            c.AgentCompletionNotes,
+            c.TenantVerificationStatus,
+            c.TenantRejectionReason,
+            c.AgentRedoCount
         }).ToList();
 
         var totals = new
@@ -178,12 +183,20 @@ public class ComplaintController : ControllerBase
                 TenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : "-",
                 LandlordName = landlord != null ? $"{landlord.FirstName} {landlord.LastName}" : "-",
                 AgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
+                complaint.EscalatedAt,
+                complaint.AgentCompletionNotes,
+                complaint.AgentCompletedAt,
+                complaint.TenantVerificationStatus,
+                complaint.TenantRejectionReason,
+                complaint.TenantCompletedAt,
+                complaint.AgentRedoCount,
                 Attachments = complaint.Attachments.Select(a => new
                 {
                     a.FilePath,
                     a.FileType,
                     a.FileSizeBytes,
-                    a.UploadedAt
+                    a.UploadedAt,
+                    a.Stage
                 })
             }
         });
@@ -317,6 +330,91 @@ public class ComplaintController : ControllerBase
 
         return Ok(new { success = true, message = "Complaint marked billable and sent for approval.", billableTarget });
     }
+
+    // POST /api/complaint/{id}/escalate
+    [HttpPost("{id}/escalate")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> Escalate(Guid id, [FromBody] EscalateDto dto)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+
+        var assignment = await _context.AgentFlats
+            .Where(af => af.FlatId == complaint.FlatId)
+            .OrderByDescending(af => af.AssignedAt)
+            .FirstOrDefaultAsync();
+        if (assignment == null)
+            return BadRequest(new { success = false, message = "No agent is assigned to this flat." });
+
+        var adminId = GetUserId();
+        complaint.EscalatedToAgentId = assignment.AgentId;
+        complaint.EscalatedAt = DateTime.UtcNow;
+        complaint.EscalationNotes = dto.Notes;
+
+        _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            FromStatus = complaint.Status,
+            ToStatus = complaint.Status,
+            ChangedByAdminId = adminId,
+            Notes = $"Escalated to agent for physical resolution. {dto.Notes}",
+            ChangedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Id == assignment.AgentId);
+        if (agent != null)
+        {
+            try { await _emailService.SendComplaintEscalatedAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send agent escalation email"); }
+            try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Complaint {complaint.TicketNumber} has been escalated to you.", "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of escalation"); }
+        }
+        return Ok(new { success = true, message = "Escalated to agent." });
+    }
+
+    // PATCH /api/complaint/{id}/final-close
+    [HttpPatch("{id}/final-close")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> FinalClose(Guid id, [FromBody] FinalCloseDto dto)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+
+        if (complaint.TenantVerificationStatus != "Verified")
+            return BadRequest(new { success = false, message = "Cannot close — tenant has not verified the agent's completed work yet." });
+        if (string.IsNullOrWhiteSpace(dto.ClosingComment))
+            return BadRequest(new { success = false, message = "A closing comment is required." });
+
+        var adminId = GetUserId();
+        var originalStatus = complaint.Status;
+        complaint.Status = "Closed";
+        complaint.ClosedByAdminId = adminId;
+        complaint.ClosedAt = DateTime.UtcNow;
+
+        _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            FromStatus = originalStatus,
+            ToStatus = "Closed",
+            ChangedByAdminId = adminId,
+            Notes = dto.ClosingComment,
+            ChangedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
+        if (tenant != null)
+        {
+            try { await _emailService.SendComplaintClosedEmailAsync(tenant.Email, tenant.FirstName, complaint.TicketNumber, dto.ClosingComment); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send final close email"); }
+            try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), $"Your complaint {complaint.TicketNumber} has been closed: {dto.ClosingComment}", "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of final close"); }
+        }
+        return Ok(new { success = true, message = "Complaint closed." });
+    }
 }
 
 public class BillableDecisionDto
@@ -327,4 +425,14 @@ public class BillableDecisionDto
     public string? BillableTargetOverride { get; set; }
     public string? OverrideReason { get; set; }
     public string? ResolutionNotes { get; set; }
+}
+
+public class EscalateDto
+{
+    public string? Notes { get; set; }
+}
+
+public class FinalCloseDto
+{
+    public string? ClosingComment { get; set; }
 }

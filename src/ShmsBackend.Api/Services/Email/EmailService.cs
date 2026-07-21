@@ -201,6 +201,13 @@ public class EmailService : IEmailService
             GetComplaintClosedTemplate(firstName, ticketNumber, resolutionNotes));
     }
 
+    public async Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber)
+    {
+        _logger.LogInformation("Sending complaint escalation email to agent: {Email}", toEmail);
+        await SendEmail(toEmail, $"Complaint Escalated to You — {ticketNumber}",
+            GetComplaintEscalatedAgentTemplate(firstName, ticketNumber));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -713,5 +720,23 @@ public class EmailService : IEmailService
 {SmallNote("If you have further concerns, please do not hesitate to raise a new complaint through the Romah Estates portal.")}";
 
         return WrapInLayout($"Complaint Resolved — {ticketNumber}", inner);
+    }
+
+    private string GetComplaintEscalatedAgentTemplate(string firstName, string ticketNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A complaint has been escalated to you for physical resolution on the <strong style='color:{ColourGold};'>Romah Estates</strong> system.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+")}
+{Para("Please review the complaint details, carry out the necessary work, and submit your completion notes and evidence through the Romah Estates agent portal.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Complaint Escalated to You — {ticketNumber}", inner);
     }
 }

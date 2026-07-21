@@ -23,4 +23,5 @@ public interface IEmailService
     Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName);
     Task SendComplaintManagementAlertEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName);
     Task SendComplaintClosedEmailAsync(string toEmail, string firstName, string ticketNumber, string resolutionNotes);
+    Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber);
 }

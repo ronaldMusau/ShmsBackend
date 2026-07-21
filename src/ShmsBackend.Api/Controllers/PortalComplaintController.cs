@@ -210,6 +210,11 @@ public class PortalComplaintController : ControllerBase
                 flatName = f.FlatName,
                 tenantFirstName = t.FirstName,
                 tenantLastName = t.LastName,
+                escalatedAt = c.EscalatedAt,
+                agentCompletionNotes = c.AgentCompletionNotes,
+                tenantVerificationStatus = c.TenantVerificationStatus,
+                tenantRejectionReason = c.TenantRejectionReason,
+                agentRedoCount = c.AgentRedoCount,
                 attachments = _context.ComplaintAttachments
                     .Where(a => a.ComplaintId == c.Id)
                     .Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt })
@@ -276,10 +281,218 @@ public class PortalComplaintController : ControllerBase
 
         return Ok(new { success = true, attachmentCount = savedAttachments.Count });
     }
+
+    // GET /api/portalcomplaint/agent/my-escalated
+    [HttpGet("agent/my-escalated")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> GetMyEscalatedComplaints()
+    {
+        var agentId = GetUserId();
+        var complaints = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Where(c => c.EscalatedToAgentId == agentId)
+            .OrderByDescending(c => c.EscalatedAt)
+            .ToListAsync();
+
+        var houseIds = complaints.Select(c => c.HouseId).Distinct().ToList();
+        var houses = await _context.Houses.Where(h => houseIds.Contains(h.Id)).ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+        var flatIds = complaints.Select(c => c.FlatId).Distinct().ToList();
+        var flats = await _context.Flats.Where(f => flatIds.Contains(f.Id)).ToDictionaryAsync(f => f.Id, f => f.FlatName);
+
+        var data = complaints.Select(c => new
+        {
+            c.Id,
+            c.TicketNumber,
+            ComplaintTypeName = c.ComplaintType.Name,
+            c.Description,
+            c.Status,
+            c.IsBillable,
+            HouseNumber = houses.GetValueOrDefault(c.HouseId, "-"),
+            FlatName = flats.GetValueOrDefault(c.FlatId, "-"),
+            c.EscalatedAt,
+            c.EscalationNotes,
+            c.AgentCompletedAt,
+            c.TenantVerificationStatus,
+            c.TenantRejectionReason,
+            c.AgentRedoCount
+        });
+
+        return Ok(new { success = true, complaints = data });
+    }
+
+    // POST /api/portalcomplaint/{id}/agent-evidence
+    [HttpPost("{id}/agent-evidence")]
+    [Authorize(Roles = "Agent")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> UploadAgentEvidence(Guid id, [FromForm] List<IFormFile> images, [FromForm] List<IFormFile> documents)
+    {
+        var agentId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.EscalatedToAgentId == agentId);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found or not escalated to you." });
+
+        images ??= new List<IFormFile>();
+        documents ??= new List<IFormFile>();
+
+        const long maxFileSize = 4 * 1024 * 1024;
+        foreach (var file in images.Concat(documents))
+            if (file.Length > maxFileSize)
+                return BadRequest(new { success = false, message = $"{file.FileName} exceeds the 4MB limit." });
+
+        var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "complaint-attachments");
+        Directory.CreateDirectory(saveDir);
+
+        foreach (var file in images)
+        {
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+            using var stream = new FileStream(Path.Combine(saveDir, fileName), FileMode.Create);
+            await file.CopyToAsync(stream);
+            _context.ComplaintAttachments.Add(new ComplaintAttachment
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = id,
+                FilePath = $"/complaint-attachments/{fileName}",
+                FileType = "Image",
+                FileSizeBytes = file.Length,
+                UploadedAt = DateTime.UtcNow,
+                Stage = "AgentCompletion"
+            });
+        }
+        foreach (var file in documents)
+        {
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+            using var stream = new FileStream(Path.Combine(saveDir, fileName), FileMode.Create);
+            await file.CopyToAsync(stream);
+            _context.ComplaintAttachments.Add(new ComplaintAttachment
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = id,
+                FilePath = $"/complaint-attachments/{fileName}",
+                FileType = "Document",
+                FileSizeBytes = file.Length,
+                UploadedAt = DateTime.UtcNow,
+                Stage = "AgentCompletion"
+            });
+        }
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    // PATCH /api/portalcomplaint/{id}/agent-complete
+    [HttpPatch("{id}/agent-complete")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> AgentComplete(Guid id, [FromBody] AgentCompleteDto dto)
+    {
+        var agentId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.EscalatedToAgentId == agentId);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found or not escalated to you." });
+        if (string.IsNullOrWhiteSpace(dto.Notes)) return BadRequest(new { success = false, message = "Completion notes are required." });
+
+        complaint.AgentCompletionNotes = dto.Notes;
+        complaint.AgentCompletedAt = DateTime.UtcNow;
+        complaint.TenantVerificationStatus = null;
+        complaint.TenantRejectionReason = null;
+
+        _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            FromStatus = complaint.Status,
+            ToStatus = complaint.Status,
+            ChangedByAgentId = agentId,
+            Notes = dto.Notes,
+            ChangedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        try { await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Please review the completed work for complaint {complaint.TicketNumber}.", "property"); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of agent completion"); }
+
+        return Ok(new { success = true, message = "Marked as completed. Awaiting tenant verification." });
+    }
+
+    // PATCH /api/portalcomplaint/{id}/tenant-verify
+    [HttpPatch("{id}/tenant-verify")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> TenantVerify(Guid id, [FromBody] TenantVerifyDto dto)
+    {
+        var tenantId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        if (complaint.AgentCompletedAt == null) return BadRequest(new { success = false, message = "No completed work to verify yet." });
+
+        if (dto.Verified)
+        {
+            complaint.TenantVerificationStatus = "Verified";
+            complaint.TenantCompletedAt = DateTime.UtcNow;
+
+            _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = complaint.Id,
+                FromStatus = complaint.Status,
+                ToStatus = complaint.Status,
+                ChangedByTenantId = tenantId,
+                Notes = "Tenant verified agent's completed work.",
+                ChangedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+
+            try
+            {
+                await _notificationService.SendToRolesAsync(
+                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                    $"Complaint {complaint.TicketNumber} verified by tenant — ready for final close.",
+                    "property");
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of tenant verification"); }
+
+            return Ok(new { success = true, message = "Verified. Management will finalize closure." });
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(dto.RejectionReason))
+                return BadRequest(new { success = false, message = "A rejection reason is required." });
+
+            complaint.TenantVerificationStatus = "Rejected";
+            complaint.TenantRejectionReason = dto.RejectionReason;
+            complaint.AgentRedoCount += 1;
+
+            _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = complaint.Id,
+                FromStatus = complaint.Status,
+                ToStatus = complaint.Status,
+                ChangedByTenantId = tenantId,
+                Notes = $"Rejected: {dto.RejectionReason}",
+                ChangedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+
+            if (complaint.EscalatedToAgentId.HasValue)
+            {
+                try { await _notificationService.SendToUserAsync(complaint.EscalatedToAgentId.Value.ToString(), $"Complaint {complaint.TicketNumber} was rejected by the tenant: {dto.RejectionReason}. Please redo.", "property"); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of rejection"); }
+            }
+
+            return Ok(new { success = true, message = "Rejected. Agent has been notified to redo the work." });
+        }
+    }
 }
 
 public class CreateComplaintDto
 {
     public Guid ComplaintTypeId { get; set; }
     public string Description { get; set; } = string.Empty;
+}
+
+public class AgentCompleteDto
+{
+    public string? Notes { get; set; }
+}
+
+public class TenantVerifyDto
+{
+    public bool Verified { get; set; }
+    public string? RejectionReason { get; set; }
 }
