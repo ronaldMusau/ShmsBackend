@@ -32,7 +32,11 @@ public class Complaint : ISoftDelete
     public string? EscalationNotes { get; set; }
     public DateTime? EscalatedAt { get; set; }
     public DateTime? AgentCompletedAt { get; set; }
+    public string? AgentCompletionNotes { get; set; }
     public DateTime? TenantCompletedAt { get; set; }
+    public string? TenantVerificationStatus { get; set; }
+    public string? TenantRejectionReason { get; set; }
+    public int AgentRedoCount { get; set; } = 0;
     public Guid? ClosedByAdminId { get; set; }
     public DateTime? ClosedAt { get; set; }
     public DateTime? RevokedAt { get; set; }

@@ -194,6 +194,13 @@ public class EmailService : IEmailService
             GetComplaintManagementAlertTemplate(firstName, ticketNumber, complaintTypeName, tenantName, houseNumber, flatName));
     }
 
+    public async Task SendComplaintClosedEmailAsync(string toEmail, string firstName, string ticketNumber, string resolutionNotes)
+    {
+        _logger.LogInformation("Sending complaint closed email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Complaint Resolved — {ticketNumber}",
+            GetComplaintClosedTemplate(firstName, ticketNumber, resolutionNotes));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -684,5 +691,27 @@ public class EmailService : IEmailService
 {SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
 
         return WrapInLayout($"New Complaint — {ticketNumber}", inner);
+    }
+
+    private string GetComplaintClosedTemplate(string firstName, string ticketNumber, string resolutionNotes)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your complaint <strong style='color:{ColourGold};'>{ticketNumber}</strong> has been reviewed and closed by the Romah Estates management team.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+")}
+<div style='background-color:{ColourElevated};border-left:4px solid {ColourGold};border-radius:6px;padding:16px 20px;margin:24px 0;'>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>RESOLUTION NOTES</p>
+  <p style='color:{ColourTextSec};font-size:15px;line-height:1.7;margin:0;'>{resolutionNotes}</p>
+</div>
+{Para("Thank you for bringing this matter to our attention. We hope this resolution meets your satisfaction.")}
+{Divider()}
+{SmallNote("If you have further concerns, please do not hesitate to raise a new complaint through the Romah Estates portal.")}";
+
+        return WrapInLayout($"Complaint Resolved — {ticketNumber}", inner);
     }
 }

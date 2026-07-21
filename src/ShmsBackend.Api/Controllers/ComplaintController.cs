@@ -202,6 +202,9 @@ public class ComplaintController : ControllerBase
 
         if (!dto.IsBillable)
         {
+            if (string.IsNullOrWhiteSpace(dto.ResolutionNotes))
+                return BadRequest(new { success = false, message = "Resolution notes are required when closing a complaint." });
+
             var originalStatus = complaint.Status;
             complaint.IsBillable = false;
             complaint.Status = "Closed";
@@ -217,7 +220,7 @@ public class ComplaintController : ControllerBase
                 FromStatus = originalStatus,
                 ToStatus = "Closed",
                 ChangedByAdminId = adminId,
-                Notes = dto.Justification,
+                Notes = dto.ResolutionNotes,
                 ChangedAt = DateTime.UtcNow
             });
 
@@ -225,9 +228,17 @@ public class ComplaintController : ControllerBase
 
             try
             {
-                await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been reviewed and closed.", "property");
+                await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been reviewed and closed: {dto.ResolutionNotes}", "property");
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of complaint closure"); }
+
+            try
+            {
+                var tenant2 = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
+                if (tenant2 != null)
+                    await _emailService.SendComplaintClosedEmailAsync(tenant2.Email, tenant2.FirstName, complaint.TicketNumber, dto.ResolutionNotes);
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send complaint closure email"); }
 
             return Ok(new { success = true, message = "Complaint closed (not billable)." });
         }
@@ -315,4 +326,5 @@ public class BillableDecisionDto
     public decimal? BillableAmount { get; set; }
     public string? BillableTargetOverride { get; set; }
     public string? OverrideReason { get; set; }
+    public string? ResolutionNotes { get; set; }
 }
