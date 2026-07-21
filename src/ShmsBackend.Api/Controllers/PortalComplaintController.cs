@@ -225,6 +225,73 @@ public class PortalComplaintController : ControllerBase
         return Ok(new { success = true, complaints });
     }
 
+    // GET /api/portalcomplaint/landlord/{id}
+    [HttpGet("landlord/{id}")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordComplaintDetail(Guid id)
+    {
+        var landlordId = GetUserId();
+        var complaint = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Include(c => c.Attachments)
+            .FirstOrDefaultAsync(c => c.Id == id && c.LandlordId == landlordId);
+
+        if (complaint == null)
+            return NotFound(new { success = false, message = "Complaint not found." });
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == complaint.HouseId);
+        var flat = await _context.Flats.FirstOrDefaultAsync(f => f.Id == complaint.FlatId);
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
+        var agent = complaint.EscalatedToAgentId.HasValue
+            ? await _context.Agents.FirstOrDefaultAsync(a => a.Id == complaint.EscalatedToAgentId.Value)
+            : null;
+
+        var closeHistoryEntry = await _context.ComplaintStatusHistory
+            .Where(h => h.ComplaintId == complaint.Id && h.ToStatus == "Closed")
+            .OrderByDescending(h => h.ChangedAt)
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                complaint.Id,
+                complaint.TicketNumber,
+                complaint.Description,
+                complaint.Status,
+                complaint.CreatedAt,
+                ComplaintTypeName = complaint.ComplaintType.Name,
+                TenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : "-",
+                HouseNumber = house != null ? house.HouseNumber : "-",
+                FlatName = flat != null ? flat.FlatName : "-",
+                complaint.IsBillable,
+                complaint.BillableTarget,
+                complaint.BillableTargetOverrideReason,
+                complaint.ReviewedAt,
+                complaint.EscalatedAt,
+                complaint.EscalationNotes,
+                AgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
+                complaint.AgentCompletionNotes,
+                complaint.AgentCompletedAt,
+                complaint.TenantVerificationStatus,
+                complaint.TenantRejectionReason,
+                complaint.TenantCompletedAt,
+                complaint.AgentRedoCount,
+                complaint.ClosedAt,
+                ClosingComment = closeHistoryEntry?.Notes,
+                Attachments = complaint.Attachments.Select(a => new
+                {
+                    a.FilePath,
+                    a.FileType,
+                    a.FileSizeBytes,
+                    a.UploadedAt,
+                    a.Stage
+                })
+            }
+        });
+    }
+
     // POST /api/portalcomplaint/{complaintId}/attachments
     [HttpPost("{complaintId}/attachments")]
     [Authorize(Roles = "Tenant")]
