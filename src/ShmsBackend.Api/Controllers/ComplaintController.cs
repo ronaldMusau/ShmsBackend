@@ -373,6 +373,108 @@ public class ComplaintController : ControllerBase
         }
         return Ok(new { success = true, message = "Complaint closed." });
     }
+
+    // PATCH /api/complaint/{id}/approval-action
+    [HttpPatch("{id}/approval-action")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ApprovalAction(Guid id, [FromBody] ApprovalActionDto dto)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        var adminId = GetUserId();
+        var steps = await _context.ApprovalSequenceSteps.Where(s => s.Module == "Complaints").OrderBy(s => s.StepOrder).ToListAsync();
+        var currentStep = steps.FirstOrDefault(s => s.StepOrder == complaint.CurrentApprovalStepOrder);
+
+        if (currentStep == null)
+            return BadRequest(new { success = false, message = "This complaint is not currently awaiting an internal approval step." });
+        if (currentStep.ApproverId != adminId)
+            return Forbid();
+        _context.ComplaintApprovalActions.Add(new ComplaintApprovalAction
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            AttemptNumber = complaint.ApprovalAttemptNumber,
+            StepOrder = currentStep.StepOrder,
+            ApproverId = adminId,
+            Decision = dto.Approved ? "Approved" : "Rejected",
+            Notes = dto.Notes,
+            ActionedAt = DateTime.UtcNow
+        });
+        if (!dto.Approved)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Notes))
+                return BadRequest(new { success = false, message = "Rejection notes are required." });
+
+            // Restart the entire sequence from step 1 (per locked design)
+            complaint.CurrentApprovalStepOrder = steps.First().StepOrder;
+            complaint.ApprovalAttemptNumber += 1;
+            await _context.SaveChangesAsync();
+            var originalDecider = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == complaint.ReviewedByAdminId);
+            // Notify whoever made the original billable call (the reviewer), per locked design — rejection goes back to them, not to the sequence
+            if (complaint.ReviewedByAdminId.HasValue)
+            {
+                try { await _notificationService.SendToUserAsync(complaint.ReviewedByAdminId.Value.ToString(), $"Complaint {complaint.TicketNumber} was rejected at the approval step and needs your revision.", "property"); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to notify original reviewer of rejection"); }
+            }
+            return Ok(new { success = true, message = "Rejected. Sent back to the original reviewer for revision." });
+        }
+
+        // Approved — advance to next step, or complete the sequence
+        var nextStep = steps.FirstOrDefault(s => s.StepOrder > currentStep.StepOrder);
+        await _context.SaveChangesAsync();
+
+        if (nextStep != null)
+        {
+            complaint.CurrentApprovalStepOrder = nextStep.StepOrder;
+            await _context.SaveChangesAsync();
+
+            try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Complaint {complaint.TicketNumber} requires your approval (step {nextStep.StepOrder}).", "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver"); }
+
+            return Ok(new { success = true, message = "Approved. Advanced to the next approval step." });
+        }
+        else
+        {
+            // Internal sequence fully cleared
+            complaint.CurrentApprovalStepOrder = null;
+            if (complaint.BillableTarget == "Tenant")
+            {
+                // Transparency-only for landlord — no action needed, ticket effectively done with the internal process
+                await _context.SaveChangesAsync();
+                return Ok(new { success = true, message = "Approved. Internal sequence complete — billed to tenant, no landlord action required." });
+            }
+            else
+            {
+                await _context.SaveChangesAsync();
+                try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"Complaint {complaint.TicketNumber} requires your final approval.", "property"); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of pending approval"); }
+                return Ok(new { success = true, message = "Approved. Internal sequence complete — sent to landlord for final approval." });
+            }
+        }
+    }
+
+    // GET /api/complaint/my-approval-queue
+    [HttpGet("my-approval-queue")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetMyApprovalQueue()
+    {
+        var adminId = GetUserId();
+        var myStepOrders = await _context.ApprovalSequenceSteps
+            .Where(s => s.Module == "Complaints" && s.ApproverId == adminId)
+            .Select(s => s.StepOrder)
+            .ToListAsync();
+
+        var complaints = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Where(c => c.CurrentApprovalStepOrder != null && myStepOrders.Contains(c.CurrentApprovalStepOrder.Value))
+            .OrderBy(c => c.ReviewedAt)
+            .ToListAsync();
+        var data = new List<object>();
+        foreach (var c in complaints)
+            data.Add(await ComplaintDetailHelper.BuildAsync(_context, c, "Management"));
+
+        return Ok(new { success = true, complaints = data });
+    }
 }
 
 public class BillableDecisionDto
@@ -394,3 +496,5 @@ public class FinalCloseDto
 {
     public string? ClosingComment { get; set; }
 }
+
+public class ApprovalActionDto { public bool Approved { get; set; } public string? Notes { get; set; } }

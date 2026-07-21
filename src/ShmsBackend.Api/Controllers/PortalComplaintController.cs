@@ -532,6 +532,81 @@ public class PortalComplaintController : ControllerBase
             return Ok(new { success = true, message = "Rejected. Agent has been notified to redo the work." });
         }
     }
+
+    // PATCH /api/portalcomplaint/landlord/{id}/final-approval
+    [HttpPatch("landlord/{id}/final-approval")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> LandlordFinalApproval(Guid id, [FromBody] LandlordApprovalDto dto)
+    {
+        var landlordId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.LandlordId == landlordId);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        if (complaint.BillableTarget != "Management")
+            return BadRequest(new { success = false, message = "This complaint does not require your approval." });
+        if (complaint.CurrentApprovalStepOrder != null)
+            return BadRequest(new { success = false, message = "Internal approval is still in progress." });
+        if (!string.IsNullOrEmpty(complaint.LandlordDecision))
+            return BadRequest(new { success = false, message = "You have already actioned this complaint." });
+
+        complaint.LandlordActionedAt = DateTime.UtcNow;
+        complaint.LandlordDecision = dto.Approved ? "Approved" : "Rejected";
+        complaint.LandlordDecisionNotes = dto.Notes;
+        complaint.FinalDecision = dto.Approved ? "Approved" : "Rejected";
+        complaint.FinalDecisionAt = DateTime.UtcNow;
+        if (dto.Approved)
+        {
+            if (complaint.BillableAmount == null || complaint.BillableAmount <= 0)
+                return BadRequest(new { success = false, message = "This complaint has no valid billable amount to deduct." });
+
+            var now = complaint.LandlordActionedAt.Value;
+            _context.Deductions.Add(new Deduction
+            {
+                Id = Guid.NewGuid(),
+                LandlordId = complaint.LandlordId,
+                TenantId = complaint.TenantId,
+                HouseId = complaint.HouseId,
+                FlatId = complaint.FlatId,
+                ComplaintId = complaint.Id,
+                Amount = complaint.BillableAmount.Value,
+                Description = $"Complaint {complaint.TicketNumber} — {complaint.BillableExplanation}",
+                DeductionMonth = now.Month,
+                DeductionYear = now.Year,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                $"Landlord {(dto.Approved ? "approved" : "rejected")} complaint {complaint.TicketNumber}.",
+                "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of landlord's final decision"); }
+
+        return Ok(new { success = true, message = dto.Approved ? "Approved. Deduction recorded." : "Rejected." });
+    }
+
+    // GET /api/portalcomplaint/landlord/my-approval-queue
+    [HttpGet("landlord/my-approval-queue")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordApprovalQueue()
+    {
+        var landlordId = GetUserId();
+        var complaints = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Where(c => c.LandlordId == landlordId && c.BillableTarget == "Management" && c.CurrentApprovalStepOrder == null && string.IsNullOrEmpty(c.LandlordDecision))
+            .OrderBy(c => c.ReviewedAt)
+            .ToListAsync();
+
+        var data = new List<object>();
+        foreach (var c in complaints)
+            data.Add(await ComplaintDetailHelper.BuildAsync(_context, c, "Landlord"));
+
+        return Ok(new { success = true, complaints = data });
+    }
 }
 
 public class CreateComplaintDto
@@ -550,3 +625,5 @@ public class TenantVerifyDto
     public bool Verified { get; set; }
     public string? RejectionReason { get; set; }
 }
+
+public class LandlordApprovalDto { public bool Approved { get; set; } public string? Notes { get; set; } }
