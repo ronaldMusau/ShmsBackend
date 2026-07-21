@@ -1,7 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities.Portal;
+using System.Security.Claims;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -11,10 +16,26 @@ namespace ShmsBackend.Api.Controllers;
 public class ComplaintController : ControllerBase
 {
     private readonly ShmsDbContext _context;
+    private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<ComplaintController> _logger;
 
-    public ComplaintController(ShmsDbContext context)
+    public ComplaintController(
+        ShmsDbContext context,
+        IEmailService emailService,
+        INotificationService notificationService,
+        ILogger<ComplaintController> logger)
     {
         _context = context;
+        _emailService = emailService;
+        _notificationService = notificationService;
+        _logger = logger;
+    }
+
+    private Guid GetUserId()
+    {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        return Guid.TryParse(claim, out var id) ? id : Guid.Empty;
     }
 
     // GET /api/complaint/all
@@ -167,4 +188,131 @@ public class ComplaintController : ControllerBase
             }
         });
     }
+
+    // PATCH /api/complaint/{id}/billable-decision
+    [HttpPatch("{id}/billable-decision")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> BillableDecision(Guid id, [FromBody] BillableDecisionDto dto)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null)
+            return NotFound(new { success = false, message = "Complaint not found." });
+
+        var adminId = GetUserId();
+
+        if (!dto.IsBillable)
+        {
+            var originalStatus = complaint.Status;
+            complaint.IsBillable = false;
+            complaint.Status = "Closed";
+            complaint.ReviewedAt = DateTime.UtcNow;
+            complaint.ReviewedByAdminId = adminId;
+            complaint.ClosedAt = DateTime.UtcNow;
+            complaint.ClosedByAdminId = adminId;
+
+            _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = complaint.Id,
+                FromStatus = originalStatus,
+                ToStatus = "Closed",
+                ChangedByAdminId = adminId,
+                Notes = dto.Justification,
+                ChangedAt = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
+
+            try
+            {
+                await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been reviewed and closed.", "property");
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of complaint closure"); }
+
+            return Ok(new { success = true, message = "Complaint closed (not billable)." });
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.Justification))
+            return BadRequest(new { success = false, message = "Justification is required when marking a complaint billable." });
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
+        var flat = await _context.Flats.FirstOrDefaultAsync(f => f.Id == complaint.FlatId);
+        if (tenant == null || flat == null)
+            return BadRequest(new { success = false, message = "Could not resolve tenant or flat for this complaint." });
+
+        var initialPayment = await _context.Payments
+            .Where(p => p.TenantId == tenant.Id && p.IsInitialPayment == true && p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        bool withinGracePeriod = false;
+        if (initialPayment?.PaidAt != null)
+        {
+            var monthsSinceStart = ((DateTime.UtcNow.Year - initialPayment.PaidAt.Value.Year) * 12) + DateTime.UtcNow.Month - initialPayment.PaidAt.Value.Month;
+            withinGracePeriod = monthsSinceStart < flat.BillableGracePeriodMonths;
+        }
+
+        string billableTarget;
+        if (withinGracePeriod)
+        {
+            if (dto.BillableTargetOverride != null)
+                return BadRequest(new { success = false, message = "Cannot override billable target — tenant is within the protected grace period." });
+            billableTarget = "Management";
+        }
+        else
+        {
+            billableTarget = dto.BillableTargetOverride == "Management" ? "Management" : "Tenant";
+
+            if (billableTarget == "Management" && string.IsNullOrWhiteSpace(dto.OverrideReason))
+                return BadRequest(new { success = false, message = "An override reason is required when switching billable target to Management." });
+        }
+
+        var firstStep = await _context.ApprovalSequenceSteps
+            .Where(s => s.Module == "Complaints")
+            .OrderBy(s => s.StepOrder)
+            .FirstOrDefaultAsync();
+
+        if (firstStep == null)
+            return BadRequest(new { success = false, message = "No approval sequence is configured for Complaints yet. Set one up under Setups > Approvals before proceeding." });
+
+        complaint.IsBillable = true;
+        complaint.BillableExplanation = dto.Justification;
+        complaint.BillableAmount = dto.BillableAmount;
+        complaint.BillableTarget = billableTarget;
+        complaint.BillableTargetOverrideReason = dto.OverrideReason;
+        complaint.Status = "UnderReview";
+        complaint.ReviewedAt = DateTime.UtcNow;
+        complaint.ReviewedByAdminId = adminId;
+        complaint.CurrentApprovalStepOrder = firstStep.StepOrder;
+        complaint.ApprovalAttemptNumber = complaint.ApprovalAttemptNumber + 1;
+
+        _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            FromStatus = "Open",
+            ToStatus = "UnderReview",
+            ChangedByAdminId = adminId,
+            Notes = dto.Justification,
+            ChangedAt = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToUserAsync(firstStep.ApproverId.ToString(), $"Complaint {complaint.TicketNumber} requires your approval (step 1).", "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify first approver"); }
+
+        return Ok(new { success = true, message = "Complaint marked billable and sent for approval.", billableTarget });
+    }
+}
+
+public class BillableDecisionDto
+{
+    public bool IsBillable { get; set; }
+    public string? Justification { get; set; }
+    public decimal? BillableAmount { get; set; }
+    public string? BillableTargetOverride { get; set; }
+    public string? OverrideReason { get; set; }
 }
