@@ -589,6 +589,42 @@ public class PortalComplaintController : ControllerBase
         return Ok(new { success = true, message = dto.Approved ? "Approved. Deduction recorded." : "Rejected." });
     }
 
+    // GET /api/portalcomplaint/landlord/my-deductions
+    [HttpGet("landlord/my-deductions")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetMyDeductions([FromQuery] int? month = null, [FromQuery] int? year = null)
+    {
+        var landlordId = GetUserId();
+        var query = _context.Deductions.Where(d => d.LandlordId == landlordId);
+        if (month.HasValue) query = query.Where(d => d.DeductionMonth == month.Value);
+        if (year.HasValue) query = query.Where(d => d.DeductionYear == year.Value);
+
+        var deductions = await query.OrderByDescending(d => d.CreatedAt).ToListAsync();
+
+        var tenantIds = deductions.Select(d => d.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants.Where(t => tenantIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+        var houseIds = deductions.Select(d => d.HouseId).Distinct().ToList();
+        var houses = await _context.Houses.Where(h => houseIds.Contains(h.Id)).ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+        var complaintIds = deductions.Select(d => d.ComplaintId).Distinct().ToList();
+        var complaints = await _context.Complaints.Where(c => complaintIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, c => c.TicketNumber);
+
+        var data = deductions.Select(d => new
+        {
+            d.Id,
+            d.ComplaintId,
+            TenantName = tenants.GetValueOrDefault(d.TenantId, "-"),
+            HouseNumber = houses.GetValueOrDefault(d.HouseId, "-"),
+            TicketNumber = complaints.GetValueOrDefault(d.ComplaintId, "-"),
+            d.Amount,
+            d.Description,
+            d.DeductionMonth,
+            d.DeductionYear,
+            d.CreatedAt
+        });
+
+        return Ok(new { success = true, deductions = data, totalAmount = deductions.Sum(d => d.Amount) });
+    }
+
     // GET /api/portalcomplaint/landlord/my-approval-queue
     [HttpGet("landlord/my-approval-queue")]
     [Authorize(Roles = "Landlord")]
