@@ -290,6 +290,9 @@ public class ComplaintController : ControllerBase
                 return BadRequest(new { success = false, message = "An override reason is required when switching billable target to Management." });
         }
 
+        if (billableTarget == "Management" && (dto.BillableAmount == null || dto.BillableAmount <= 0))
+            return BadRequest(new { success = false, message = "A billable amount is required when the target is Management." });
+
         var firstStep = await _context.ApprovalSequenceSteps
             .Where(s => s.Module == "Complaints")
             .OrderBy(s => s.StepOrder)
