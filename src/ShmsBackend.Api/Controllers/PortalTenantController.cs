@@ -46,6 +46,8 @@ public class PortalTenantController : ControllerBase
                 .ThenInclude(h => h!.Flat)
             .Include(t => t.House)
                 .ThenInclude(h => h!.Images)
+            .Include(t => t.House)
+                .ThenInclude(h => h!.HouseTypeRef)
             .FirstOrDefaultAsync(t => t.Id == tenantId);
 
         if (tenant == null) return NotFound("Tenant not found.");
@@ -56,7 +58,7 @@ public class PortalTenantController : ControllerBase
         {
             h.Id,
             h.HouseNumber,
-            HouseType = h.HouseType.ToString(),
+            HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
             OccupancyStatus = h.OccupancyStatus.ToString(),
             h.RentFee,
             h.DepositFee,

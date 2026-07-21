@@ -4,7 +4,8 @@ using ShmsBackend.Data.Models.Interfaces;
 
 namespace ShmsBackend.Data.Models.Entities.Portal;
 
-public enum HouseType
+// LegacyHouseType: kept for rollback reference only — remove once migration is confirmed stable
+public enum LegacyHouseType
 {
     SingleRoom,
     Bedsitter,
@@ -32,7 +33,8 @@ public class House : ISoftDelete
 {
     public Guid Id { get; set; }
     public string HouseNumber { get; set; } = string.Empty;
-    public HouseType HouseType { get; set; }
+    public Guid HouseTypeId { get; set; }
+    public HouseType? HouseTypeRef { get; set; }
     public decimal RentFee { get; set; }
     public decimal DepositFee { get; set; }
     public OccupancyStatus OccupancyStatus { get; set; } = OccupancyStatus.Vacant;

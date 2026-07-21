@@ -27,8 +27,9 @@ public class HouseService
 
     public async Task<object> CreateAsync(CreateHouseDto dto)
     {
-        if (!Enum.TryParse<HouseType>(dto.HouseType, true, out var houseType))
-            throw new InvalidOperationException($"Invalid house type: {dto.HouseType}. Valid values: SingleRoom, Bedsitter, OneBedroom, TwoBedroom, ThreeBedroom, FourBedroom");
+        var houseTypeExists = await _context.HouseTypes.AnyAsync(t => t.Id == dto.HouseTypeId && t.IsActive);
+        if (!houseTypeExists)
+            throw new InvalidOperationException("Invalid house type.");
 
         var flat = await _context.Flats.FindAsync(dto.FlatId);
         if (flat == null)
@@ -43,7 +44,7 @@ public class HouseService
         {
             Id = Guid.NewGuid(),
             HouseNumber = dto.HouseNumber,
-            HouseType = houseType,
+            HouseTypeId = dto.HouseTypeId,
             RentFee = dto.RentFee,
             DepositFee = dto.DepositFee,
             OccupancyStatus = OccupancyStatus.Vacant,
@@ -96,11 +97,12 @@ public class HouseService
     {
         return await _context.Houses
             .Include(h => h.Flat)
+            .Include(h => h.HouseTypeRef)
             .Select(h => new
             {
                 h.Id,
                 h.HouseNumber,
-                HouseType = h.HouseType.ToString(),
+                HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
@@ -119,6 +121,7 @@ public class HouseService
         var house = await _context.Houses
             .Include(h => h.Flat)
             .Include(h => h.Images)
+            .Include(h => h.HouseTypeRef)
             .FirstOrDefaultAsync(h => h.Id == id);
 
         if (house == null) return null;
@@ -129,11 +132,12 @@ public class HouseService
     {
         return await _context.Houses
             .Where(h => h.FlatId == flatId)
+            .Include(h => h.HouseTypeRef)
             .Select(h => new
             {
                 h.Id,
                 h.HouseNumber,
-                HouseType = h.HouseType.ToString(),
+                HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
@@ -162,11 +166,12 @@ public class HouseService
             house.HouseNumber = dto.HouseNumber;
         }
 
-        if (dto.HouseType != null)
+        if (dto.HouseTypeId.HasValue)
         {
-            if (!Enum.TryParse<HouseType>(dto.HouseType, true, out var houseType))
-                throw new InvalidOperationException($"Invalid house type: {dto.HouseType}");
-            house.HouseType = houseType;
+            var houseTypeExists = await _context.HouseTypes.AnyAsync(t => t.Id == dto.HouseTypeId.Value && t.IsActive);
+            if (!houseTypeExists)
+                throw new InvalidOperationException("Invalid house type.");
+            house.HouseTypeId = dto.HouseTypeId.Value;
         }
 
         if (dto.RentFee.HasValue) house.RentFee = dto.RentFee.Value;
@@ -266,7 +271,7 @@ public class HouseService
     {
         h.Id,
         h.HouseNumber,
-        HouseType = h.HouseType.ToString(),
+        HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
         h.RentFee,
         h.DepositFee,
         OccupancyStatus = h.OccupancyStatus.ToString(),

@@ -7,7 +7,7 @@ namespace ShmsBackend.Api.Models.DTOs.Flat;
 public class HouseGroupDto
 {
     [Required]
-    public string HouseType { get; set; } = string.Empty;
+    public Guid HouseTypeId { get; set; }
 
     [Required]
     [Range(1, 200)]

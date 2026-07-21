@@ -57,10 +57,16 @@ public class FlatService
         var houses = new List<House>();
         if (dto.Houses != null && dto.Houses.Count > 0)
         {
+            var houseTypeIds = dto.Houses.Select(g => g.HouseTypeId).Distinct().ToList();
+            var validHouseTypeIds = await _context.HouseTypes
+                .Where(t => houseTypeIds.Contains(t.Id) && t.IsActive)
+                .Select(t => t.Id)
+                .ToListAsync();
+
             foreach (var group in dto.Houses)
             {
-                if (!Enum.TryParse<HouseType>(group.HouseType, true, out var houseType))
-                    throw new InvalidOperationException($"Invalid house type: {group.HouseType}");
+                if (!validHouseTypeIds.Contains(group.HouseTypeId))
+                    throw new InvalidOperationException($"Invalid house type.");
 
                 for (int i = 1; i <= group.Count; i++)
                 {
@@ -68,7 +74,7 @@ public class FlatService
                     {
                         Id = Guid.NewGuid(),
                         HouseNumber = $"{group.HouseNumberPrefix}{i}",
-                        HouseType = houseType,
+                        HouseTypeId = group.HouseTypeId,
                         RentFee = group.RentFee,
                         DepositFee = group.DepositFee,
                         OccupancyStatus = OccupancyStatus.Vacant,
@@ -95,7 +101,7 @@ public class FlatService
                 var groupHouseIds = houses.Skip(index).Take(line.Count).Select(h => h.Id).ToList();
                 houseGroups.Add(new
                 {
-                    line.HouseType,
+                    HouseTypeId = line.HouseTypeId,
                     line.HouseNumberPrefix,
                     HouseIds = groupHouseIds
                 });
@@ -240,6 +246,8 @@ public class FlatService
             .Include(f => f.Landlord)
             .Include(f => f.Houses)
                 .ThenInclude(h => h.Images)
+            .Include(f => f.Houses)
+                .ThenInclude(h => h.HouseTypeRef)
             .Include(f => f.AgentFlats)
                 .ThenInclude(af => af.Agent)
             .FirstOrDefaultAsync(f => f.Id == id);
@@ -275,7 +283,7 @@ public class FlatService
             {
                 h.Id,
                 h.HouseNumber,
-                HouseType = h.HouseType.ToString(),
+                HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
@@ -416,11 +424,17 @@ public class FlatService
         var flat = await _context.Flats.FindAsync(flatId);
         if (flat == null) return null;
 
+        var houseTypeIds = houseLines.Select(g => g.HouseTypeId).Distinct().ToList();
+        var validHouseTypeIds = await _context.HouseTypes
+            .Where(t => houseTypeIds.Contains(t.Id) && t.IsActive)
+            .Select(t => t.Id)
+            .ToListAsync();
+
         var houses = new List<House>();
         foreach (var group in houseLines)
         {
-            if (!Enum.TryParse<HouseType>(group.HouseType, true, out var houseType))
-                throw new InvalidOperationException($"Invalid house type: {group.HouseType}");
+            if (!validHouseTypeIds.Contains(group.HouseTypeId))
+                throw new InvalidOperationException($"Invalid house type.");
 
             for (int i = 1; i <= group.Count; i++)
             {
@@ -428,7 +442,7 @@ public class FlatService
                 {
                     Id = Guid.NewGuid(),
                     HouseNumber = $"{group.HouseNumberPrefix}{i}",
-                    HouseType = houseType,
+                    HouseTypeId = group.HouseTypeId,
                     RentFee = group.RentFee,
                     DepositFee = group.DepositFee,
                     OccupancyStatus = OccupancyStatus.Vacant,
@@ -454,7 +468,7 @@ public class FlatService
             var groupHouseIds = houses.Skip(index).Take(line.Count).Select(h => h.Id).ToList();
             houseGroups.Add(new
             {
-                line.HouseType,
+                HouseTypeId = line.HouseTypeId,
                 line.HouseNumberPrefix,
                 HouseIds = groupHouseIds
             });

@@ -45,6 +45,7 @@ public class PortalFlatController : ControllerBase
             var agentFlats = await _context.AgentFlats
                 .Include(af => af.Flat)
                     .ThenInclude(f => f.Houses)
+                        .ThenInclude(h => h.HouseTypeRef)
                 .Where(af => af.AgentId == agentId)
                 .AsSplitQuery()
                 .Select(af => new
@@ -62,7 +63,7 @@ public class PortalFlatController : ControllerBase
                     {
                         h.Id,
                         h.HouseNumber,
-                        HouseType = h.HouseType.ToString(),
+                        HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                         h.RentFee,
                         h.DepositFee,
                         OccupancyStatus = h.OccupancyStatus.ToString(),
@@ -83,6 +84,7 @@ public class PortalFlatController : ControllerBase
 
             var landlordFlats = await _context.Flats
                 .Include(f => f.Houses)
+                    .ThenInclude(h => h.HouseTypeRef)
                 .Where(f => f.LandlordId == landlordId)
                 .AsSplitQuery()
                 .Select(f => new
@@ -100,7 +102,7 @@ public class PortalFlatController : ControllerBase
                     {
                         h.Id,
                         h.HouseNumber,
-                        HouseType = h.HouseType.ToString(),
+                        HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                         h.RentFee,
                         h.DepositFee,
                         OccupancyStatus = h.OccupancyStatus.ToString(),
@@ -116,6 +118,8 @@ public class PortalFlatController : ControllerBase
         var allFlats = await _context.Flats
             .Include(f => f.Houses)
                 .ThenInclude(h => h.Images)
+            .Include(f => f.Houses)
+                .ThenInclude(h => h.HouseTypeRef)
             .AsSplitQuery()
             .ToListAsync();
 
@@ -134,7 +138,7 @@ public class PortalFlatController : ControllerBase
             {
                 h.Id,
                 h.HouseNumber,
-                HouseType = h.HouseType.ToString(),
+                HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
@@ -158,6 +162,7 @@ public class PortalFlatController : ControllerBase
             var agentFlat = await _context.AgentFlats
                 .Include(af => af.Flat)
                     .ThenInclude(f => f.Houses)
+                        .ThenInclude(h => h.HouseTypeRef)
                 .FirstOrDefaultAsync(af => af.AgentId == agentId && af.FlatId == id);
 
             if (agentFlat == null)
@@ -179,7 +184,7 @@ public class PortalFlatController : ControllerBase
                 {
                     h.Id,
                     h.HouseNumber,
-                    HouseType = h.HouseType.ToString(),
+                    HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                     h.RentFee,
                     h.DepositFee,
                     OccupancyStatus = h.OccupancyStatus.ToString(),
@@ -201,6 +206,8 @@ public class PortalFlatController : ControllerBase
                     .ThenInclude(h => h.Tenants)
                 .Include(f => f.Houses)
                     .ThenInclude(h => h.Images)
+                .Include(f => f.Houses)
+                    .ThenInclude(h => h.HouseTypeRef)
                 .FirstOrDefaultAsync(f => f.Id == id && f.LandlordId == landlordId);
 
             if (landlordFlat == null)
@@ -224,7 +231,7 @@ public class PortalFlatController : ControllerBase
                 {
                     h.Id,
                     h.HouseNumber,
-                    HouseType = h.HouseType.ToString(),
+                    HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                     h.RentFee,
                     h.DepositFee,
                     OccupancyStatus = h.OccupancyStatus.ToString(),
@@ -247,6 +254,7 @@ public class PortalFlatController : ControllerBase
 
         var result = await _context.Flats
             .Include(f => f.Houses)
+                .ThenInclude(h => h.HouseTypeRef)
             .FirstOrDefaultAsync(f => f.Id == id);
 
         if (result == null) return NotFound(new { success = false, message = "Flat not found." });
@@ -266,7 +274,7 @@ public class PortalFlatController : ControllerBase
             {
                 h.Id,
                 h.HouseNumber,
-                HouseType = h.HouseType.ToString(),
+                HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),

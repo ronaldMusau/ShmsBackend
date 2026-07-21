@@ -9,7 +9,7 @@ public class CreateHouseDto
     public string HouseNumber { get; set; } = string.Empty;
 
     [Required]
-    public string HouseType { get; set; } = string.Empty;
+    public Guid HouseTypeId { get; set; }
 
     [Required]
     [Range(1, double.MaxValue)]

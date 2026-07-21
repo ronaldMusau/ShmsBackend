@@ -29,6 +29,7 @@ public class ShmsDbContext : DbContext
 
     // Property listings
     public DbSet<House> Houses { get; set; }
+    public DbSet<HouseType> HouseTypes { get; set; }
     public DbSet<Flat> Flats { get; set; }
     public DbSet<HouseImage> HouseImages { get; set; }
     public DbSet<PendingRentChange> PendingRentChanges { get; set; }
@@ -183,13 +184,18 @@ public class ShmsDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
+        // ── HouseType Configuration ──────────────────────────────────────────
+        modelBuilder.Entity<HouseType>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(150);
+        });
+
         // ── House Configuration ──────────────────────────────────────────────
         modelBuilder.Entity<House>(entity =>
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.HouseNumber).IsRequired().HasMaxLength(20);
-            entity.Property(e => e.HouseType).IsRequired()
-                  .HasConversion<string>();
             entity.Property(e => e.RentFee).HasColumnType("decimal(10,2)");
             entity.Property(e => e.DepositFee).HasColumnType("decimal(10,2)");
             entity.Property(e => e.OccupancyStatus)
@@ -199,6 +205,10 @@ public class ShmsDbContext : DbContext
                   .HasConversion<string>()
                   .HasDefaultValue(PaymentStatus.NotPaid)
                   .HasSentinel(PaymentStatus.NotPaid);
+            entity.HasOne(h => h.HouseTypeRef)
+                  .WithMany()
+                  .HasForeignKey(h => h.HouseTypeId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ── HouseImage Configuration ─────────────────────────────────────────
@@ -389,6 +399,7 @@ public class ShmsDbContext : DbContext
         modelBuilder.Entity<Notification>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ServiceChargeSetting>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Payment>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<HouseType>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ComplaintType>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Complaint>().HasQueryFilter(e => !e.IsDeleted);
     }
