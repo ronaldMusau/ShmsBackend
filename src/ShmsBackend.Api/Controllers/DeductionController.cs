@@ -90,4 +90,16 @@ public class DeductionController : ControllerBase
             perLandlord = perLandlordNamed
         });
     }
+
+    // GET /api/deduction/years — distinct years present in Deductions table
+    [HttpGet("years")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetAvailableYears()
+    {
+        var years = await _context.Deductions.Select(d => d.DeductionYear).Distinct().OrderByDescending(y => y).ToListAsync();
+        var currentYear = DateTime.UtcNow.Year;
+        if (!years.Contains(currentYear)) years.Insert(0, currentYear);
+        years = years.OrderByDescending(y => y).ToList();
+        return Ok(new { success = true, years });
+    }
 }

@@ -524,6 +524,18 @@ public class PaymentController : ControllerBase
         });
     }
 
+    // GET /api/payments/years — distinct years present in Payments table
+    [HttpGet("years")]
+    [Authorize]
+    public async Task<IActionResult> GetAvailableYears()
+    {
+        var years = await _context.Payments.Select(p => p.Year).Distinct().OrderByDescending(y => y).ToListAsync();
+        var currentYear = DateTime.UtcNow.Year;
+        if (!years.Contains(currentYear)) years.Insert(0, currentYear);
+        years = years.OrderByDescending(y => y).ToList();
+        return Ok(new { success = true, years });
+    }
+
     // GET /api/payments/service-charges — get service charge settings
     [HttpGet("service-charges")]
     [Authorize]
