@@ -52,10 +52,22 @@ public class HouseController : ControllerBase
 
     [HttpGet]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
     {
-        var result = await _houseService.GetAllAsync();
-        return Ok(new { success = true, data = result });
+        var all = (await _houseService.GetAllAsync()).ToList();
+        var total = all.Count;
+        var data = all.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
     }
 
     [HttpGet("{id:guid}")]

@@ -120,14 +120,18 @@ public class TenantController : ControllerBase
 
     [HttpGet]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
     {
         try
         {
             var tenants = (await _tenantService.GetAllAsync()).ToList();
+            var total = tenants.Count;
+            var pagedTenants = tenants.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
             // For any house whose flat was soft-deleted, look up the real name
-            var deletedFlatIds = tenants
+            var deletedFlatIds = pagedTenants
                 .Where(t => t.House != null && t.House.Flat == null)
                 .Select(t => t.House!.FlatId)
                 .Distinct()
@@ -142,7 +146,7 @@ public class TenantController : ControllerBase
                     .ToDictionaryAsync(f => f.Id, f => f.FlatName);
             }
 
-            return Ok(ApiResponse<object>.SuccessResponse(tenants.Select(t => new
+            var data = pagedTenants.Select(t => new
             {
                 t.Id,
                 t.Email,
@@ -173,7 +177,17 @@ public class TenantController : ControllerBase
                 t.EmergencyContactPhone,
                 t.UpdatedAt,
                 PortalUserType = t.PortalUserType.ToString()
-            })));
+            }).ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data,
+                total,
+                page,
+                pageSize,
+                totalPages = (int)Math.Ceiling((double)total / pageSize)
+            });
         }
         catch (Exception ex)
         {

@@ -264,7 +264,9 @@ public class PortalPaymentController : ControllerBase
         [FromQuery] DateTime? fromDate,
         [FromQuery] DateTime? toDate,
         [FromQuery] decimal? minAmount,
-        [FromQuery] decimal? maxAmount)
+        [FromQuery] decimal? maxAmount,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
     {
         var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(landlordIdStr, out var landlordId))
@@ -309,24 +311,22 @@ public class PortalPaymentController : ControllerBase
         if (maxAmount.HasValue)
             query = query.Where(p => p.Amount <= maxAmount.Value);
 
-        var allPayments = await query.OrderByDescending(p => p.CreatedAt).ToListAsync();
+        var total = await query.CountAsync();
+        var totalCollected = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid).SumAsync(p => p.AmountPaid);
+        var totalPending = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid).SumAsync(p => p.Balance);
+        var totalOverdue = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue).SumAsync(p => p.Balance);
+        var totalPaidCount = await query.CountAsync(p => p.PaymentStatus == PaymentTransactionStatus.Paid);
 
-        var totalCollected = allPayments
-            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid)
-            .Sum(p => p.AmountPaid);
-        var totalPending = allPayments
-            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid)
-            .Sum(p => p.Balance);
-        var totalOverdue = allPayments
-            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue)
-            .Sum(p => p.Balance);
-        var totalPaidCount = allPayments
-            .Count(p => p.PaymentStatus == PaymentTransactionStatus.Paid);
+        var pagedPayments = await query
+            .OrderByDescending(p => p.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
 
-        return Ok(ApiResponse<object>.SuccessResponse(new
+        return Ok(new
         {
-            totals = new { totalCollected, totalPending, totalOverdue, totalPaidCount },
-            data = allPayments.Select(p => new
+            success = true,
+            data = pagedPayments.Select(p => new
             {
                 p.Id,
                 p.Month,
@@ -344,8 +344,13 @@ public class PortalPaymentController : ControllerBase
                 HouseNumber = p.House?.HouseNumber,
                 FlatName = p.House?.Flat?.FlatName,
                 TenantName = p.Tenant != null ? $"{p.Tenant.FirstName} {p.Tenant.LastName}" : null
-            })
-        }));
+            }),
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize),
+            totals = new { totalCollected, totalPending, totalOverdue, totalPaidCount }
+        });
     }
 
     [HttpGet("{id}/applications")]
