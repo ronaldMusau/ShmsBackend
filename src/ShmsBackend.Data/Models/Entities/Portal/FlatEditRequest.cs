@@ -16,6 +16,7 @@ public class FlatEditRequest
     public string? ProposedGoogleMapsLink { get; set; }
     public Guid? ProposedAgentId { get; set; }
     public bool ClearAgent { get; set; } = false;
+    public string SubmissionNotes { get; set; } = string.Empty;
     public Guid RequestedByUserId { get; set; }
     public string Status { get; set; } = "Pending";
     public int? CurrentApprovalStepOrder { get; set; }

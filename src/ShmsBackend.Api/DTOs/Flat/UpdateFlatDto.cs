@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace ShmsBackend.Api.Models.DTOs.Flat;
 
 public class UpdateFlatDto
@@ -11,4 +13,6 @@ public class UpdateFlatDto
     public bool ClearAgent { get; set; } = false;
     public int RentDueDay { get; set; }
     public int BillableGracePeriodMonths { get; set; }
+    [Required]
+    public string SubmissionNotes { get; set; } = string.Empty;
 }

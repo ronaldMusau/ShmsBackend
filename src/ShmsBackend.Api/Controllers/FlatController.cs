@@ -161,6 +161,9 @@ public class FlatController : ControllerBase
         if (existingPending)
             return BadRequest(new { success = false, message = "This flat already has a pending edit request awaiting approval." });
 
+        if (string.IsNullOrWhiteSpace(dto.SubmissionNotes))
+            return BadRequest(new { success = false, message = "A reason for this edit is required." });
+
         var firstStep = await _context.ApprovalSequenceSteps
             .Where(s => s.Module == "FlatEdit")
             .OrderBy(s => s.StepOrder)
@@ -182,6 +185,7 @@ public class FlatController : ControllerBase
             ProposedGoogleMapsLink = dto.GoogleMapsLink,
             ProposedAgentId = dto.AgentId,
             ClearAgent = dto.ClearAgent,
+            SubmissionNotes = dto.SubmissionNotes,
             RequestedByUserId = adminId,
             Status = "Pending",
             CurrentApprovalStepOrder = firstStep.StepOrder,
@@ -350,7 +354,8 @@ public class FlatController : ControllerBase
             CurrentRentDueDay = r.Flat.RentDueDay,
             CurrentAgentName = currentAgentByFlat.GetValueOrDefault(r.FlatId),
             ProposedAgentName = r.ProposedAgentId.HasValue ? proposedAgents.GetValueOrDefault(r.ProposedAgentId.Value) : null,
-            r.ClearAgent
+            r.ClearAgent,
+            r.SubmissionNotes
         });
 
         return Ok(new { success = true, requests = data });

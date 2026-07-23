@@ -423,7 +423,8 @@ public class PortalFlatController : ControllerBase
             CurrentRentDueDay = r.Flat.RentDueDay,
             CurrentAgentName = currentAgentByFlat.GetValueOrDefault(r.FlatId),
             ProposedAgentName = r.ProposedAgentId.HasValue ? proposedAgents.GetValueOrDefault(r.ProposedAgentId.Value) : null,
-            r.ClearAgent
+            r.ClearAgent,
+            r.SubmissionNotes
         });
 
         return Ok(new { success = true, requests = data });
