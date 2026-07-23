@@ -254,7 +254,7 @@ public class ComplaintController : ControllerBase
             .FirstOrDefaultAsync();
 
         if (firstStep == null)
-            return BadRequest(new { success = false, message = "No approval sequence is configured for Complaints yet. Set one up under Setups > Approvals before proceeding." });
+            return BadRequest(new { success = false, errorCode = "NO_APPROVAL_SEQUENCE", message = "No approval sequence is configured for Complaints yet. Set one up under Setups > Approvals before proceeding." });
 
         complaint.IsBillable = true;
         complaint.BillableExplanation = dto.Justification;

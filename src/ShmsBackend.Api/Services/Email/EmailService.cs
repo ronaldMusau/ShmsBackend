@@ -236,6 +236,13 @@ public class EmailService : IEmailService
             GetLandlordDecisionTemplate(firstName, ticketNumber, decision, notes, amount));
     }
 
+    public async Task SendFlatEditSubmittedEmailAsync(string toEmail, string firstName, string flatName)
+    {
+        _logger.LogInformation("Sending flat edit submitted email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Flat Edit Submitted — {flatName}",
+            GetFlatEditSubmittedTemplate(firstName, flatName));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -766,6 +773,24 @@ public class EmailService : IEmailService
 {SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
 
         return WrapInLayout($"Complaint Escalated to You — {ticketNumber}", inner);
+    }
+
+    private string GetFlatEditSubmittedTemplate(string firstName, string flatName)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"An edit has been submitted for your flat <strong style='color:{ColourGold};'>'{flatName}'</strong> on the Romah Estates system and is now going through internal approval.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>FLAT</p>
+  <span style='font-family:""Syne"",Arial,sans-serif;font-size:20px;font-weight:700;color:{ColourGold};'>
+    {flatName}
+  </span>
+")}
+{Para("You will be notified when the edit has cleared internal review and requires your final approval.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Flat Edit Submitted — {flatName}", inner);
     }
 
     private string GetApprovalStepTemplate(string firstName, string ticketNumber, int stepOrder)

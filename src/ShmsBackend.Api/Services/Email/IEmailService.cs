@@ -28,4 +28,5 @@ public interface IEmailService
     Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason);
     Task SendLandlordApprovalNeededEmailAsync(string toEmail, string firstName, string ticketNumber);
     Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount);
+    Task SendFlatEditSubmittedEmailAsync(string toEmail, string firstName, string flatName);
 }

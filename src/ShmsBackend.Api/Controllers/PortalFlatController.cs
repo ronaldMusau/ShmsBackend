@@ -5,6 +5,9 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 
@@ -16,10 +19,20 @@ namespace ShmsBackend.Api.Controllers;
 public class PortalFlatController : ControllerBase
 {
     private readonly ShmsDbContext _context;
+    private readonly IEmailService _emailService;
+    private readonly INotificationService _notificationService;
+    private readonly ILogger<PortalFlatController> _logger;
 
-    public PortalFlatController(ShmsDbContext context)
+    public PortalFlatController(
+        ShmsDbContext context,
+        IEmailService emailService,
+        INotificationService notificationService,
+        ILogger<PortalFlatController> logger)
     {
         _context = context;
+        _emailService = emailService;
+        _notificationService = notificationService;
+        _logger = logger;
     }
 
     private Guid GetUserId()
@@ -287,5 +300,97 @@ public class PortalFlatController : ControllerBase
             }),
             result.CreatedAt
         }});
+    }
+
+    // PATCH /api/portalflats/edit-request/{id}/final-approval
+    [HttpPatch("edit-request/{id:guid}/final-approval")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> LandlordFinalEditApproval(Guid id, [FromBody] LandlordApprovalDto dto)
+    {
+        var landlordId = GetUserId();
+        var request = await _context.FlatEditRequests.Include(r => r.Flat).FirstOrDefaultAsync(r => r.Id == id);
+        if (request == null) return NotFound(new { success = false, message = "Edit request not found." });
+        if (request.Flat!.LandlordId != landlordId) return Forbid();
+        if (request.CurrentApprovalStepOrder != null) return BadRequest(new { success = false, message = "Internal approval is still in progress." });
+        if (request.Status != "Pending") return BadRequest(new { success = false, message = "This request has already been actioned." });
+
+        request.LandlordDecision = dto.Approved ? "Approved" : "Rejected";
+        request.LandlordDecisionNotes = dto.Notes;
+        request.LandlordActionedAt = DateTime.UtcNow;
+        request.Status = dto.Approved ? "Approved" : "Rejected";
+        request.UpdatedAt = DateTime.UtcNow;
+
+        if (dto.Approved)
+        {
+            var flat = request.Flat;
+            if (request.ProposedFlatName != null) flat.FlatName = request.ProposedFlatName;
+            if (request.ProposedCounty != null) flat.County = request.ProposedCounty;
+            if (request.ProposedConstituency != null) flat.Constituency = request.ProposedConstituency;
+            if (request.ProposedWard != null) flat.Ward = request.ProposedWard;
+            if (request.ProposedRentDueDay.HasValue) flat.RentDueDay = request.ProposedRentDueDay.Value;
+            if (request.ProposedBillableGracePeriodMonths.HasValue) flat.BillableGracePeriodMonths = request.ProposedBillableGracePeriodMonths.Value;
+            if (request.ProposedGoogleMapsLink != null) flat.GoogleMapsLink = request.ProposedGoogleMapsLink;
+            flat.UpdatedAt = DateTime.UtcNow;
+
+            if (request.ClearAgent)
+            {
+                var links = await _context.AgentFlats.Where(af => af.FlatId == flat.Id).ToListAsync();
+                _context.AgentFlats.RemoveRange(links);
+            }
+            else if (request.ProposedAgentId.HasValue)
+            {
+                var links = await _context.AgentFlats.Where(af => af.FlatId == flat.Id).ToListAsync();
+                _context.AgentFlats.RemoveRange(links);
+                _context.AgentFlats.Add(new AgentFlat
+                {
+                    AgentId = request.ProposedAgentId.Value,
+                    FlatId = flat.Id,
+                    AssignedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        var requester = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == request.RequestedByUserId);
+        if (requester != null)
+        {
+            try { await _notificationService.SendToUserAsync(requester.Id.ToString(), $"The landlord {(dto.Approved ? "approved" : "rejected")} your edit for \"{request.Flat.FlatName}\".", "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify requester of landlord's flat edit decision"); }
+            try { await _emailService.SendLandlordDecisionEmailAsync(requester.Email, requester.FirstName, $"FLAT-{request.Flat.FlatName}", request.LandlordDecision!, request.LandlordDecisionNotes, null); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit landlord-decision email"); }
+        }
+
+        return Ok(new { success = true, message = dto.Approved ? "Approved. Flat updated." : "Rejected." });
+    }
+
+    // GET /api/portalflats/edit-request/my-queue
+    [HttpGet("edit-request/my-queue")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordEditRequestQueue()
+    {
+        var landlordId = GetUserId();
+        var requests = await _context.FlatEditRequests
+            .Include(r => r.Flat)
+            .Where(r => r.Flat!.LandlordId == landlordId && r.CurrentApprovalStepOrder == null && r.Status == "Pending")
+            .OrderBy(r => r.CreatedAt)
+            .ToListAsync();
+
+        var data = requests.Select(r => new
+        {
+            r.Id,
+            r.FlatId,
+            FlatName = r.Flat!.FlatName,
+            r.ProposedFlatName,
+            r.ProposedCounty,
+            r.ProposedConstituency,
+            r.ProposedWard,
+            r.ProposedRentDueDay,
+            r.ProposedBillableGracePeriodMonths,
+            r.ProposedGoogleMapsLink,
+            r.CreatedAt
+        });
+
+        return Ok(new { success = true, requests = data });
     }
 }
