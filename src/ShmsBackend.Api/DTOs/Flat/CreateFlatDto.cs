@@ -33,6 +33,7 @@ public class CreateFlatDto
     public string? County { get; set; }
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
+    public string? GoogleMapsLink { get; set; }
 
     [Required]
     public Guid LandlordId { get; set; }

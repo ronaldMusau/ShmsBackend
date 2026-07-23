@@ -11,6 +11,7 @@ public class Flat : ISoftDelete
     public string? County { get; set; }
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
+    public string? GoogleMapsLink { get; set; }
     public int RentDueDay { get; set; } = 5;
     public int BillableGracePeriodMonths { get; set; } = 3;
     public Guid LandlordId { get; set; }

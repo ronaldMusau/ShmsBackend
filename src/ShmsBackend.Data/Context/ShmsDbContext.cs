@@ -33,6 +33,7 @@ public class ShmsDbContext : DbContext
     public DbSet<Flat> Flats { get; set; }
     public DbSet<HouseImage> HouseImages { get; set; }
     public DbSet<PendingRentChange> PendingRentChanges { get; set; }
+    public DbSet<FlatEditRequest> FlatEditRequests { get; set; }
 
     // Agent–Flat assignments
     public DbSet<AgentFlat> AgentFlats { get; set; }
@@ -253,6 +254,19 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.House)
                   .WithMany()
                   .HasForeignKey(e => e.HouseId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── FlatEditRequest Configuration ────────────────────────────────────
+        modelBuilder.Entity<FlatEditRequest>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasOne(e => e.Flat)
+                  .WithMany()
+                  .HasForeignKey(e => e.FlatId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 

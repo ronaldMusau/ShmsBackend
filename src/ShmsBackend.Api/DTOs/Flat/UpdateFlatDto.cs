@@ -6,6 +6,7 @@ public class UpdateFlatDto
     public string? County { get; set; }
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
+    public string? GoogleMapsLink { get; set; }
     public Guid? AgentId { get; set; }
     public bool ClearAgent { get; set; } = false;
     public int RentDueDay { get; set; }

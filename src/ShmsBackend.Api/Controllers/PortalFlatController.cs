@@ -163,6 +163,9 @@ public class PortalFlatController : ControllerBase
                 .Include(af => af.Flat)
                     .ThenInclude(f => f.Houses)
                         .ThenInclude(h => h.HouseTypeRef)
+                .Include(af => af.Flat)
+                    .ThenInclude(f => f.Houses)
+                        .ThenInclude(h => h.Images)
                 .FirstOrDefaultAsync(af => af.AgentId == agentId && af.FlatId == id);
 
             if (agentFlat == null)

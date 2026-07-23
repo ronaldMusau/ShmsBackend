@@ -326,30 +326,31 @@ public class PortalPaymentController : ControllerBase
         return Ok(new
         {
             success = true,
-            data = pagedPayments.Select(p => new
+            data = new
             {
-                p.Id,
-                p.Month,
-                p.Year,
-                p.IsInitialPayment,
-                p.Amount,
-                p.AmountPaid,
-                p.Balance,
-                p.RentAmount,
-                p.DepositAmount,
-                Status = p.PaymentStatus.ToString(),
-                p.MpesaReceiptNumber,
-                p.PaidAt,
-                p.FlatId,
-                HouseNumber = p.House?.HouseNumber,
-                FlatName = p.House?.Flat?.FlatName,
-                TenantName = p.Tenant != null ? $"{p.Tenant.FirstName} {p.Tenant.LastName}" : null
-            }),
-            total,
-            page,
-            pageSize,
-            totalPages = (int)Math.Ceiling((double)total / pageSize),
-            totals = new { totalCollected, totalPending, totalOverdue, totalPaidCount }
+                data = pagedPayments.Select(p => new
+                {
+                    p.Id,
+                    p.Month,
+                    p.Year,
+                    p.IsInitialPayment,
+                    p.Amount,
+                    p.AmountPaid,
+                    p.Balance,
+                    p.RentAmount,
+                    p.DepositAmount,
+                    Status = p.PaymentStatus.ToString(),
+                    p.MpesaReceiptNumber,
+                    p.PaidAt,
+                    p.FlatId,
+                    HouseNumber = p.House?.HouseNumber,
+                    FlatName = p.House?.Flat?.FlatName,
+                    TenantName = p.Tenant != null ? $"{p.Tenant.FirstName} {p.Tenant.LastName}" : null
+                }),
+                totalCount = total,
+                totalPages = (int)Math.Ceiling((double)total / pageSize),
+                totals = new { totalCollected, totalPending, totalOverdue, totalPaidCount }
+            }
         });
     }
 
