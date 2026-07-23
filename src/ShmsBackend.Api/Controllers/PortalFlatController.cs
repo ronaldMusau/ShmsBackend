@@ -208,6 +208,7 @@ public class PortalFlatController : ControllerBase
                     PaymentStatus = h.PaymentStatus.ToString(),
                     Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList()
                 }).ToList(),
+                HasPendingEditRequest = _context.FlatEditRequests.Any(r => r.FlatId == flat.Id && r.Status == "Pending"),
                 flat.CreatedAt
             }});
         }
@@ -265,6 +266,7 @@ public class PortalFlatController : ControllerBase
                     }).FirstOrDefault(),
                     Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList()
                 }),
+                HasPendingEditRequest = _context.FlatEditRequests.Any(r => r.FlatId == landlordFlat.Id && r.Status == "Pending"),
                 landlordFlat.CreatedAt
             }});
         }

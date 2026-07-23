@@ -304,6 +304,7 @@ public class FlatService
                 af.Agent.PhoneNumber,
                 af.AssignedAt
             }).ToList(),
+            HasPendingEditRequest = _context.FlatEditRequests.Any(r => r.FlatId == flat.Id && r.Status == "Pending"),
             flat.CreatedAt,
             flat.UpdatedAt
         };
