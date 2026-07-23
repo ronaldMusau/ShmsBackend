@@ -278,12 +278,13 @@ public class FlatController : ControllerBase
             request.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == request.Flat!.LandlordId);
+            var editFlat = request.Flat!;
+            var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == editFlat.LandlordId);
             if (landlord != null)
             {
-                try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit to your flat \"{request.Flat.FlatName}\" requires your final approval.", "property"); }
+                try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit to your flat \"{editFlat.FlatName}\" requires your final approval.", "property"); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of pending flat edit approval"); }
-                try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, $"FLAT-{request.Flat.FlatName}"); }
+                try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, $"FLAT-{editFlat.FlatName}"); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord flat edit approval-needed email"); }
             }
             return Ok(new { success = true, message = "Approved. Internal sequence complete — sent to landlord for final approval." });
