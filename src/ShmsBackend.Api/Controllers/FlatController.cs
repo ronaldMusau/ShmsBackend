@@ -303,6 +303,31 @@ public class FlatController : ControllerBase
             .OrderBy(r => r.CreatedAt)
             .ToListAsync();
 
+        var requesterIds = requests.Select(r => r.RequestedByUserId).Distinct().ToList();
+        var requesters = await _context.PortalUsers
+            .Where(u => requesterIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+
+        var proposedAgentIds = requests
+            .Where(r => r.ProposedAgentId.HasValue)
+            .Select(r => r.ProposedAgentId!.Value)
+            .Distinct()
+            .ToList();
+        var proposedAgents = await _context.Agents
+            .Where(a => proposedAgentIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, a => $"{a.FirstName} {a.LastName}");
+
+        var flatIds = requests.Select(r => r.FlatId).Distinct().ToList();
+        var currentAgentAssignments = await _context.AgentFlats
+            .Where(af => flatIds.Contains(af.FlatId))
+            .Include(af => af.Agent)
+            .ToListAsync();
+        var currentAgentByFlat = currentAgentAssignments
+            .GroupBy(af => af.FlatId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.First().Agent != null ? $"{g.First().Agent!.FirstName} {g.First().Agent!.LastName}" : (string?)null);
+
         var data = requests.Select(r => new
         {
             r.Id,
@@ -316,7 +341,16 @@ public class FlatController : ControllerBase
             r.ProposedBillableGracePeriodMonths,
             r.ProposedGoogleMapsLink,
             r.RequestedByUserId,
-            r.CreatedAt
+            r.CreatedAt,
+            RequestedByName = requesters.GetValueOrDefault(r.RequestedByUserId, "Unknown"),
+            CurrentFlatName = r.Flat.FlatName,
+            CurrentCounty = r.Flat.County,
+            CurrentConstituency = r.Flat.Constituency,
+            CurrentWard = r.Flat.Ward,
+            CurrentRentDueDay = r.Flat.RentDueDay,
+            CurrentAgentName = currentAgentByFlat.GetValueOrDefault(r.FlatId),
+            ProposedAgentName = r.ProposedAgentId.HasValue ? proposedAgents.GetValueOrDefault(r.ProposedAgentId.Value) : null,
+            r.ClearAgent
         });
 
         return Ok(new { success = true, requests = data });
