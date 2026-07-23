@@ -208,6 +208,34 @@ public class EmailService : IEmailService
             GetComplaintEscalatedAgentTemplate(firstName, ticketNumber));
     }
 
+    public async Task SendApprovalStepEmailAsync(string toEmail, string firstName, string ticketNumber, int stepOrder)
+    {
+        _logger.LogInformation("Sending approval-step email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Approval Needed — {ticketNumber}",
+            GetApprovalStepTemplate(firstName, ticketNumber, stepOrder));
+    }
+
+    public async Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason)
+    {
+        _logger.LogInformation("Sending approval-rejected email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Complaint Sent Back for Revision — {ticketNumber}",
+            GetApprovalRejectedTemplate(firstName, ticketNumber, rejectionReason));
+    }
+
+    public async Task SendLandlordApprovalNeededEmailAsync(string toEmail, string firstName, string ticketNumber)
+    {
+        _logger.LogInformation("Sending landlord approval-needed email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Your Approval Needed — {ticketNumber}",
+            GetLandlordApprovalNeededTemplate(firstName, ticketNumber));
+    }
+
+    public async Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount)
+    {
+        _logger.LogInformation("Sending landlord-decision email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Landlord {decision} Complaint {ticketNumber}",
+            GetLandlordDecisionTemplate(firstName, ticketNumber, decision, notes, amount));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -738,5 +766,96 @@ public class EmailService : IEmailService
 {SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
 
         return WrapInLayout($"Complaint Escalated to You — {ticketNumber}", inner);
+    }
+
+    private string GetApprovalStepTemplate(string firstName, string ticketNumber, int stepOrder)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A complaint requires your approval on the <strong style='color:{ColourGold};'>Romah Estates</strong> system.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+  <p style='margin:12px 0 0;color:{ColourTextMuted};font-size:13px;'>Approval Step: <strong style='color:{ColourTextSec};'>{stepOrder}</strong></p>
+")}
+{Para("Please log in to the management portal to review and action this complaint.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Approval Needed — {ticketNumber}", inner);
+    }
+
+    private string GetApprovalRejectedTemplate(string firstName, string ticketNumber, string rejectionReason)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Complaint <strong style='color:{ColourGold};'>{ticketNumber}</strong> has been rejected at an approval step and sent back to you for revision.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+")}
+<div style='background-color:{ColourElevated};border-left:4px solid {ColourGold};border-radius:6px;padding:16px 20px;margin:24px 0;'>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>REJECTION REASON</p>
+  <p style='color:{ColourTextSec};font-size:15px;line-height:1.7;margin:0;'>{rejectionReason}</p>
+</div>
+{Para("Please review the reason above and make the necessary revisions before resubmitting.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Complaint Sent Back for Revision — {ticketNumber}", inner);
+    }
+
+    private string GetLandlordApprovalNeededTemplate(string firstName, string ticketNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A complaint on your property has cleared internal review and now requires <strong style='color:{ColourGold};'>your final approval</strong>.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+")}
+{Para("Please log in to your landlord portal to review the complaint details and make your final decision.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Your Approval Needed — {ticketNumber}", inner);
+    }
+
+    private string GetLandlordDecisionTemplate(string firstName, string ticketNumber, string decision, string? notes, decimal? amount)
+    {
+        var decisionColour = decision == "Approved" ? ColourSuccess : ColourError;
+        var amountRow = amount.HasValue
+            ? $"<tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Amount</td><td style='color:{ColourTextSec};font-weight:700;font-size:14px;text-align:right;'>KES {amount.Value:N2}</td></tr>"
+            : "";
+        var notesBlock = !string.IsNullOrWhiteSpace(notes)
+            ? $@"<div style='background-color:{ColourElevated};border-left:4px solid {ColourGold};border-radius:6px;padding:16px 20px;margin:24px 0;'>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>LANDLORD NOTES</p>
+  <p style='color:{ColourTextSec};font-size:15px;line-height:1.7;margin:0;'>{notes}</p>
+</div>"
+            : "";
+
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"The landlord has made a final decision on complaint <strong style='color:{ColourGold};'>{ticketNumber}</strong>.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 12px 0;'>DECISION DETAILS</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Ticket Number</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{ticketNumber}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Decision</td><td style='color:{decisionColour};font-weight:700;font-size:14px;text-align:right;'>{decision}</td></tr>
+    {amountRow}
+  </table>
+")}
+{notesBlock}
+{Para("Please log in to the management portal to review the full complaint details.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Landlord {decision} Complaint {ticketNumber}", inner);
     }
 }

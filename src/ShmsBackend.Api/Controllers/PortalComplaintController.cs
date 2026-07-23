@@ -586,6 +586,22 @@ public class PortalComplaintController : ControllerBase
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of landlord's final decision"); }
 
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+
+            foreach (var mgr in managementUsers)
+            {
+                try { await _emailService.SendLandlordDecisionEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, complaint.LandlordDecision!, complaint.LandlordDecisionNotes, complaint.BillableAmount); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord-decision email to {Email}", mgr.Email); }
+            }
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to process landlord-decision management emails"); }
+
         return Ok(new { success = true, message = dto.Approved ? "Approved. Deduction recorded." : "Rejected." });
     }
 

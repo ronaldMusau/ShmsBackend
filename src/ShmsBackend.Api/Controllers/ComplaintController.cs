@@ -416,6 +416,11 @@ public class ComplaintController : ControllerBase
                 try { await _notificationService.SendToUserAsync(complaint.ReviewedByAdminId.Value.ToString(), $"Complaint {complaint.TicketNumber} was rejected at the approval step and needs your revision.", "property"); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify original reviewer of rejection"); }
             }
+            if (originalDecider != null)
+            {
+                try { await _emailService.SendApprovalRejectedEmailAsync(originalDecider.Email, originalDecider.FirstName, complaint.TicketNumber, dto.Notes!); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email"); }
+            }
             return Ok(new { success = true, message = "Rejected. Sent back to the original reviewer for revision." });
         }
 
@@ -430,6 +435,13 @@ public class ComplaintController : ControllerBase
 
             try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Complaint {complaint.TicketNumber} requires your approval (step {nextStep.StepOrder}).", "property"); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver"); }
+
+            var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
+            if (nextApprover != null)
+            {
+                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, complaint.TicketNumber, nextStep.StepOrder); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email"); }
+            }
 
             return Ok(new { success = true, message = "Approved. Advanced to the next approval step." });
         }
@@ -448,6 +460,12 @@ public class ComplaintController : ControllerBase
                 await _context.SaveChangesAsync();
                 try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"Complaint {complaint.TicketNumber} requires your final approval.", "property"); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of pending approval"); }
+                var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == complaint.LandlordId);
+                if (landlord != null)
+                {
+                    try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, complaint.TicketNumber); }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord approval-needed email"); }
+                }
                 return Ok(new { success = true, message = "Approved. Internal sequence complete — sent to landlord for final approval." });
             }
         }
