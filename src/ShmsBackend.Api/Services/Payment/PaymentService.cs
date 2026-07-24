@@ -530,6 +530,7 @@ public class PaymentService : IPaymentService
                     Year = cursorYear,
                     IsInitialPayment = false,
                     PaymentType = PaymentType.Rent,
+                    DueDate = new DateTime(cursorYear, cursorMonth, Math.Min(house.Flat!.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth))),
                     PaymentStatus = applyAmount >= monthlyTotal
                         ? PaymentTransactionStatus.Paid
                         : applyAmount > 0
@@ -654,7 +655,11 @@ public class PaymentService : IPaymentService
                 var exists = await _context.Payments.AnyAsync(p =>
                     p.TenantId == tenant.Id &&
                     p.Month == now.Month &&
-                    p.Year == now.Year);
+                    p.Year == now.Year &&
+                    p.TenancyCycle == tenant.TenancyCycle &&
+                    p.HouseId == tenant.HouseId &&
+                    !p.IsInitialPayment &&
+                    !p.IsDeleted);
 
                 if (exists) continue;
 
@@ -738,39 +743,54 @@ public class PaymentService : IPaymentService
             .Include(p => p.Tenant)
             .Include(p => p.House)
             .ThenInclude(h => h!.Flat)
-            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending &&
+            .Where(p => (p.PaymentStatus == PaymentTransactionStatus.Pending || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid) &&
                         p.DueDate < overdueThreshold &&
                         !p.IsDeleted)
             .ToListAsync();
 
-        foreach (var payment in overduePayments)
-        {
-            payment.PaymentStatus = PaymentTransactionStatus.Overdue;
-            payment.UpdatedAt = DateTime.UtcNow;
+        var groups = overduePayments
+            .GroupBy(p => new { p.TenantId, p.HouseId })
+            .ToList();
 
-            var house = payment.House;
+        foreach (var group in groups)
+        {
+            var orderedRows = group.OrderBy(p => p.Year).ThenBy(p => p.Month).ToList();
+
+            foreach (var payment in orderedRows)
+            {
+                payment.PaymentStatus = PaymentTransactionStatus.Overdue;
+                payment.UpdatedAt = DateTime.UtcNow;
+            }
+
+            var breakdown = orderedRows
+                .Select(p => (MonthLabel: new DateTime(p.Year, p.Month, 1).ToString("MMMM yyyy"), Balance: p.Balance))
+                .ToList();
+            var totalArrears = orderedRows.Sum(p => p.Balance);
+
+            var firstRow = orderedRows.First();
+            var house = firstRow.House;
             if (house != null)
             {
                 house.PaymentStatus = PaymentStatus.Overdue;
                 house.UpdatedAt = DateTime.UtcNow;
             }
 
-            if (payment.Tenant != null)
+            var tenant = firstRow.Tenant;
+            if (tenant != null)
             {
-                var daysOverdue = (int)(DateTime.UtcNow - payment.DueDate).TotalDays;
                 try
                 {
                     await _emailService.SendPaymentOverdueEmailAsync(
-                        payment.Tenant.Email,
-                        payment.Tenant.FirstName,
-                        payment.Balance,
-                        daysOverdue,
-                        payment.House?.HouseNumber ?? "",
-                        payment.House?.Flat?.FlatName ?? "");
+                        tenant.Email,
+                        tenant.FirstName,
+                        breakdown,
+                        totalArrears,
+                        house?.HouseNumber ?? "",
+                        house?.Flat?.FlatName ?? "");
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to send overdue email for payment {PaymentId}", payment.Id);
+                    _logger.LogError(ex, "Failed to send overdue email for tenant {TenantId}", tenant.Id);
                 }
 
                 if (house?.Flat?.LandlordId != null)
@@ -779,7 +799,7 @@ public class PaymentService : IPaymentService
                     {
                         await _notificationService.SendToUserAsync(
                             house.Flat.LandlordId.ToString(),
-                            $"Rent for House {house.HouseNumber} is {daysOverdue} day(s) overdue.",
+                            $"Rent for House {house.HouseNumber} has KES {totalArrears:N2} in overdue arrears across {orderedRows.Count} month(s).",
                             "payment");
                     }
                     catch { }

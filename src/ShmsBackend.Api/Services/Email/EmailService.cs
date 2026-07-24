@@ -152,11 +152,11 @@ public class EmailService : IEmailService
             GetPaymentReminderTemplate(firstName, amountDue, dueDate, houseNumber, flatName));
     }
 
-    public async Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, decimal amountDue, int daysOverdue, string houseNumber, string flatName)
+    public async Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName)
     {
         _logger.LogInformation("Sending payment overdue email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Overdue — Romah Estates",
-            GetPaymentOverdueTemplate(firstName, amountDue, daysOverdue, houseNumber, flatName));
+            GetPaymentOverdueTemplate(firstName, breakdown, totalArrears, houseNumber, flatName));
     }
 
     public async Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear)
@@ -638,17 +638,26 @@ public class EmailService : IEmailService
         return WrapInLayout("Payment Reminder — Romah Estates", inner);
     }
 
-    private string GetPaymentOverdueTemplate(string firstName, decimal amountDue, int daysOverdue, string houseNumber, string flatName)
+    private string GetPaymentOverdueTemplate(string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName)
     {
+        var rows = string.Join("", breakdown.Select(b =>
+            $"<tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>{b.MonthLabel}</td>" +
+            $"<td style='color:#ef4444;font-weight:600;font-size:14px;text-align:right;'>KES {b.Balance:N2}</td></tr>"));
+
         var inner = $@"
 {H2($"Payment Overdue, {firstName}")}
-{Para($"Your rent payment for <strong style='color:{ColourGold};'>House {houseNumber}</strong> in {flatName} is now <strong style='color:#ef4444;'>{daysOverdue} day(s) overdue</strong>.")}
+{Para($"Your rent for <strong style='color:{ColourGold};'>House {houseNumber}</strong> in {flatName} has the following overdue balance(s). Please make payment immediately to avoid further action.")}
 {GoldBox($@"
-  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>OVERDUE AMOUNT</p>
-  <p style='margin:0;font-size:22px;font-weight:700;color:#ef4444;'>KES {amountDue:N2}</p>
-  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>{daysOverdue} day(s) past due date</p>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 12px 0;'>OVERDUE BREAKDOWN</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    {rows}
+    <tr><td colspan='2'><hr style='border:none;border-top:1px solid {ColourBorderGold};margin:8px 0;'></td></tr>
+    <tr>
+      <td style='color:{ColourTextSec};font-size:14px;font-weight:700;padding:4px 0;'>Total Overdue</td>
+      <td style='color:#ef4444;font-weight:700;font-size:16px;text-align:right;'>KES {totalArrears:N2}</td>
+    </tr>
+  </table>
 ")}
-{Para("Please make your payment immediately to avoid further action.")}
 {Divider()}
 {SmallNote("If you have already made this payment, please ignore this email or contact your property manager.")}";
         return WrapInLayout("Payment Overdue — Romah Estates", inner);

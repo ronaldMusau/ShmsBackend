@@ -128,7 +128,7 @@ public class PaymentSchedulerService : BackgroundService
             .Include(p => p.Tenant)
             .Include(p => p.House)
             .ThenInclude(h => h!.Flat)
-            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending &&
+            .Where(p => (p.PaymentStatus == PaymentTransactionStatus.Pending || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid) &&
                         p.DueDate.Date == reminderDate &&
                         !p.IsDeleted)
             .ToListAsync();
