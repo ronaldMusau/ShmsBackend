@@ -41,7 +41,12 @@ public class PortalPaymentController : ControllerBase
         if (tenant == null) return Unauthorized();
 
         var allPayments = await _paymentService.GetTenantPaymentHistoryAsync(userId);
-        var payments = allPayments.Where(p => p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted).ToList();
+        var payments = allPayments
+            .Where(p => p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted
+                     && (p.PaymentStatus == PaymentTransactionStatus.Paid
+                         || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid
+                         || p.PaymentStatus == PaymentTransactionStatus.Overdue))
+            .ToList();
 
         var totalCollected = payments.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid).Sum(p => p.AmountPaid);
         var totalOverdue = payments.Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue).Sum(p => p.Balance);
@@ -233,23 +238,25 @@ public class PortalPaymentController : ControllerBase
         if (!Guid.TryParse(userIdStr, out var userId))
             return Unauthorized();
 
-        var payment = await _context.Payments.FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId);
-        if (payment == null)
-            return NotFound(new { success = false, message = "Payment not found." });
+        var attempt = await _context.PaymentCheckoutAttempts
+            .Include(a => a.Payment)
+            .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+        if (attempt == null)
+            return NotFound(new { success = false, message = "Checkout attempt not found." });
 
-        if (payment.TenantId != userId)
+        if (attempt.Payment == null || attempt.Payment.TenantId != userId)
             return StatusCode(403, new { success = false, message = "You do not have permission to update this payment." });
 
-        if (payment.PaymentStatus == PaymentTransactionStatus.Processing)
+        if (attempt.AttemptStatus == "Processing")
         {
-            payment.PaymentStatus = PaymentTransactionStatus.Failed;
-            payment.MpesaResultDesc = "No response from user.";
-            payment.RetryCount++;
-            payment.UpdatedAt = DateTime.UtcNow;
+            attempt.AttemptStatus = "Failed";
+            attempt.ResultDesc = "No response from user.";
+            attempt.RetryCount++;
+            attempt.ProcessedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
         }
 
-        return Ok(new { success = true, status = payment.PaymentStatus.ToString() });
+        return Ok(new { success = true, attemptStatus = attempt.AttemptStatus, paymentStatus = attempt.Payment?.PaymentStatus.ToString() });
     }
 
     // GET /api/portalpayments/landlord/my-payments — landlord views payments across their properties
@@ -284,6 +291,10 @@ public class PortalPaymentController : ControllerBase
 
         if (!string.IsNullOrEmpty(status) && Enum.TryParse<PaymentTransactionStatus>(status, out var ps))
             query = query.Where(p => p.PaymentStatus == ps);
+        else
+            query = query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid
+                                  || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid
+                                  || p.PaymentStatus == PaymentTransactionStatus.Overdue);
 
         if (!string.IsNullOrEmpty(stage))
         {

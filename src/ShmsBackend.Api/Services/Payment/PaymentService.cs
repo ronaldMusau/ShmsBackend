@@ -137,9 +137,6 @@ public class PaymentService : IPaymentService
         var flat = house.Flat!;
 
         payment.PhoneNumber = phoneNumber;
-        payment.PaymentStatus = PaymentTransactionStatus.Processing;
-        payment.UpdatedAt = DateTime.UtcNow;
-        await _context.SaveChangesAsync();
 
         var reference = $"PAY-{paymentId.ToString().Substring(0, 8).ToUpper()}";
         var description = payment.IsInitialPayment
@@ -164,7 +161,8 @@ public class PaymentService : IPaymentService
         _context.PaymentCheckoutAttempts.Add(new PaymentCheckoutAttempt
         {
             PaymentId = payment.Id,
-            CheckoutRequestId = stkResponse.CheckoutRequestID
+            CheckoutRequestId = stkResponse.CheckoutRequestID,
+            AttemptStatus = "Processing"
         });
 
         await _context.SaveChangesAsync();
@@ -236,12 +234,12 @@ public class PaymentService : IPaymentService
             return;
         }
 
-        payment.MpesaResultCode = details.ResultCode.ToString();
-        payment.MpesaResultDesc = details.ResultDescription;
-        payment.UpdatedAt = DateTime.UtcNow;
-
         if (details.IsSuccess && details.Amount.HasValue)
         {
+            payment.MpesaResultCode = details.ResultCode.ToString();
+            payment.MpesaResultDesc = details.ResultDescription;
+            payment.UpdatedAt = DateTime.UtcNow;
+
             List<(int month, int year, decimal applied)>? itemizedBreakdown = null;
             var netCollected = details.Amount.Value - (payment.ServiceChargeAmount ?? 0m);
             var priorAmountPaid = payment.AmountPaid;
@@ -339,6 +337,9 @@ public class PaymentService : IPaymentService
                 house.UpdatedAt = DateTime.UtcNow;
             }
 
+            if (checkoutAttempt != null)
+                checkoutAttempt.AttemptStatus = "Success";
+
             if (payment.Tenant != null && !string.IsNullOrEmpty(details.MpesaReceiptNumber))
             {
                 try
@@ -393,13 +394,23 @@ public class PaymentService : IPaymentService
         }
         else if (details.IsCancelled)
         {
-            payment.PaymentStatus = PaymentTransactionStatus.Cancelled;
-            payment.RetryCount++;
+            if (checkoutAttempt != null)
+            {
+                checkoutAttempt.AttemptStatus = "Cancelled";
+                checkoutAttempt.ResultCode = details.ResultCode.ToString();
+                checkoutAttempt.ResultDesc = details.ResultDescription;
+                checkoutAttempt.RetryCount++;
+            }
         }
         else
         {
-            payment.PaymentStatus = PaymentTransactionStatus.Failed;
-            payment.RetryCount++;
+            if (checkoutAttempt != null)
+            {
+                checkoutAttempt.AttemptStatus = "Failed";
+                checkoutAttempt.ResultCode = details.ResultCode.ToString();
+                checkoutAttempt.ResultDesc = details.ResultDescription;
+                checkoutAttempt.RetryCount++;
+            }
         }
 
         if (checkoutAttempt != null)

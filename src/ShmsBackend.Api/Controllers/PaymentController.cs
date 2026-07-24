@@ -122,20 +122,22 @@ public class PaymentController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Agent")]
     public async Task<IActionResult> MarkPaymentTimeout(string checkoutRequestId)
     {
-        var payment = await _context.Payments.FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId);
-        if (payment == null)
-            return NotFound(new { success = false, message = "Payment not found." });
+        var attempt = await _context.PaymentCheckoutAttempts
+            .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+        if (attempt == null)
+            return NotFound(new { success = false, message = "Checkout attempt not found." });
 
-        if (payment.PaymentStatus == PaymentTransactionStatus.Processing)
+        if (attempt.AttemptStatus == "Processing")
         {
-            payment.PaymentStatus = PaymentTransactionStatus.Failed;
-            payment.MpesaResultDesc = "No response from user.";
-            payment.RetryCount++;
-            payment.UpdatedAt = DateTime.UtcNow;
+            attempt.AttemptStatus = "Failed";
+            attempt.ResultDesc = "No response from user.";
+            attempt.RetryCount++;
+            attempt.ProcessedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
         }
 
-        return Ok(new { success = true, status = payment.PaymentStatus.ToString() });
+        var payment = await _context.Payments.FirstOrDefaultAsync(p => p.Id == attempt.PaymentId);
+        return Ok(new { success = true, attemptStatus = attempt.AttemptStatus, paymentStatus = payment?.PaymentStatus.ToString() });
     }
 
     // POST /api/payments/retry/{paymentId} — retry a failed/cancelled payment
@@ -209,38 +211,43 @@ public class PaymentController : ControllerBase
     {
         try
         {
-            var payment = await _context.Payments
-                .FirstOrDefaultAsync(p => p.CheckoutRequestId == checkoutRequestId);
+            var attempt = await _context.PaymentCheckoutAttempts
+                .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
 
-            if (payment != null)
+            if (attempt == null)
             {
+                // No attempt row yet — query M-Pesa directly as fallback
+                var stkStatus = await _paymentService.QueryPaymentStatusAsync(checkoutRequestId);
                 return Ok(new
                 {
                     success = true,
                     data = new
                     {
-                        status = payment.PaymentStatus.ToString(),
-                        paymentId = payment.Id,
-                        amountPaid = payment.AmountPaid,
-                        balance = payment.Balance,
-                        mpesaReceiptNumber = payment.MpesaReceiptNumber,
-                        resultCode = payment.MpesaResultCode,
-                        resultDesc = payment.MpesaResultDesc,
-                        retryCount = payment.RetryCount
+                        attemptStatus = stkStatus.ResultCode == "0" ? "Success" : "Processing",
+                        resultCode = stkStatus.ResultCode,
+                        resultDesc = stkStatus.ResultDesc
                     }
                 });
             }
 
-            // If not in DB yet, query M-Pesa directly
-            var stkStatus = await _paymentService.QueryPaymentStatusAsync(checkoutRequestId);
+            var payment = await _context.Payments
+                .FirstOrDefaultAsync(p => p.Id == attempt.PaymentId);
+            if (payment == null)
+                return NotFound(new { success = false, message = "Payment not found." });
+
             return Ok(new
             {
                 success = true,
                 data = new
                 {
-                    status = stkStatus.ResultCode == "0" ? "Paid" : "Pending",
-                    resultCode = stkStatus.ResultCode,
-                    resultDesc = stkStatus.ResultDesc
+                    attemptStatus = attempt.AttemptStatus,
+                    resultCode = attempt.ResultCode,
+                    resultDesc = attempt.ResultDesc,
+                    paymentStatus = payment.PaymentStatus.ToString(),
+                    paymentId = payment.Id,
+                    amountPaid = payment.AmountPaid,
+                    balance = payment.Balance,
+                    mpesaReceiptNumber = payment.MpesaReceiptNumber
                 }
             });
         }
@@ -418,6 +425,10 @@ public class PaymentController : ControllerBase
 
         if (!string.IsNullOrEmpty(status) && Enum.TryParse<PaymentTransactionStatus>(status, out var ps))
             query = query.Where(p => p.PaymentStatus == ps);
+        else
+            query = query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid
+                                  || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid
+                                  || p.PaymentStatus == PaymentTransactionStatus.Overdue);
 
         if (!string.IsNullOrEmpty(type) && Enum.TryParse<PaymentType>(type, out var pt))
             query = query.Where(p => p.PaymentType == pt);
