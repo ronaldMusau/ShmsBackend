@@ -448,8 +448,9 @@ public class PaymentService : IPaymentService
             var applyAmount = Math.Min(remaining, row.Balance);
             row.AmountPaid += applyAmount;
             row.Balance = Math.Max(0, row.Amount - row.AmountPaid);
-            if (row.Balance <= 0)
-                row.PaymentStatus = PaymentTransactionStatus.Paid;
+            row.PaymentStatus = row.Balance <= 0
+                ? PaymentTransactionStatus.Paid
+                : PaymentTransactionStatus.PartiallyPaid;
             if (!string.IsNullOrEmpty(receiptNumber) && applyAmount > 0)
             {
                 row.MpesaReceiptNumber = receiptNumber;
@@ -477,13 +478,39 @@ public class PaymentService : IPaymentService
             if (++totalIterations > 60) break;
             if (itemized.Count > 36) break;
 
-            var already = await _context.Payments.AnyAsync(p =>
+            var existingMonthRow = await _context.Payments.FirstOrDefaultAsync(p =>
                 p.TenantId == tenantId && p.HouseId == houseId
                 && p.TenancyCycle == tenancyCycle
                 && p.Month == cursorMonth && p.Year == cursorYear && !p.IsDeleted);
 
-            if (!already)
+            if (existingMonthRow != null && existingMonthRow.Balance > 0)
             {
+                // Existing unpaid row — apply funds to it rather than creating a duplicate
+                var applyAmount = Math.Min(remaining, existingMonthRow.Balance);
+                existingMonthRow.AmountPaid += applyAmount;
+                existingMonthRow.Balance = Math.Max(0, existingMonthRow.Amount - existingMonthRow.AmountPaid);
+                existingMonthRow.PaymentStatus = existingMonthRow.Balance <= 0
+                    ? PaymentTransactionStatus.Paid
+                    : PaymentTransactionStatus.PartiallyPaid;
+                if (!string.IsNullOrEmpty(receiptNumber) && applyAmount > 0)
+                {
+                    existingMonthRow.MpesaReceiptNumber = receiptNumber;
+                    existingMonthRow.PaidAt = DateTime.UtcNow;
+                    _context.PaymentApplications.Add(new PaymentApplication
+                    {
+                        PaymentId = existingMonthRow.Id,
+                        MpesaReceiptNumber = receiptNumber,
+                        AmountApplied = applyAmount,
+                        CheckoutRequestId = checkoutRequestId,
+                        AppliedAt = DateTime.UtcNow
+                    });
+                }
+                remaining -= applyAmount;
+                itemized.Add((cursorMonth, cursorYear, applyAmount));
+            }
+            else if (existingMonthRow == null)
+            {
+                // No row yet — create one
                 var monthlyTotal = house.RentFee;
                 var applyAmount = Math.Min(remaining, monthlyTotal);
                 var newPayment = new PaymentRecord
@@ -505,7 +532,9 @@ public class PaymentService : IPaymentService
                     PaymentType = PaymentType.Rent,
                     PaymentStatus = applyAmount >= monthlyTotal
                         ? PaymentTransactionStatus.Paid
-                        : PaymentTransactionStatus.PartiallyPaid,
+                        : applyAmount > 0
+                            ? PaymentTransactionStatus.PartiallyPaid
+                            : PaymentTransactionStatus.Pending,
                     Description = $"Monthly rent - {new DateTime(cursorYear, cursorMonth, 1):MMMM yyyy}",
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
@@ -527,6 +556,7 @@ public class PaymentService : IPaymentService
                 remaining -= applyAmount;
                 itemized.Add((cursorMonth, cursorYear, applyAmount));
             }
+            // else: existingMonthRow.Balance <= 0 — month fully settled, advance cursor only
 
             cursorMonth++;
             if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
@@ -656,7 +686,11 @@ public class PaymentService : IPaymentService
                     RentAmount = house.RentFee,
                     ServiceChargeAmount = serviceCharge,
                     CreditApplied = creditApplied > 0 ? creditApplied : null,
-                    PaymentStatus = creditApplied >= totalDue ? PaymentTransactionStatus.Paid : PaymentTransactionStatus.Pending,
+                    PaymentStatus = creditApplied >= totalDue
+                        ? PaymentTransactionStatus.Paid
+                        : creditApplied > 0
+                            ? PaymentTransactionStatus.PartiallyPaid
+                            : PaymentTransactionStatus.Pending,
                     PaymentType = PaymentType.Rent,
                     PhoneNumber = tenant.PhoneNumber,
                     DueDate = dueDate,

@@ -418,22 +418,32 @@ public class PortalPaymentController : ControllerBase
         var totalDue = house.RentFee;
         var now = DateTime.UtcNow;
 
-        // Find earliest month with no existing non-initial payment row for this tenant+cycle
+        // Find earliest month that has no row or still has a balance owing — skip only fully-settled months
         var cursorMonth = now.Month;
         var cursorYear = now.Year;
         for (var i = 0; i < 12; i++)
         {
-            var already = await _context.Payments.AnyAsync(p =>
+            var settled = await _context.Payments.AnyAsync(p =>
                 p.TenantId == userId && p.HouseId == house.Id
                 && p.TenancyCycle == tenant.TenancyCycle
                 && p.Month == cursorMonth && p.Year == cursorYear
-                && !p.IsDeleted);
+                && !p.IsDeleted && p.Balance <= 0);
 
-            if (!already) break;
+            if (!settled) break;
 
             cursorMonth++;
             if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
         }
+
+        // If an unpaid row already exists for the target month, return it instead of creating a duplicate
+        var existingForMonth = await _context.Payments.FirstOrDefaultAsync(p =>
+            p.TenantId == userId && p.HouseId == house.Id
+            && p.TenancyCycle == tenant.TenancyCycle
+            && p.Month == cursorMonth && p.Year == cursorYear
+            && !p.IsDeleted);
+
+        if (existingForMonth != null)
+            return existingForMonth;
 
         var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth));
         var newPayment = new Payment
