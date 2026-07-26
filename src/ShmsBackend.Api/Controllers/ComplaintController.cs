@@ -304,6 +304,10 @@ public class ComplaintController : ControllerBase
         if (assignment == null)
             return BadRequest(new { success = false, message = "No agent is assigned to this flat." });
 
+        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Id == assignment.AgentId);
+        if (agent == null)
+            return BadRequest(new { success = false, message = "The agent assigned to this flat could not be found. Please reassign an agent to this flat before escalating." });
+
         var adminId = GetUserId();
         complaint.EscalatedToAgentId = assignment.AgentId;
         complaint.EscalatedAt = DateTime.UtcNow;
@@ -321,14 +325,11 @@ public class ComplaintController : ControllerBase
         });
         await _context.SaveChangesAsync();
 
-        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Id == assignment.AgentId);
-        if (agent != null)
-        {
-            try { await _emailService.SendComplaintEscalatedAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to send agent escalation email"); }
-            try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Complaint {complaint.TicketNumber} has been escalated to you.", "property"); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of escalation"); }
-        }
+        try { await _emailService.SendComplaintEscalatedAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to send agent escalation email"); }
+        try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Complaint {complaint.TicketNumber} has been escalated to you.", "property"); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of escalation"); }
+
         return Ok(new { success = true, message = "Escalated to agent." });
     }
 
