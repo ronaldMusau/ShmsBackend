@@ -57,6 +57,7 @@ public class ShmsDbContext : DbContext
     public DbSet<ComplaintAttachment> ComplaintAttachments { get; set; }
     public DbSet<ComplaintApprovalAction> ComplaintApprovalActions { get; set; }
     public DbSet<ComplaintStatusHistoryEntry> ComplaintStatusHistory { get; set; }
+    public DbSet<ComplaintMessage> ComplaintMessages { get; set; }
     public DbSet<Deduction> Deductions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -394,6 +395,19 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasOne(e => e.Complaint)
                   .WithMany(c => c.StatusHistory)
+                  .HasForeignKey(e => e.ComplaintId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ComplaintMessage Configuration ───────────────────────────────────
+        modelBuilder.Entity<ComplaintMessage>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.SenderRole).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Message).IsRequired();
+            entity.HasIndex(e => e.ComplaintId);
+            entity.HasOne(e => e.Complaint)
+                  .WithMany()
                   .HasForeignKey(e => e.ComplaintId)
                   .OnDelete(DeleteBehavior.Cascade);
         });

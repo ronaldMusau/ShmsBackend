@@ -95,22 +95,21 @@ public class PaymentSchedulerService : BackgroundService
         var dbContext = scope.ServiceProvider.GetRequiredService<ShmsDbContext>();
 
         var stuckThreshold = DateTime.UtcNow.AddMinutes(-2);
-        var stuckPayments = await dbContext.Payments
-            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Processing && p.UpdatedAt < stuckThreshold)
+        var stuckAttempts = await dbContext.PaymentCheckoutAttempts
+            .Where(a => a.AttemptStatus == "Processing" && a.CreatedAt < stuckThreshold)
             .ToListAsync();
 
-        foreach (var stuck in stuckPayments)
+        foreach (var attempt in stuckAttempts)
         {
-            stuck.PaymentStatus = PaymentTransactionStatus.Failed;
-            stuck.MpesaResultDesc = "No response from user (auto-timeout).";
-            stuck.RetryCount++;
-            stuck.UpdatedAt = DateTime.UtcNow;
+            attempt.AttemptStatus = "Failed";
+            attempt.ResultDesc = "Timed out — no callback received";
+            attempt.ProcessedAt = DateTime.UtcNow;
         }
 
-        if (stuckPayments.Count > 0)
+        if (stuckAttempts.Count > 0)
         {
             await dbContext.SaveChangesAsync();
-            _logger.LogInformation("Auto-timed out {Count} stuck payments", stuckPayments.Count);
+            _logger.LogInformation("Auto-timed out {Count} stuck checkout attempts", stuckAttempts.Count);
         }
     }
 

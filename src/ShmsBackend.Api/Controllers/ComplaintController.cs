@@ -101,6 +101,13 @@ public class ComplaintController : ControllerBase
             .Where(t => tenantIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, t => t.FirstName + " " + t.LastName);
 
+        var complaintIds = pagedComplaints.Select(c => c.Id).ToList();
+        var unreadCounts = await _context.ComplaintMessages
+            .Where(m => complaintIds.Contains(m.ComplaintId) && m.SenderRole == "Tenant" && !m.IsReadByManagement)
+            .GroupBy(m => m.ComplaintId)
+            .Select(g => new { ComplaintId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.ComplaintId, g => g.Count);
+
         var data = pagedComplaints.Select(c => new
         {
             c.Id,
@@ -118,7 +125,8 @@ public class ComplaintController : ControllerBase
             c.AgentCompletionNotes,
             c.TenantVerificationStatus,
             c.TenantRejectionReason,
-            c.AgentRedoCount
+            c.AgentRedoCount,
+            UnreadMessageCount = unreadCounts.GetValueOrDefault(c.Id, 0)
         }).ToList();
 
         var totals = new
@@ -309,6 +317,27 @@ public class ComplaintController : ControllerBase
             return BadRequest(new { success = false, message = "The agent assigned to this flat could not be found. Please reassign an agent to this flat before escalating." });
 
         var adminId = GetUserId();
+
+        if (complaint.Status == "Closed" && !dto.ConfirmReopen)
+            return Ok(new { success = false, requiresReopenConfirmation = true, message = "This complaint is closed. Reopen it and escalate to the agent?" });
+
+        if (complaint.Status == "Closed" && dto.ConfirmReopen)
+        {
+            complaint.Status = "UnderReview";
+            complaint.ClosedAt = null;
+            complaint.ClosedByAdminId = null;
+            _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+            {
+                Id = Guid.NewGuid(),
+                ComplaintId = complaint.Id,
+                FromStatus = "Closed",
+                ToStatus = "UnderReview",
+                ChangedByAdminId = adminId,
+                Notes = "Reopened by management to escalate to agent.",
+                ChangedAt = DateTime.UtcNow
+            });
+        }
+
         complaint.EscalatedToAgentId = assignment.AgentId;
         complaint.EscalatedAt = DateTime.UtcNow;
         complaint.EscalationNotes = dto.Notes;
@@ -494,6 +523,92 @@ public class ComplaintController : ControllerBase
 
         return Ok(new { success = true, complaints = data });
     }
+
+    // GET /api/complaint/{id}/messages
+    [HttpGet("{id}/messages")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetMessages(Guid id)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+
+        var messages = await _context.ComplaintMessages
+            .Where(m => m.ComplaintId == id)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        var unread = messages.Where(m => m.SenderRole == "Tenant" && !m.IsReadByManagement).ToList();
+        foreach (var msg in unread)
+            msg.IsReadByManagement = true;
+        if (unread.Count > 0)
+            await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            messages = messages.Select(m => new
+            {
+                m.Id,
+                m.SenderRole,
+                m.SenderUserId,
+                m.Message,
+                m.CreatedAt,
+                m.IsReadByManagement,
+                m.IsReadByTenant
+            })
+        });
+    }
+
+    // POST /api/complaint/{id}/messages
+    [HttpPost("{id}/messages")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> SendMessage(Guid id, [FromBody] ComplaintMessageDto dto)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+
+        if (complaint.Status == "Closed")
+            return BadRequest(new { success = false, message = "This complaint is closed. Messaging is disabled." });
+
+        if (string.IsNullOrWhiteSpace(dto.Message))
+            return BadRequest(new { success = false, message = "Message cannot be empty." });
+
+        var adminId = GetUserId();
+        var message = new ComplaintMessage
+        {
+            ComplaintId = id,
+            SenderRole = "Management",
+            SenderUserId = adminId,
+            Message = dto.Message,
+            IsReadByManagement = true,
+            IsReadByTenant = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.ComplaintMessages.Add(message);
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"New message on complaint {complaint.TicketNumber}: {dto.Message}", "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of new management message"); }
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                message.Id,
+                message.SenderRole,
+                message.SenderUserId,
+                message.Message,
+                message.CreatedAt,
+                message.IsReadByManagement,
+                message.IsReadByTenant
+            }
+        });
+    }
 }
 
 public class BillableDecisionDto
@@ -509,6 +624,7 @@ public class BillableDecisionDto
 public class EscalateDto
 {
     public string? Notes { get; set; }
+    public bool ConfirmReopen { get; set; } = false;
 }
 
 public class FinalCloseDto
@@ -517,3 +633,5 @@ public class FinalCloseDto
 }
 
 public class ApprovalActionDto { public bool Approved { get; set; } public string? Notes { get; set; } }
+
+public class ComplaintMessageDto { public string Message { get; set; } = string.Empty; }

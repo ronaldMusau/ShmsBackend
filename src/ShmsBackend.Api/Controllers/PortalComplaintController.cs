@@ -154,28 +154,37 @@ public class PortalComplaintController : ControllerBase
             .Include(c => c.Attachments)
             .Where(c => c.TenantId == tenantId)
             .OrderByDescending(c => c.CreatedAt)
-            .Select(c => new
-            {
-                id = c.Id,
-                ticketNumber = c.TicketNumber,
-                complaintTypeId = c.ComplaintTypeId,
-                complaintTypeName = c.ComplaintType.Name,
-                description = c.Description,
-                status = c.Status,
-                isBillable = c.IsBillable,
-                billableTarget = c.BillableTarget,
-                createdAt = c.CreatedAt,
-                attachments = c.Attachments.Select(a => new
-                {
-                    a.FilePath,
-                    a.FileType,
-                    a.FileSizeBytes,
-                    a.UploadedAt
-                })
-            })
             .ToListAsync();
 
-        return Ok(new { success = true, complaints });
+        var complaintIds = complaints.Select(c => c.Id).ToList();
+        var unreadCounts = await _context.ComplaintMessages
+            .Where(m => complaintIds.Contains(m.ComplaintId) && m.SenderRole == "Management" && !m.IsReadByTenant)
+            .GroupBy(m => m.ComplaintId)
+            .Select(g => new { ComplaintId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.ComplaintId, g => g.Count);
+
+        var result = complaints.Select(c => new
+        {
+            id = c.Id,
+            ticketNumber = c.TicketNumber,
+            complaintTypeId = c.ComplaintTypeId,
+            complaintTypeName = c.ComplaintType?.Name,
+            description = c.Description,
+            status = c.Status,
+            isBillable = c.IsBillable,
+            billableTarget = c.BillableTarget,
+            createdAt = c.CreatedAt,
+            attachments = c.Attachments.Select(a => new
+            {
+                a.FilePath,
+                a.FileType,
+                a.FileSizeBytes,
+                a.UploadedAt
+            }),
+            unreadMessageCount = unreadCounts.GetValueOrDefault(c.Id, 0)
+        }).ToList();
+
+        return Ok(new { success = true, complaints = result });
     }
 
     // GET /api/portalcomplaint/landlord/my-complaints
@@ -259,6 +268,96 @@ public class PortalComplaintController : ControllerBase
 
         var result = await ComplaintDetailHelper.BuildAsync(_context, complaint, "Tenant");
         return Ok(new { success = true, data = result });
+    }
+
+    // GET /api/portalcomplaint/{id}/messages
+    [HttpGet("{id}/messages")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetTenantMessages(Guid id)
+    {
+        var tenantId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+
+        var messages = await _context.ComplaintMessages
+            .Where(m => m.ComplaintId == id)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        var unread = messages.Where(m => m.SenderRole == "Management" && !m.IsReadByTenant).ToList();
+        foreach (var msg in unread)
+            msg.IsReadByTenant = true;
+        if (unread.Count > 0)
+            await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            messages = messages.Select(m => new
+            {
+                m.Id,
+                m.SenderRole,
+                m.SenderUserId,
+                m.Message,
+                m.CreatedAt,
+                m.IsReadByManagement,
+                m.IsReadByTenant
+            })
+        });
+    }
+
+    // POST /api/portalcomplaint/{id}/messages
+    [HttpPost("{id}/messages")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> SendTenantMessage(Guid id, [FromBody] ComplaintMessageDto dto)
+    {
+        var tenantId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+
+        if (complaint.Status == "Closed")
+            return BadRequest(new { success = false, message = "This complaint is closed. Messaging is disabled." });
+
+        if (string.IsNullOrWhiteSpace(dto.Message))
+            return BadRequest(new { success = false, message = "Message cannot be empty." });
+
+        var message = new ComplaintMessage
+        {
+            ComplaintId = id,
+            SenderRole = "Tenant",
+            SenderUserId = tenantId,
+            Message = dto.Message,
+            IsReadByManagement = false,
+            IsReadByTenant = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.ComplaintMessages.Add(message);
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                $"New message from tenant on complaint {complaint.TicketNumber}: {dto.Message}",
+                "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of new tenant message"); }
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                message.Id,
+                message.SenderRole,
+                message.SenderUserId,
+                message.Message,
+                message.CreatedAt,
+                message.IsReadByManagement,
+                message.IsReadByTenant
+            }
+        });
     }
 
     // GET /api/portalcomplaint/agent/{id}

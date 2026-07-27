@@ -208,7 +208,7 @@ public class PaymentService : IPaymentService
         }
 
         var isSupersededAttempt = payment.CheckoutRequestId != checkoutRequestId;
-        if (isSupersededAttempt && details.IsSuccess && payment.PaymentStatus == PaymentTransactionStatus.Paid)
+        if (isSupersededAttempt && details.IsSuccess)
         {
             _logger.LogWarning(
                 "Late SUCCESS callback for superseded CheckoutRequestId {CheckoutRequestId} on Payment {PaymentId} — payment already completed via a newer attempt. Tenant may have been charged twice on M-Pesa. Flagging for manual reconciliation, no money applied.",
@@ -406,9 +406,17 @@ public class PaymentService : IPaymentService
         {
             if (checkoutAttempt != null)
             {
+                var mappedDesc = details.ResultCode switch
+                {
+                    1 or 1001 => "Insufficient M-Pesa balance",
+                    1002 => "M-Pesa transaction limit exceeded",
+                    2001 => "Wrong M-Pesa PIN entered",
+                    1037 => "Payment timed out — phone not reached",
+                    _ => !string.IsNullOrWhiteSpace(details.ResultDescription) ? details.ResultDescription : "Payment failed"
+                };
                 checkoutAttempt.AttemptStatus = "Failed";
                 checkoutAttempt.ResultCode = details.ResultCode.ToString();
-                checkoutAttempt.ResultDesc = details.ResultDescription;
+                checkoutAttempt.ResultDesc = mappedDesc;
                 checkoutAttempt.RetryCount++;
             }
         }

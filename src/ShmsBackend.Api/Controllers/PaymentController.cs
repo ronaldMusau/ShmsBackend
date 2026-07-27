@@ -130,7 +130,7 @@ public class PaymentController : ControllerBase
         if (attempt.AttemptStatus == "Processing")
         {
             attempt.AttemptStatus = "Failed";
-            attempt.ResultDesc = "No response from user.";
+            attempt.ResultDesc = "Timed out — client gave up waiting";
             attempt.RetryCount++;
             attempt.ProcessedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();

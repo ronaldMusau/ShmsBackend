@@ -21,6 +21,10 @@ public static class ComplaintDetailHelper
             .Where(h => h.ComplaintId == complaint.Id && h.ToStatus == "Closed")
             .OrderByDescending(h => h.ChangedAt)
             .FirstOrDefaultAsync();
+        var reopenHistoryEntry = await context.ComplaintStatusHistory
+            .Where(h => h.ComplaintId == complaint.Id && h.FromStatus == "Closed" && h.ToStatus == "UnderReview")
+            .OrderByDescending(h => h.ChangedAt)
+            .FirstOrDefaultAsync();
         var attachments = (complaint.Attachments != null && complaint.Attachments.Count > 0)
             ? (IEnumerable<ComplaintAttachment>)complaint.Attachments
             : await context.ComplaintAttachments.Where(a => a.ComplaintId == complaint.Id).ToListAsync();
@@ -45,7 +49,7 @@ public static class ComplaintDetailHelper
             BillableAmount = viewerRole == "Agent" ? (decimal?)null : complaint.BillableAmount,
             complaint.ReviewedAt,
             complaint.EscalatedAt,
-            complaint.EscalationNotes,
+            EscalationNotes = viewerRole == "Management" || viewerRole == "Agent" ? complaint.EscalationNotes : null,
             AgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
             complaint.AgentCompletionNotes,
             complaint.AgentCompletedAt,
@@ -55,6 +59,11 @@ public static class ComplaintDetailHelper
             complaint.AgentRedoCount,
             complaint.ClosedAt,
             ClosingComment = closeHistoryEntry?.Notes,
+            ReopenedAt = reopenHistoryEntry?.ChangedAt,
+            complaint.LandlordDecision,
+            complaint.LandlordDecisionNotes,
+            complaint.FinalDecision,
+            complaint.LandlordActionedAt,
             Attachments = attachments.Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt, a.Stage })
         };
     }
