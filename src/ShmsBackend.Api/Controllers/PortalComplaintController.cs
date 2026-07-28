@@ -723,6 +723,10 @@ public class PortalComplaintController : ControllerBase
                 CreatedAt = DateTime.UtcNow
             });
         }
+        else
+        {
+            complaint.NeedsResubmission = true;
+        }
 
         await _context.SaveChangesAsync();
 
