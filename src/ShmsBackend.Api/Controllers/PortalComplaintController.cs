@@ -174,6 +174,9 @@ public class PortalComplaintController : ControllerBase
             isBillable = c.IsBillable,
             billableTarget = c.BillableTarget,
             createdAt = c.CreatedAt,
+            agentCompletedAt = c.AgentCompletedAt,
+            agentCompletionNotes = c.AgentCompletionNotes,
+            tenantVerificationStatus = c.TenantVerificationStatus,
             attachments = c.Attachments.Select(a => new
             {
                 a.FilePath,
@@ -738,6 +741,44 @@ public class PortalComplaintController : ControllerBase
         });
 
         return Ok(new { success = true, deductions = data, totalAmount = deductions.Sum(d => d.Amount) });
+    }
+
+    // GET /api/portalcomplaint/my-approval-queue
+    [HttpGet("my-approval-queue")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetMyApprovalQueue()
+    {
+        var tenantId = GetUserId();
+        if (tenantId == Guid.Empty)
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var complaints = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Include(c => c.Attachments)
+            .Where(c => c.TenantId == tenantId
+                     && c.AgentCompletedAt != null
+                     && c.TenantVerificationStatus == null
+                     && !c.IsDeleted)
+            .OrderByDescending(c => c.AgentCompletedAt)
+            .ToListAsync();
+
+        var result = complaints.Select(c => new
+        {
+            id = c.Id,
+            ticketNumber = c.TicketNumber,
+            complaintTypeId = c.ComplaintTypeId,
+            complaintTypeName = c.ComplaintType?.Name,
+            description = c.Description,
+            status = c.Status,
+            createdAt = c.CreatedAt,
+            agentCompletedAt = c.AgentCompletedAt,
+            agentCompletionNotes = c.AgentCompletionNotes,
+            attachments = c.Attachments
+                .Where(a => a.Stage == "AgentCompletion")
+                .Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt })
+        }).ToList();
+
+        return Ok(new { success = true, complaints = result });
     }
 
     // GET /api/portalcomplaint/landlord/my-approval-queue
