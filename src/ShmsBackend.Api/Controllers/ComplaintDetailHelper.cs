@@ -49,6 +49,8 @@ public static class ComplaintDetailHelper
             BillableAmount = viewerRole == "Agent" ? (decimal?)null : complaint.BillableAmount,
             complaint.ReviewedAt,
             complaint.EscalatedAt,
+            complaint.EscalatedToAgentId,
+            complaint.CurrentApprovalStepOrder,
             EscalationNotes = viewerRole == "Management" || viewerRole == "Agent" ? complaint.EscalationNotes : null,
             AgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
             complaint.AgentCompletionNotes,

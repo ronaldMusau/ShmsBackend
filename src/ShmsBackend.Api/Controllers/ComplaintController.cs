@@ -238,16 +238,19 @@ public class ComplaintController : ControllerBase
             withinGracePeriod = monthsSinceStart < flat.BillableGracePeriodMonths;
         }
 
+        if (dto.BillableTarget != "Tenant" && dto.BillableTarget != "Management")
+            return BadRequest(new { success = false, message = "BillableTarget must be 'Tenant' or 'Management'." });
+
         string billableTarget;
         if (withinGracePeriod)
         {
-            if (dto.BillableTargetOverride != null)
-                return BadRequest(new { success = false, message = "Cannot override billable target — tenant is within the protected grace period." });
+            if (dto.BillableTarget == "Tenant")
+                return BadRequest(new { success = false, message = "Billable target must be 'Management' during the tenant's protected grace period." });
             billableTarget = "Management";
         }
         else
         {
-            billableTarget = dto.BillableTargetOverride == "Management" ? "Management" : "Tenant";
+            billableTarget = dto.BillableTarget;
 
             if (billableTarget == "Management" && string.IsNullOrWhiteSpace(dto.OverrideReason))
                 return BadRequest(new { success = false, message = "An override reason is required when switching billable target to Management." });
@@ -297,6 +300,45 @@ public class ComplaintController : ControllerBase
         return Ok(new { success = true, message = "Complaint marked billable and sent for approval.", billableTarget });
     }
 
+    // POST /api/complaint/{id}/reopen
+    [HttpPost("{id}/reopen")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> Reopen(Guid id)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        if (complaint.Status != "Closed")
+            return BadRequest(new { success = false, message = "This complaint is not closed." });
+
+        var adminId = GetUserId();
+        var newStatus = complaint.IsBillable == true ? "UnderReview" : "Open";
+
+        complaint.Status = newStatus;
+        complaint.ClosedAt = null;
+        complaint.ClosedByAdminId = null;
+
+        _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            FromStatus = "Closed",
+            ToStatus = newStatus,
+            ChangedByAdminId = adminId,
+            Notes = "Reopened.",
+            ChangedAt = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been reopened.", "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of complaint reopen"); }
+
+        return Ok(new { success = true, message = "Complaint reopened.", newStatus });
+    }
+
     // POST /api/complaint/{id}/escalate
     [HttpPost("{id}/escalate")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
@@ -318,25 +360,8 @@ public class ComplaintController : ControllerBase
 
         var adminId = GetUserId();
 
-        if (complaint.Status == "Closed" && !dto.ConfirmReopen)
-            return Ok(new { success = false, requiresReopenConfirmation = true, message = "This complaint is closed. Reopen it and escalate to the agent?" });
-
-        if (complaint.Status == "Closed" && dto.ConfirmReopen)
-        {
-            complaint.Status = "UnderReview";
-            complaint.ClosedAt = null;
-            complaint.ClosedByAdminId = null;
-            _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
-            {
-                Id = Guid.NewGuid(),
-                ComplaintId = complaint.Id,
-                FromStatus = "Closed",
-                ToStatus = "UnderReview",
-                ChangedByAdminId = adminId,
-                Notes = "Reopened by management to escalate to agent.",
-                ChangedAt = DateTime.UtcNow
-            });
-        }
+        if (complaint.Status == "Closed")
+            return BadRequest(new { success = false, message = "This complaint is closed. Reopen it first." });
 
         complaint.EscalatedToAgentId = assignment.AgentId;
         complaint.EscalatedAt = DateTime.UtcNow;
@@ -370,8 +395,25 @@ public class ComplaintController : ControllerBase
         var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
         if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
 
-        if (complaint.TenantVerificationStatus != "Verified")
-            return BadRequest(new { success = false, message = "Cannot close — tenant has not verified the agent's completed work yet." });
+        var canClose = complaint.TenantVerificationStatus == "Verified"
+            || (complaint.EscalatedToAgentId == null
+                && complaint.CurrentApprovalStepOrder == null
+                && complaint.IsBillable == true
+                && (complaint.BillableTarget == "Tenant" || complaint.LandlordDecision != null));
+
+        if (!canClose)
+        {
+            string closeBlockReason;
+            if (complaint.CurrentApprovalStepOrder != null)
+                closeBlockReason = "Cannot close — the internal approval sequence is still in progress.";
+            else if (complaint.EscalatedToAgentId != null)
+                closeBlockReason = "Cannot close — the complaint is escalated to an agent and the tenant has not verified the completed work.";
+            else if (complaint.IsBillable == true && complaint.BillableTarget == "Management" && complaint.LandlordDecision == null)
+                closeBlockReason = "Cannot close — awaiting the landlord's final decision.";
+            else
+                closeBlockReason = "Cannot close — the complaint has not been fully resolved yet.";
+            return BadRequest(new { success = false, message = closeBlockReason });
+        }
         if (string.IsNullOrWhiteSpace(dto.ClosingComment))
             return BadRequest(new { success = false, message = "A closing comment is required." });
 
@@ -615,8 +657,8 @@ public class BillableDecisionDto
 {
     public bool IsBillable { get; set; }
     public string? Justification { get; set; }
+    public string? BillableTarget { get; set; }
     public decimal? BillableAmount { get; set; }
-    public string? BillableTargetOverride { get; set; }
     public string? OverrideReason { get; set; }
     public string? ResolutionNotes { get; set; }
 }
@@ -624,7 +666,6 @@ public class BillableDecisionDto
 public class EscalateDto
 {
     public string? Notes { get; set; }
-    public bool ConfirmReopen { get; set; } = false;
 }
 
 public class FinalCloseDto
