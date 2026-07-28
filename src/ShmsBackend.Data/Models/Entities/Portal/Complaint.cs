@@ -37,6 +37,7 @@ public class Complaint : ISoftDelete
     public string? TenantVerificationStatus { get; set; }
     public string? TenantRejectionReason { get; set; }
     public int AgentRedoCount { get; set; } = 0;
+    public bool NeedsResubmission { get; set; } = false;
     public Guid? ClosedByAdminId { get; set; }
     public DateTime? ClosedAt { get; set; }
     public DateTime? RevokedAt { get; set; }
@@ -47,4 +48,6 @@ public class Complaint : ISoftDelete
     public ICollection<ComplaintAttachment> Attachments { get; set; } = new List<ComplaintAttachment>();
     public ICollection<ComplaintApprovalAction> ApprovalActions { get; set; } = new List<ComplaintApprovalAction>();
     public ICollection<ComplaintStatusHistoryEntry> StatusHistory { get; set; } = new List<ComplaintStatusHistoryEntry>();
+    public ICollection<ComplaintWorkAttempt> WorkAttempts { get; set; } = new List<ComplaintWorkAttempt>();
+    public ICollection<ComplaintLandlordDecision> LandlordDecisions { get; set; } = new List<ComplaintLandlordDecision>();
 }

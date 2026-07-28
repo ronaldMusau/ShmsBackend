@@ -29,6 +29,37 @@ public static class ComplaintDetailHelper
             ? (IEnumerable<ComplaintAttachment>)complaint.Attachments
             : await context.ComplaintAttachments.Where(a => a.ComplaintId == complaint.Id).ToListAsync();
 
+        var workAttempts = complaint.WorkAttempts.Count > 0
+            ? (IEnumerable<ComplaintWorkAttempt>)complaint.WorkAttempts
+            : await context.ComplaintWorkAttempts.Where(w => w.ComplaintId == complaint.Id).ToListAsync();
+
+        var landlordDecisions = complaint.LandlordDecisions.Count > 0
+            ? (IEnumerable<ComplaintLandlordDecision>)complaint.LandlordDecisions
+            : await context.ComplaintLandlordDecisions.Where(d => d.ComplaintId == complaint.Id).ToListAsync();
+
+        List<object>? workAttemptsResponse = workAttempts.OrderBy(w => w.AttemptNumber).Select(w => (object)new
+        {
+            w.AttemptNumber,
+            w.Notes,
+            w.SubmittedAt,
+            w.TenantVerdict,
+            w.TenantVerdictReason,
+            w.TenantVerdictAt,
+            Attachments = attachments
+                .Where(a => a.Stage == "AgentCompletion" && a.AttemptNumber == w.AttemptNumber)
+                .Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt })
+        }).ToList();
+
+        List<object>? landlordDecisionHistoryResponse = viewerRole == "Management" || viewerRole == "Landlord"
+            ? landlordDecisions.OrderBy(d => d.ApprovalAttemptNumber).Select(d => (object)new
+            {
+                d.ApprovalAttemptNumber,
+                d.Decision,
+                d.Notes,
+                d.DecidedAt
+            }).ToList()
+            : null;
+
         return new
         {
             complaint.Id,
@@ -66,7 +97,17 @@ public static class ComplaintDetailHelper
             complaint.LandlordDecisionNotes,
             complaint.FinalDecision,
             complaint.LandlordActionedAt,
-            Attachments = attachments.Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt, a.Stage })
+            Attachments = attachments.Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt, a.Stage, a.AttemptNumber }),
+            WorkAttempts = workAttemptsResponse,
+            LandlordDecisionHistory = landlordDecisionHistoryResponse,
+            complaint.NeedsResubmission,
+            LastRejectionReason = viewerRole == "Management" && complaint.NeedsResubmission
+                ? (await context.ComplaintApprovalActions
+                    .Where(a => a.ComplaintId == complaint.Id && a.Decision == "Rejected")
+                    .OrderByDescending(a => a.AttemptNumber)
+                    .ThenByDescending(a => a.StepOrder)
+                    .FirstOrDefaultAsync())?.Notes
+                : null
         };
     }
 }

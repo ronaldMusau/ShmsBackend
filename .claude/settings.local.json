@@ -14,7 +14,8 @@
       "PowerShell(Get-Content *)",
       "Bash(dir C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing *)",
       "Bash(dotnet user-secrets *)",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Read(//c/Users/musau/OneDrive/Desktop/Housing/RomahClientPortal/**)"
     ]
   }
 }

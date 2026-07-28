@@ -6,6 +6,7 @@ public class ComplaintAttachment
     public Guid ComplaintId { get; set; }
     public Complaint? Complaint { get; set; }
     public string Stage { get; set; } = "Creation";
+    public int? AttemptNumber { get; set; }
     public string FileType { get; set; } = string.Empty;
     public string FilePath { get; set; } = string.Empty;
     public long FileSizeBytes { get; set; }

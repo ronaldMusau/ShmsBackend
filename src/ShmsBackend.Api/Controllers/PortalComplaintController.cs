@@ -497,6 +497,7 @@ public class PortalComplaintController : ControllerBase
         var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "complaint-attachments");
         Directory.CreateDirectory(saveDir);
 
+        var attemptNumber = complaint.AgentRedoCount + 1;
         foreach (var file in images)
         {
             var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
@@ -510,7 +511,8 @@ public class PortalComplaintController : ControllerBase
                 FileType = "Image",
                 FileSizeBytes = file.Length,
                 UploadedAt = DateTime.UtcNow,
-                Stage = "AgentCompletion"
+                Stage = "AgentCompletion",
+                AttemptNumber = attemptNumber
             });
         }
         foreach (var file in documents)
@@ -526,7 +528,8 @@ public class PortalComplaintController : ControllerBase
                 FileType = "Document",
                 FileSizeBytes = file.Length,
                 UploadedAt = DateTime.UtcNow,
-                Stage = "AgentCompletion"
+                Stage = "AgentCompletion",
+                AttemptNumber = attemptNumber
             });
         }
         await _context.SaveChangesAsync();
@@ -543,10 +546,20 @@ public class PortalComplaintController : ControllerBase
         if (complaint == null) return NotFound(new { success = false, message = "Complaint not found or not escalated to you." });
         if (string.IsNullOrWhiteSpace(dto.Notes)) return BadRequest(new { success = false, message = "Completion notes are required." });
 
+        var submittedAt = DateTime.UtcNow;
         complaint.AgentCompletionNotes = dto.Notes;
-        complaint.AgentCompletedAt = DateTime.UtcNow;
+        complaint.AgentCompletedAt = submittedAt;
         complaint.TenantVerificationStatus = null;
         complaint.TenantRejectionReason = null;
+
+        _context.ComplaintWorkAttempts.Add(new ComplaintWorkAttempt
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            AttemptNumber = complaint.AgentRedoCount + 1,
+            Notes = dto.Notes,
+            SubmittedAt = submittedAt
+        });
 
         _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
         {
@@ -556,7 +569,7 @@ public class PortalComplaintController : ControllerBase
             ToStatus = complaint.Status,
             ChangedByAgentId = agentId,
             Notes = dto.Notes,
-            ChangedAt = DateTime.UtcNow
+            ChangedAt = submittedAt
         });
         await _context.SaveChangesAsync();
 
@@ -576,10 +589,21 @@ public class PortalComplaintController : ControllerBase
         if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
         if (complaint.AgentCompletedAt == null) return BadRequest(new { success = false, message = "No completed work to verify yet." });
 
+        var currentAttemptNumber = complaint.AgentRedoCount + 1;
+        var workAttempt = await _context.ComplaintWorkAttempts
+            .FirstOrDefaultAsync(w => w.ComplaintId == complaint.Id && w.AttemptNumber == currentAttemptNumber);
+
         if (dto.Verified)
         {
+            var verdictAt = DateTime.UtcNow;
             complaint.TenantVerificationStatus = "Verified";
-            complaint.TenantCompletedAt = DateTime.UtcNow;
+            complaint.TenantCompletedAt = verdictAt;
+
+            if (workAttempt != null)
+            {
+                workAttempt.TenantVerdict = "Verified";
+                workAttempt.TenantVerdictAt = verdictAt;
+            }
 
             _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
             {
@@ -589,7 +613,7 @@ public class PortalComplaintController : ControllerBase
                 ToStatus = complaint.Status,
                 ChangedByTenantId = tenantId,
                 Notes = "Tenant verified agent's completed work.",
-                ChangedAt = DateTime.UtcNow
+                ChangedAt = verdictAt
             });
             await _context.SaveChangesAsync();
 
@@ -609,6 +633,15 @@ public class PortalComplaintController : ControllerBase
             if (string.IsNullOrWhiteSpace(dto.RejectionReason))
                 return BadRequest(new { success = false, message = "A rejection reason is required." });
 
+            var verdictAt = DateTime.UtcNow;
+
+            if (workAttempt != null)
+            {
+                workAttempt.TenantVerdict = "Rejected";
+                workAttempt.TenantVerdictReason = dto.RejectionReason;
+                workAttempt.TenantVerdictAt = verdictAt;
+            }
+
             complaint.TenantVerificationStatus = "Rejected";
             complaint.TenantRejectionReason = dto.RejectionReason;
             complaint.AgentRedoCount += 1;
@@ -621,7 +654,7 @@ public class PortalComplaintController : ControllerBase
                 ToStatus = complaint.Status,
                 ChangedByTenantId = tenantId,
                 Notes = $"Rejected: {dto.RejectionReason}",
-                ChangedAt = DateTime.UtcNow
+                ChangedAt = verdictAt
             });
             await _context.SaveChangesAsync();
 
@@ -647,20 +680,34 @@ public class PortalComplaintController : ControllerBase
             return BadRequest(new { success = false, message = "This complaint does not require your approval." });
         if (complaint.CurrentApprovalStepOrder != null)
             return BadRequest(new { success = false, message = "Internal approval is still in progress." });
-        if (!string.IsNullOrEmpty(complaint.LandlordDecision))
-            return BadRequest(new { success = false, message = "You have already actioned this complaint." });
+        var existingDecision = await _context.ComplaintLandlordDecisions
+            .FirstOrDefaultAsync(d => d.ComplaintId == complaint.Id && d.ApprovalAttemptNumber == complaint.ApprovalAttemptNumber);
+        if (existingDecision != null)
+            return BadRequest(new { success = false, message = "You have already actioned this approval attempt." });
 
-        complaint.LandlordActionedAt = DateTime.UtcNow;
+        var decidedAt = DateTime.UtcNow;
+        complaint.LandlordActionedAt = decidedAt;
         complaint.LandlordDecision = dto.Approved ? "Approved" : "Rejected";
         complaint.LandlordDecisionNotes = dto.Notes;
         complaint.FinalDecision = dto.Approved ? "Approved" : "Rejected";
-        complaint.FinalDecisionAt = DateTime.UtcNow;
+        complaint.FinalDecisionAt = decidedAt;
+
+        _context.ComplaintLandlordDecisions.Add(new ComplaintLandlordDecision
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            ApprovalAttemptNumber = complaint.ApprovalAttemptNumber,
+            Decision = dto.Approved ? "Approved" : "Rejected",
+            Notes = dto.Notes,
+            DecidedAt = decidedAt,
+            DecidedByLandlordId = landlordId
+        });
+
         if (dto.Approved)
         {
             if (complaint.BillableAmount == null || complaint.BillableAmount <= 0)
                 return BadRequest(new { success = false, message = "This complaint has no valid billable amount to deduct." });
 
-            var now = complaint.LandlordActionedAt.Value;
             _context.Deductions.Add(new Deduction
             {
                 Id = Guid.NewGuid(),
@@ -671,8 +718,8 @@ public class PortalComplaintController : ControllerBase
                 ComplaintId = complaint.Id,
                 Amount = complaint.BillableAmount.Value,
                 Description = $"Complaint {complaint.TicketNumber} — {complaint.BillableExplanation}",
-                DeductionMonth = now.Month,
-                DeductionYear = now.Year,
+                DeductionMonth = decidedAt.Month,
+                DeductionYear = decidedAt.Year,
                 CreatedAt = DateTime.UtcNow
             });
         }

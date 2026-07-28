@@ -58,6 +58,8 @@ public class ShmsDbContext : DbContext
     public DbSet<ComplaintApprovalAction> ComplaintApprovalActions { get; set; }
     public DbSet<ComplaintStatusHistoryEntry> ComplaintStatusHistory { get; set; }
     public DbSet<ComplaintMessage> ComplaintMessages { get; set; }
+    public DbSet<ComplaintWorkAttempt> ComplaintWorkAttempts { get; set; }
+    public DbSet<ComplaintLandlordDecision> ComplaintLandlordDecisions { get; set; }
     public DbSet<Deduction> Deductions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -408,6 +410,26 @@ public class ShmsDbContext : DbContext
             entity.HasIndex(e => e.ComplaintId);
             entity.HasOne(e => e.Complaint)
                   .WithMany()
+                  .HasForeignKey(e => e.ComplaintId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ComplaintWorkAttempt Configuration ───────────────────────────────────
+        modelBuilder.Entity<ComplaintWorkAttempt>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Complaint)
+                  .WithMany(c => c.WorkAttempts)
+                  .HasForeignKey(e => e.ComplaintId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ComplaintLandlordDecision Configuration ──────────────────────────────
+        modelBuilder.Entity<ComplaintLandlordDecision>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.Complaint)
+                  .WithMany(c => c.LandlordDecisions)
                   .HasForeignKey(e => e.ComplaintId)
                   .OnDelete(DeleteBehavior.Cascade);
         });

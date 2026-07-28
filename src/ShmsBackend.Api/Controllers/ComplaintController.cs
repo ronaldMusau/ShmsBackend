@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
 using System.Security.Claims;
 
@@ -277,6 +278,11 @@ public class ComplaintController : ControllerBase
         complaint.ReviewedByAdminId = adminId;
         complaint.CurrentApprovalStepOrder = firstStep.StepOrder;
         complaint.ApprovalAttemptNumber = complaint.ApprovalAttemptNumber + 1;
+        complaint.NeedsResubmission = false;
+        complaint.LandlordDecision = null;
+        complaint.LandlordDecisionNotes = null;
+        complaint.FinalDecision = null;
+        complaint.FinalDecisionAt = null;
 
         _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
         {
@@ -477,23 +483,20 @@ public class ComplaintController : ControllerBase
             if (string.IsNullOrWhiteSpace(dto.Notes))
                 return BadRequest(new { success = false, message = "Rejection notes are required." });
 
-            // Restart the entire sequence from step 1 (per locked design)
-            complaint.CurrentApprovalStepOrder = steps.First().StepOrder;
-            complaint.ApprovalAttemptNumber += 1;
+            complaint.CurrentApprovalStepOrder = null;
+            complaint.NeedsResubmission = true;
             await _context.SaveChangesAsync();
-            var originalDecider = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == complaint.ReviewedByAdminId);
-            // Notify whoever made the original billable call (the reviewer), per locked design — rejection goes back to them, not to the sequence
-            if (complaint.ReviewedByAdminId.HasValue)
+
+            try
             {
-                try { await _notificationService.SendToUserAsync(complaint.ReviewedByAdminId.Value.ToString(), $"Complaint {complaint.TicketNumber} was rejected at the approval step and needs your revision.", "property"); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to notify original reviewer of rejection"); }
+                await _notificationService.SendToRolesAsync(
+                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                    $"Complaint {complaint.TicketNumber} was rejected at the approval step: {dto.Notes}. Resubmit the billable decision to restart.",
+                    "property");
             }
-            if (originalDecider != null)
-            {
-                try { await _emailService.SendApprovalRejectedEmailAsync(originalDecider.Email, originalDecider.FirstName, complaint.TicketNumber, dto.Notes!); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email"); }
-            }
-            return Ok(new { success = true, message = "Rejected. Sent back to the original reviewer for revision." });
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of approval rejection"); }
+
+            return Ok(new { success = true, message = "Rejected. Management has been notified to resubmit." });
         }
 
         // Approved — advance to next step, or complete the sequence
