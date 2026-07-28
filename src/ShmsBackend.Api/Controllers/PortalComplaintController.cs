@@ -726,6 +726,7 @@ public class PortalComplaintController : ControllerBase
         else
         {
             complaint.NeedsResubmission = true;
+            complaint.Status = "Rejected";
         }
 
         await _context.SaveChangesAsync();

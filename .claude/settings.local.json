@@ -15,7 +15,13 @@
       "Bash(dir C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing *)",
       "Bash(dotnet user-secrets *)",
       "Bash(curl *)",
-      "Read(//c/Users/musau/OneDrive/Desktop/Housing/RomahClientPortal/**)"
+      "Read(//c/Users/musau/OneDrive/Desktop/Housing/RomahClientPortal/**)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \"LISTENING\")",
+      "Bash(findstr \":50\")",
+      "Bash(xargs grep -l \"approval-queue\\\\|approvalQueue\\\\|my-approval-queue\")",
+      "Bash(dir \"C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing\")",
+      "Bash(npx ng *)"
     ]
   }
 }

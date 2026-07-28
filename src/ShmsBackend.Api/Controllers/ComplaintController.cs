@@ -485,6 +485,7 @@ public class ComplaintController : ControllerBase
 
             complaint.CurrentApprovalStepOrder = null;
             complaint.NeedsResubmission = true;
+            complaint.Status = "Rejected";
             await _context.SaveChangesAsync();
 
             try
@@ -524,6 +525,7 @@ public class ComplaintController : ControllerBase
         {
             // Internal sequence fully cleared
             complaint.CurrentApprovalStepOrder = null;
+            complaint.Status = "Approved";
             if (complaint.BillableTarget == "Tenant")
             {
                 // Transparency-only for landlord — no action needed, ticket effectively done with the internal process

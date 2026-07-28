@@ -37,6 +37,19 @@ public static class ComplaintDetailHelper
             ? (IEnumerable<ComplaintLandlordDecision>)complaint.LandlordDecisions
             : await context.ComplaintLandlordDecisions.Where(d => d.ComplaintId == complaint.Id).ToListAsync();
 
+        bool withinGracePeriod = false;
+        if (viewerRole == "Management" && tenant != null && flat != null)
+        {
+            var initialPayment = await context.Payments
+                .Where(p => p.TenantId == tenant.Id && p.IsInitialPayment == true && p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted)
+                .FirstOrDefaultAsync();
+            if (initialPayment?.PaidAt != null)
+            {
+                var monthsSinceStart = ((DateTime.UtcNow.Year - initialPayment.PaidAt.Value.Year) * 12) + DateTime.UtcNow.Month - initialPayment.PaidAt.Value.Month;
+                withinGracePeriod = monthsSinceStart < flat.BillableGracePeriodMonths;
+            }
+        }
+
         List<object>? workAttemptsResponse = workAttempts.OrderBy(w => w.AttemptNumber).Select(w => (object)new
         {
             w.AttemptNumber,
@@ -60,6 +73,29 @@ public static class ComplaintDetailHelper
             }).ToList()
             : null;
 
+        List<object>? approvalHistoryResponse = null;
+        if (viewerRole == "Management")
+        {
+            var approvalActions = await context.ComplaintApprovalActions
+                .Where(a => a.ComplaintId == complaint.Id)
+                .OrderBy(a => a.AttemptNumber)
+                .ThenBy(a => a.StepOrder)
+                .ToListAsync();
+            var approverIds = approvalActions.Select(a => a.ApproverId).Distinct().ToList();
+            var approvers = await context.PortalUsers
+                .Where(u => approverIds.Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+            approvalHistoryResponse = approvalActions.Select(a => (object)new
+            {
+                a.AttemptNumber,
+                a.StepOrder,
+                a.Decision,
+                a.Notes,
+                ApproverName = approvers.TryGetValue(a.ApproverId, out var name) ? name : a.ApproverId.ToString(),
+                a.ActionedAt
+            }).ToList();
+        }
+
         return new
         {
             complaint.Id,
@@ -72,6 +108,7 @@ public static class ComplaintDetailHelper
             HouseNumber = house != null ? house.HouseNumber : "-",
             FlatName = flat != null ? flat.FlatName : "-",
             BillableGracePeriodMonths = flat?.BillableGracePeriodMonths ?? 3,
+            IsWithinGracePeriod = viewerRole == "Management" ? (bool?)withinGracePeriod : null,
             LandlordName = landlord != null ? $"{landlord.FirstName} {landlord.LastName}" : "-",
             complaint.IsBillable,
             complaint.BillableTarget,
@@ -100,6 +137,7 @@ public static class ComplaintDetailHelper
             Attachments = attachments.Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt, a.Stage, a.AttemptNumber }),
             WorkAttempts = workAttemptsResponse,
             LandlordDecisionHistory = landlordDecisionHistoryResponse,
+            ApprovalHistory = approvalHistoryResponse,
             complaint.NeedsResubmission,
             LastRejectionReason = viewerRole == "Management" && complaint.NeedsResubmission
                 ? (await context.ComplaintApprovalActions
