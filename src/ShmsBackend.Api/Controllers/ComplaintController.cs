@@ -277,7 +277,8 @@ public class ComplaintController : ControllerBase
         complaint.ReviewedAt = DateTime.UtcNow;
         complaint.ReviewedByAdminId = adminId;
         complaint.CurrentApprovalStepOrder = firstStep.StepOrder;
-        complaint.ApprovalAttemptNumber = complaint.ApprovalAttemptNumber + 1;
+        if (complaint.NeedsResubmission)
+            complaint.ApprovalAttemptNumber = complaint.ApprovalAttemptNumber + 1;
         complaint.NeedsResubmission = false;
         complaint.LandlordDecision = null;
         complaint.LandlordDecisionNotes = null;
