@@ -368,6 +368,8 @@ public class ComplaintController : ControllerBase
 
         if (complaint.Status == "Closed")
             return BadRequest(new { success = false, message = "This complaint is closed. Reopen it first." });
+        if (complaint.Status != "Approved")
+            return BadRequest(new { success = false, message = $"This complaint cannot be escalated while its status is '{complaint.Status}'. It must be Approved first." });
 
         complaint.EscalatedToAgentId = assignment.AgentId;
         complaint.EscalatedAt = DateTime.UtcNow;
