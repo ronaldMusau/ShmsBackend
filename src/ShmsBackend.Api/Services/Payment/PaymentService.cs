@@ -728,12 +728,16 @@ public class PaymentService : IPaymentService
 
     private async Task<decimal> GetRemainingCreditAsync(Guid tenantId)
     {
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId);
+        if (tenant == null) return 0;
+
         var totalPaid = await _context.Payments
-            .Where(p => p.TenantId == tenantId && !p.IsDeleted)
+            .Where(p => p.TenantId == tenantId && p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted)
             .SumAsync(p => p.AmountPaid);
 
         var totalDue = await _context.Payments
             .Where(p => p.TenantId == tenantId
+                && p.TenancyCycle == tenant.TenancyCycle
                 && !p.IsDeleted
                 && p.PaymentStatus != PaymentTransactionStatus.Cancelled
                 && p.PaymentStatus != PaymentTransactionStatus.Failed)
@@ -747,14 +751,16 @@ public class PaymentService : IPaymentService
         var overdueThreshold = DateTime.UtcNow.AddDays(-3);
         _logger.LogInformation("Checking overdue payments, threshold: {Threshold}", overdueThreshold);
 
-        var overduePayments = await _context.Payments
+        var overduePayments = (await _context.Payments
             .Include(p => p.Tenant)
             .Include(p => p.House)
             .ThenInclude(h => h!.Flat)
             .Where(p => (p.PaymentStatus == PaymentTransactionStatus.Pending || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid) &&
                         p.DueDate < overdueThreshold &&
                         !p.IsDeleted)
-            .ToListAsync();
+            .ToListAsync())
+            .Where(p => p.Tenant != null && p.TenancyCycle == p.Tenant.TenancyCycle)
+            .ToList();
 
         var groups = overduePayments
             .GroupBy(p => new { p.TenantId, p.HouseId })
