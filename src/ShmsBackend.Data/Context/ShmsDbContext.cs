@@ -451,6 +451,17 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
         });
 
+        // ── Vacate Configuration ─────────────────────────────────────────────
+        modelBuilder.Entity<VacateInspectionLine>(entity =>
+        {
+            entity.Property(e => e.AssessedAmount).HasColumnType("decimal(18,2)");
+        });
+
+        modelBuilder.Entity<VacateSettlement>(entity =>
+        {
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+        });
+
         // ── Global soft-delete filters ───────────────────────────────────────
         modelBuilder.Entity<PortalUser>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Admin>().HasQueryFilter(e => !e.IsDeleted);
