@@ -42,6 +42,7 @@ public class CreateFlatDto
 
     public int RentDueDay { get; set; } = 5;
     public int BillableGracePeriodMonths { get; set; } = 3;
+    public int VacateNoticeDeadlineDay { get; set; } = 15;
 
     public List<HouseGroupDto> Houses { get; set; } = new();
 }

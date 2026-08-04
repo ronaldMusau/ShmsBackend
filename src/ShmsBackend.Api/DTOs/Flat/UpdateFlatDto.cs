@@ -13,6 +13,7 @@ public class UpdateFlatDto
     public bool ClearAgent { get; set; } = false;
     public int RentDueDay { get; set; }
     public int BillableGracePeriodMonths { get; set; }
+    public int VacateNoticeDeadlineDay { get; set; }
     [Required]
     public string SubmissionNotes { get; set; } = string.Empty;
 }
