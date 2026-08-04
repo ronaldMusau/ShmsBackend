@@ -62,6 +62,16 @@ public class ShmsDbContext : DbContext
     public DbSet<ComplaintLandlordDecision> ComplaintLandlordDecisions { get; set; }
     public DbSet<Deduction> Deductions { get; set; }
 
+    // Vacate
+    public DbSet<VacateRequest> VacateRequests { get; set; }
+    public DbSet<VacateInspectionLine> VacateInspectionLines { get; set; }
+    public DbSet<VacateInspectionLineAttachment> VacateInspectionLineAttachments { get; set; }
+    public DbSet<VacateApprovalAction> VacateApprovalActions { get; set; }
+    public DbSet<VacateAppeal> VacateAppeals { get; set; }
+    public DbSet<VacateAppealLine> VacateAppealLines { get; set; }
+    public DbSet<VacateSettlement> VacateSettlements { get; set; }
+    public DbSet<VacateMessage> VacateMessages { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
