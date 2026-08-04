@@ -5,7 +5,6 @@ namespace ShmsBackend.Data.Models.Entities.Portal;
 public class VacateRequest : ISoftDelete
 {
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string TicketNumber { get; set; } = string.Empty;
     public Guid TenantId { get; set; }
     public Guid HouseId { get; set; }
     public Guid FlatId { get; set; }
