@@ -51,6 +51,7 @@ public class FlatService
             RentDueDay = dto.RentDueDay,
             BillableGracePeriodMonths = dto.BillableGracePeriodMonths,
             VacateNoticeDeadlineDay = dto.VacateNoticeDeadlineDay,
+            SitDeposit = dto.SitDeposit,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -330,6 +331,7 @@ public class FlatService
         flat.RentDueDay = dto.RentDueDay;
         flat.BillableGracePeriodMonths = dto.BillableGracePeriodMonths;
         flat.VacateNoticeDeadlineDay = dto.VacateNoticeDeadlineDay;
+        flat.SitDeposit = dto.SitDeposit;
 
         flat.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();

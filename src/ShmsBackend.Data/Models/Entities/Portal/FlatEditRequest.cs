@@ -14,6 +14,7 @@ public class FlatEditRequest
     public int? ProposedRentDueDay { get; set; }
     public int? ProposedBillableGracePeriodMonths { get; set; }
     public int? ProposedVacateNoticeDeadlineDay { get; set; }
+    public bool? ProposedSitDeposit { get; set; }
     public string? ProposedGoogleMapsLink { get; set; }
     public Guid? ProposedAgentId { get; set; }
     public bool ClearAgent { get; set; } = false;
