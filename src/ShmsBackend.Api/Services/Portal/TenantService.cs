@@ -61,6 +61,12 @@ public class TenantService : ITenantService
             deleted.DateOfBirth = dto.DateOfBirth;
             deleted.EmergencyContactName = dto.EmergencyContactName;
             deleted.EmergencyContactPhone = dto.EmergencyContactPhone;
+            if (dto.HouseId.HasValue)
+            {
+                var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted);
+                if (houseTaken)
+                    throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
+            }
             deleted.HouseId = dto.HouseId;
             deleted.IsDeleted = false;
             deleted.DeletedAt = null;
@@ -92,6 +98,13 @@ public class TenantService : ITenantService
             }
 
             return deleted;
+        }
+
+        if (dto.HouseId.HasValue)
+        {
+            var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted);
+            if (houseTaken)
+                throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
         }
 
         var tenant = new Tenant
@@ -195,7 +208,13 @@ public class TenantService : ITenantService
         if (dto.DateOfBirth.HasValue) tenant.DateOfBirth = dto.DateOfBirth.Value;
         if (!string.IsNullOrEmpty(dto.EmergencyContactName)) tenant.EmergencyContactName = dto.EmergencyContactName;
         if (!string.IsNullOrEmpty(dto.EmergencyContactPhone)) tenant.EmergencyContactPhone = dto.EmergencyContactPhone;
-        if (dto.HouseId.HasValue) tenant.HouseId = dto.HouseId.Value;
+        if (dto.HouseId.HasValue)
+        {
+            var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.Id != tenant.Id);
+            if (houseTaken)
+                throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
+            tenant.HouseId = dto.HouseId.Value;
+        }
 
         tenant.UpdatedAt = DateTime.UtcNow;
         await _unitOfWork.Tenants.UpdateAsync(tenant);
