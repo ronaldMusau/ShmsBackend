@@ -41,6 +41,7 @@ public class Complaint : ISoftDelete
     public Guid? ClosedByAdminId { get; set; }
     public DateTime? ClosedAt { get; set; }
     public DateTime? RevokedAt { get; set; }
+    public DateTime? LastReminderSentAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public bool IsDeleted { get; set; } = false;

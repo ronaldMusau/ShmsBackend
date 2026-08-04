@@ -725,6 +725,16 @@ public class PortalComplaintController : ControllerBase
                 DeductionYear = decidedAt.Year,
                 CreatedAt = DateTime.UtcNow
             });
+
+            var landlordForEmail = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == landlordId);
+            try
+            {
+                if (landlordForEmail != null)
+                    await _emailService.SendDeductionCreatedEmailAsync(landlordForEmail.Email, landlordForEmail.FirstName, complaint.TicketNumber, complaint.BillableAmount.Value, complaint.BillableExplanation);
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send deduction email to landlord"); }
+            try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"A deduction of KES {complaint.BillableAmount.Value:N2} has been created on complaint {complaint.TicketNumber}.", "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of deduction"); }
         }
         else
         {

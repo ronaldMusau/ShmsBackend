@@ -243,6 +243,34 @@ public class EmailService : IEmailService
             GetFlatEditSubmittedTemplate(firstName, flatName));
     }
 
+    public async Task SendDeductionCreatedEmailAsync(string toEmail, string firstName, string ticketNumber, decimal amount, string? description)
+    {
+        _logger.LogInformation("Sending deduction created email to landlord: {Email}", toEmail);
+        await SendEmail(toEmail, $"Deduction Created — {ticketNumber}",
+            GetDeductionCreatedTemplate(firstName, ticketNumber, amount, description));
+    }
+
+    public async Task SendComplaintOverdueManagementEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen)
+    {
+        _logger.LogInformation("Sending overdue complaint reminder email to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"Overdue Complaint — {ticketNumber}",
+            GetComplaintOverdueManagementTemplate(firstName, ticketNumber, daysOpen));
+    }
+
+    public async Task SendComplaintOverdueAgentEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen)
+    {
+        _logger.LogInformation("Sending overdue complaint reminder email to agent: {Email}", toEmail);
+        await SendEmail(toEmail, $"Overdue Complaint — Action Required — {ticketNumber}",
+            GetComplaintOverdueAgentTemplate(firstName, ticketNumber, daysOpen));
+    }
+
+    public async Task SendComplaintOverdueLandlordEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen)
+    {
+        _logger.LogInformation("Sending overdue complaint reminder email to landlord: {Email}", toEmail);
+        await SendEmail(toEmail, $"Complaint Awaiting Your Decision — {ticketNumber}",
+            GetComplaintOverdueLandlordTemplate(firstName, ticketNumber, daysOpen));
+    }
+
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
     private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
@@ -891,5 +919,86 @@ public class EmailService : IEmailService
 {SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
 
         return WrapInLayout($"Landlord {decision} Complaint {ticketNumber}", inner);
+    }
+
+    private string GetDeductionCreatedTemplate(string firstName, string ticketNumber, decimal amount, string? description)
+    {
+        var descBlock = !string.IsNullOrWhiteSpace(description)
+            ? $"<tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Description</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{description}</td></tr>"
+            : "";
+
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Following your approval of complaint <strong style='color:{ColourGold};'>{ticketNumber}</strong>, a deduction has been recorded against your account on the Romah Estates system.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 12px 0;'>DEDUCTION DETAILS</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Ticket Number</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{ticketNumber}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Amount Deducted</td><td style='color:{ColourTextSec};font-weight:700;font-size:14px;text-align:right;'>KES {amount:N2}</td></tr>
+    {descBlock}
+  </table>
+")}
+{Para("This deduction will be reflected in your account statement. Please log in to your landlord portal to view full deduction history.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Deduction Created — {ticketNumber}", inner);
+    }
+
+    private string GetComplaintOverdueManagementTemplate(string firstName, string ticketNumber, int daysOpen)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"The following complaint has exceeded its review period and requires your attention.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 12px 0;'>OVERDUE COMPLAINT</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Ticket Number</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{ticketNumber}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Days Open</td><td style='color:#ef4444;font-weight:700;font-size:14px;text-align:right;'>{daysOpen} days</td></tr>
+  </table>
+")}
+{Para("Please log in to the management portal to review and action this complaint.")}
+{Divider()}
+{SmallNote("This is an automated reminder from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Overdue Complaint — {ticketNumber}", inner);
+    }
+
+    private string GetComplaintOverdueAgentTemplate(string firstName, string ticketNumber, int daysOpen)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A complaint assigned to you has been open for <strong style='color:#ef4444;'>{daysOpen} days</strong> and requires your prompt attention.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+  <p style='margin:12px 0 0;color:#ef4444;font-size:13px;font-weight:600;'>{daysOpen} days open</p>
+")}
+{Para("Please complete your work on this complaint and submit your completion notes and evidence through the Romah Estates agent portal as soon as possible.")}
+{Divider()}
+{SmallNote("This is an automated reminder from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Overdue Complaint — {ticketNumber}", inner);
+    }
+
+    private string GetComplaintOverdueLandlordTemplate(string firstName, string ticketNumber, int daysOpen)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A complaint on your property has been awaiting your decision for <strong style='color:#ef4444;'>{daysOpen} days</strong>.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+  <p style='margin:12px 0 0;color:#ef4444;font-size:13px;font-weight:600;'>{daysOpen} days awaiting your decision</p>
+")}
+{Para("Please log in to your landlord portal to review the complaint details and submit your final decision at your earliest convenience.")}
+{Divider()}
+{SmallNote("This is an automated reminder from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Complaint Awaiting Your Decision — {ticketNumber}", inner);
     }
 }

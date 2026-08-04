@@ -42,6 +42,7 @@ public class ComplaintTypeController : ControllerBase
         {
             Name = dto.Name,
             Description = dto.Description,
+            ReminderDays = dto.ReminderDays,
             IsActive = true,
             CreatedBy = userId,
             CreatedAt = DateTime.UtcNow,
@@ -62,6 +63,7 @@ public class ComplaintTypeController : ControllerBase
 
         type.Name = dto.Name;
         type.Description = dto.Description;
+        type.ReminderDays = dto.ReminderDays;
         type.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         return Ok(new { success = true, data = type });
@@ -87,4 +89,5 @@ public class ComplaintTypeDto
 {
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public int ReminderDays { get; set; } = 7;
 }
