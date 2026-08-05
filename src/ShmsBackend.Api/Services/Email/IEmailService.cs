@@ -37,4 +37,7 @@ public interface IEmailService
     Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber);
     Task SendVacateArrearsBlockEmailAsync(string toEmail, string firstName, decimal arrearsAmount);
     Task SendVacateSettlementReversedEmailAsync(string toEmail, string firstName, string houseNumber);
+    Task SendVacateApprovedTenantEmailAsync(string toEmail, string firstName, string houseNumber);
+    Task SendComplaintRejectedManagementEmailAsync(string toEmail, string firstName, string ticketNumber, string? rejectionNotes);
+    Task SendVacateRejectedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? rejectionNotes);
 }

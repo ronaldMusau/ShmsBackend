@@ -1101,4 +1101,81 @@ public class EmailService : IEmailService
 
         return WrapInLayout($"Vacate Settlement Reversed — {houseNumber}", inner);
     }
+
+    public async Task SendVacateApprovedTenantEmailAsync(string toEmail, string firstName, string houseNumber)
+    {
+        _logger.LogInformation("Sending vacate approved email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Request Approved — {houseNumber}",
+            GetVacateApprovedTenantTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateApprovedTenantTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your vacate request for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been reviewed and approved by management. Your settlement summary is now ready for review.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("Please log in to the Romah Estates tenant portal to view your settlement details, including any amounts owed or refundable.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Request Approved — {houseNumber}", inner);
+    }
+
+    public async Task SendComplaintRejectedManagementEmailAsync(string toEmail, string firstName, string ticketNumber, string? rejectionNotes)
+    {
+        _logger.LogInformation("Sending complaint rejection management email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Complaint Rejected — {ticketNumber}",
+            GetComplaintRejectedManagementTemplate(firstName, ticketNumber, rejectionNotes));
+    }
+
+    private string GetComplaintRejectedManagementTemplate(string firstName, string ticketNumber, string? rejectionNotes)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Complaint <strong style='color:{ColourGold};'>{ticketNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system was rejected at the internal approval step and has been sent back for resubmission.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+")}
+{(string.IsNullOrWhiteSpace(rejectionNotes) ? "" : Para($"<strong>Reason:</strong> {rejectionNotes}"))}
+{Para("Please review and resubmit the billable decision to restart the approval process.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Complaint Rejected — {ticketNumber}", inner);
+    }
+
+    public async Task SendVacateRejectedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? rejectionNotes)
+    {
+        _logger.LogInformation("Sending vacate rejection management email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Request Rejected — {houseNumber}",
+            GetVacateRejectedManagementTemplate(firstName, houseNumber, rejectionNotes));
+    }
+
+    private string GetVacateRejectedManagementTemplate(string firstName, string houseNumber, string? rejectionNotes)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A vacate request for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system was rejected at the internal approval step.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{(string.IsNullOrWhiteSpace(rejectionNotes) ? "" : Para($"<strong>Reason:</strong> {rejectionNotes}"))}
+{Para("Please review the rejection notes and take appropriate action through the Romah Estates management portal.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Request Rejected — {houseNumber}", inner);
+    }
 }

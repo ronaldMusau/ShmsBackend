@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
@@ -20,17 +21,20 @@ public class VacateController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<VacateController> _logger;
+    private readonly IPaymentService _paymentService;
 
     public VacateController(
         ShmsDbContext context,
         IEmailService emailService,
         INotificationService notificationService,
-        ILogger<VacateController> logger)
+        ILogger<VacateController> logger,
+        IPaymentService paymentService)
     {
         _context = context;
         _emailService = emailService;
         _notificationService = notificationService;
         _logger = logger;
+        _paymentService = paymentService;
     }
 
     private Guid GetCallerId()
@@ -689,7 +693,15 @@ public class VacateController : ControllerBase
         var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
         var houseNumber = house?.HouseNumber ?? "";
 
+        var firstStep = await _context.ApprovalSequenceSteps
+            .Where(s => s.Module == "Vacate")
+            .OrderBy(s => s.StepOrder)
+            .FirstOrDefaultAsync();
+        if (firstStep == null)
+            return BadRequest(new { success = false, message = "No approval sequence has been configured for Vacate. Please contact management." });
+
         vacateRequest.InspectionSubmittedAt = DateTime.UtcNow;
+        vacateRequest.CurrentApprovalStepOrder = firstStep.StepOrder;
         vacateRequest.Status = "AwaitingApproval";
         vacateRequest.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
@@ -704,6 +716,153 @@ public class VacateController : ControllerBase
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate inspection submission"); }
 
         return Ok(new { success = true });
+    }
+
+    // PATCH /api/vacate/{id}/approval-action
+    [HttpPatch("{id:guid}/approval-action")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> VacateApprovalAction(Guid id, [FromBody] VacateApprovalActionDto dto)
+    {
+        var callerId = GetCallerId();
+
+        var vacateRequest = await _context.VacateRequests
+            .Include(v => v.InspectionLines)
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        var steps = await _context.ApprovalSequenceSteps
+            .Where(s => s.Module == "Vacate")
+            .OrderBy(s => s.StepOrder)
+            .ToListAsync();
+        var currentStep = steps.FirstOrDefault(s => s.StepOrder == vacateRequest.CurrentApprovalStepOrder);
+
+        if (currentStep == null)
+            return BadRequest(new { success = false, message = "This request is not currently awaiting approval." });
+
+        if (currentStep.ApproverId != callerId)
+            return Forbid();
+
+        if (dto.Approved && dto.LineAmounts != null)
+        {
+            foreach (var entry in dto.LineAmounts)
+            {
+                var line = vacateRequest.InspectionLines.FirstOrDefault(l => l.Id == entry.LineId);
+                if (line != null)
+                    line.AssessedAmount = entry.Amount;
+            }
+        }
+
+        _context.VacateApprovalActions.Add(new VacateApprovalAction
+        {
+            Id = Guid.NewGuid(),
+            VacateRequestId = id,
+            AttemptNumber = 1,
+            StepOrder = currentStep.StepOrder,
+            ApproverId = callerId,
+            Decision = dto.Approved ? "Approved" : "Rejected",
+            Notes = dto.Notes,
+            ActionedAt = DateTime.UtcNow
+        });
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        if (!dto.Approved)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Notes))
+                return BadRequest(new { success = false, message = "Rejection notes are required." });
+
+            vacateRequest.CurrentApprovalStepOrder = null;
+            vacateRequest.Status = "Rejected";
+            vacateRequest.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            try
+            {
+                await _notificationService.SendToRolesAsync(
+                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                    $"Vacate request for house {houseNumber} was rejected at step {currentStep.StepOrder}.",
+                    "property");
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate approval rejection"); }
+
+            try
+            {
+                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+                foreach (var mgr in managementUsers)
+                {
+                    try { await _emailService.SendVacateRejectedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, dto.Notes); }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email to {Email}", mgr.Email); }
+                }
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate rejection email"); }
+
+            return Ok(new { success = true, message = "Rejected. Management has been notified." });
+        }
+
+        // Approved — advance to next step or complete the sequence
+        var nextStep = steps.FirstOrDefault(s => s.StepOrder > currentStep.StepOrder);
+        await _context.SaveChangesAsync();
+
+        if (nextStep != null)
+        {
+            vacateRequest.CurrentApprovalStepOrder = nextStep.StepOrder;
+            vacateRequest.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Vacate request for house {houseNumber} requires your approval (step {nextStep.StepOrder}).", "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver of vacate step"); }
+
+            var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
+            if (nextApprover != null)
+            {
+                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"Vacate — {houseNumber}", nextStep.StepOrder); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email to next vacate approver"); }
+            }
+
+            return Ok(new { success = true, message = "Approved. Advanced to the next approval step." });
+        }
+        else
+        {
+            vacateRequest.CurrentApprovalStepOrder = null;
+            vacateRequest.Status = "Approved";
+            vacateRequest.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            var settlementResult = await _paymentService.CalculateVacateSettlementAsync(vacateRequest.Id);
+
+            var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
+            if (tenant != null)
+            {
+                try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"Your vacate request for house {houseNumber} has been approved. Settlement is ready for review.", "property"); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate approval"); }
+
+                try { await _emailService.SendVacateApprovedTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate approved email to tenant"); }
+            }
+
+            return Ok(new
+            {
+                success = true,
+                message = "Approved. Settlement has been calculated.",
+                data = new
+                {
+                    settlementResult.Direction,
+                    settlementResult.FinalAmount,
+                    settlementResult.TotalDamages,
+                    settlementResult.AdvanceApplied,
+                    settlementResult.AdvanceForfeited,
+                    settlementResult.DepositApplied,
+                    settlementResult.DepositRefunded
+                }
+            });
+        }
     }
 }
 
@@ -722,4 +881,17 @@ public class CancelVacateRequestDto
 public class AddVacateInspectionLineDto
 {
     public string Description { get; set; } = string.Empty;
+}
+
+public class VacateApprovalActionDto
+{
+    public bool Approved { get; set; }
+    public string? Notes { get; set; }
+    public List<VacateLineAmountDto>? LineAmounts { get; set; }
+}
+
+public class VacateLineAmountDto
+{
+    public Guid LineId { get; set; }
+    public decimal Amount { get; set; }
 }

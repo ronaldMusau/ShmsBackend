@@ -500,6 +500,21 @@ public class ComplaintController : ControllerBase
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of approval rejection"); }
 
+            try
+            {
+                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+                foreach (var mgr in managementUsers)
+                {
+                    try { await _emailService.SendComplaintRejectedManagementEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, dto.Notes); }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email to {Email}", mgr.Email); }
+                }
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for complaint rejection email"); }
+
             return Ok(new { success = true, message = "Rejected. Management has been notified to resubmit." });
         }
 
