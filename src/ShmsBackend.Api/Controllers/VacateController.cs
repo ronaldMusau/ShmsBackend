@@ -501,7 +501,6 @@ public class VacateController : ControllerBase
                     {
                         l.Id,
                         l.Description,
-                        l.AssessedAmount,
                         l.LineOrder,
                         l.CreatedAt,
                         attachments = l.Attachments.Select(a => new
@@ -954,6 +953,186 @@ public class VacateController : ControllerBase
         });
     }
 
+    // GET /api/vacate/tenant/{id}
+    [HttpGet("tenant/{id:guid}")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetTenantVacateRequest(Guid id)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .Include(v => v.InspectionLines)
+                .ThenInclude(l => l.Attachments)
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (vacateRequest.TenantId != GetCallerId())
+            return Forbid();
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var flat = await _context.Flats.FirstOrDefaultAsync(f => f.Id == vacateRequest.FlatId);
+        var agent = vacateRequest.AssignedAgentId.HasValue
+            ? await _context.Agents.FirstOrDefaultAsync(a => a.Id == vacateRequest.AssignedAgentId.Value)
+            : null;
+
+        var settlement = await _context.VacateSettlements
+            .FirstOrDefaultAsync(s => s.VacateRequestId == id && !s.IsVoided);
+
+        var forfeitedAdvance = await _context.VacateForfeitedAdvances
+            .FirstOrDefaultAsync(f => f.VacateRequestId == id && !f.IsVoided);
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                id = vacateRequest.Id,
+                status = vacateRequest.Status,
+                vacateMonth = vacateRequest.VacateMonth,
+                vacateYear = vacateRequest.VacateYear,
+                sitDeposit = vacateRequest.SitDeposit,
+                inspectionAssignedAt = vacateRequest.InspectionAssignedAt,
+                inspectionSubmittedAt = vacateRequest.InspectionSubmittedAt,
+                settledAt = vacateRequest.SettledAt,
+                finalRemarks = vacateRequest.FinalRemarks,
+                finalRemarksAt = vacateRequest.FinalRemarksAt,
+                houseNumber = house?.HouseNumber ?? "-",
+                flatName = flat?.FlatName ?? "-",
+                assignedAgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
+                inspectionLines = vacateRequest.InspectionLines
+                    .OrderBy(l => l.LineOrder)
+                    .Select(l => new
+                    {
+                        id = l.Id,
+                        description = l.Description,
+                        assessedAmount = l.AssessedAmount,
+                        lineOrder = l.LineOrder,
+                        attachments = l.Attachments.Select(a => new
+                        {
+                            filePath = a.FilePath,
+                            fileType = a.FileType,
+                            uploadedAt = a.UploadedAt
+                        })
+                    }),
+                settlement = settlement == null ? null : (object)new
+                {
+                    settlement.Direction,
+                    settlement.Amount,
+                    settlement.Description,
+                    settlement.PaidAt
+                },
+                forfeitedAdvance = forfeitedAdvance == null ? null : (object)new
+                {
+                    forfeitedAdvance.TotalAdvanceAmount,
+                    forfeitedAdvance.AmountAppliedToDamages,
+                    forfeitedAdvance.AmountForfeitedUnused
+                }
+            }
+        });
+    }
+
+    // GET /api/vacate/landlord/my-requests
+    [HttpGet("landlord/my-requests")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordVacateRequests()
+    {
+        var callerId = GetCallerId();
+
+        var requests = await _context.VacateRequests
+            .Include(v => v.InspectionLines)
+            .Where(v => v.LandlordId == callerId && !v.IsDeleted)
+            .OrderByDescending(v => v.CreatedAt)
+            .ToListAsync();
+
+        var houseIds = requests.Select(v => v.HouseId).Distinct().ToList();
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var flatIds = requests.Select(v => v.FlatId).Distinct().ToList();
+        var flats = await _context.Flats
+            .Where(f => flatIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id, f => f.FlatName);
+
+        var tenantIds = requests.Select(v => v.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var agentIds = requests
+            .Where(v => v.AssignedAgentId.HasValue)
+            .Select(v => v.AssignedAgentId!.Value)
+            .Distinct().ToList();
+        var agents = await _context.Agents
+            .Where(a => agentIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, a => $"{a.FirstName} {a.LastName}");
+
+        var data = requests.Select(v => new
+        {
+            id = v.Id,
+            status = v.Status,
+            vacateMonth = v.VacateMonth,
+            vacateYear = v.VacateYear,
+            inspectionSubmittedAt = v.InspectionSubmittedAt,
+            settledAt = v.SettledAt,
+            finalRemarks = v.FinalRemarks,
+            finalRemarksAt = v.FinalRemarksAt,
+            houseNumber = houses.GetValueOrDefault(v.HouseId, "-"),
+            flatName = flats.GetValueOrDefault(v.FlatId, "-"),
+            tenantName = tenants.GetValueOrDefault(v.TenantId, "-"),
+            assignedAgentName = v.AssignedAgentId.HasValue ? agents.GetValueOrDefault(v.AssignedAgentId.Value, "-") : null,
+            inspectionLineCount = v.InspectionLines.Count
+        }).ToList();
+
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/vacate/landlord/{id}
+    [HttpGet("landlord/{id:guid}")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordVacateRequest(Guid id)
+    {
+        var callerId = GetCallerId();
+
+        var vacateRequest = await _context.VacateRequests
+            .Include(v => v.InspectionLines)
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (vacateRequest.LandlordId != callerId)
+            return Forbid();
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var flat = await _context.Flats.FirstOrDefaultAsync(f => f.Id == vacateRequest.FlatId);
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
+        var agent = vacateRequest.AssignedAgentId.HasValue
+            ? await _context.Agents.FirstOrDefaultAsync(a => a.Id == vacateRequest.AssignedAgentId.Value)
+            : null;
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                id = vacateRequest.Id,
+                status = vacateRequest.Status,
+                vacateMonth = vacateRequest.VacateMonth,
+                vacateYear = vacateRequest.VacateYear,
+                inspectionSubmittedAt = vacateRequest.InspectionSubmittedAt,
+                settledAt = vacateRequest.SettledAt,
+                finalRemarks = vacateRequest.FinalRemarks,
+                finalRemarksAt = vacateRequest.FinalRemarksAt,
+                houseNumber = house?.HouseNumber ?? "-",
+                flatName = flat?.FlatName ?? "-",
+                tenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : "-",
+                assignedAgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
+                inspectionLineCount = vacateRequest.InspectionLines.Count
+            }
+        });
+    }
+
     // PATCH /api/vacate/{id}/approval-action
     [HttpPatch("{id:guid}/approval-action")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
@@ -1012,6 +1191,7 @@ public class VacateController : ControllerBase
 
             vacateRequest.CurrentApprovalStepOrder = null;
             vacateRequest.Status = "Rejected";
+            vacateRequest.NeedsResubmission = true;
             vacateRequest.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -1039,7 +1219,7 @@ public class VacateController : ControllerBase
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate rejection email"); }
 
-            return Ok(new { success = true, message = "Rejected. Management has been notified." });
+            return Ok(new { success = true, message = "Rejected. Management may edit and resubmit, or issue final remarks to close this request." });
         }
 
         // Approved — advance to next step or complete the sequence
@@ -1067,10 +1247,106 @@ public class VacateController : ControllerBase
         else
         {
             vacateRequest.CurrentApprovalStepOrder = null;
-            vacateRequest.Status = "Approved";
+            vacateRequest.Status = "AwaitingFinalRemarks";
             vacateRequest.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
+            return Ok(new { success = true, message = "Internal approval complete. Awaiting management final remarks before settlement is calculated." });
+        }
+    }
+
+    // PATCH /api/vacate/{id}/resubmit
+    [HttpPatch("{id:guid}/resubmit")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> ResubmitVacateRequest(Guid id, [FromBody] VacateResubmitDto dto)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .Include(v => v.InspectionLines)
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (!(vacateRequest.Status == "Rejected" && vacateRequest.NeedsResubmission))
+            return BadRequest(new { success = false, message = "This request is not pending resubmission." });
+
+        if (dto.LineAmounts != null)
+        {
+            foreach (var entry in dto.LineAmounts)
+            {
+                var line = vacateRequest.InspectionLines.FirstOrDefault(l => l.Id == entry.LineId);
+                if (line != null)
+                    line.AssessedAmount = entry.Amount;
+            }
+        }
+
+        vacateRequest.ApprovalAttemptNumber += 1;
+
+        var firstStep = await _context.ApprovalSequenceSteps
+            .Where(s => s.Module == "Vacate")
+            .OrderBy(s => s.StepOrder)
+            .FirstOrDefaultAsync();
+        if (firstStep == null)
+            return BadRequest(new { success = false, message = "No approval sequence has been configured for Vacate. Please contact management." });
+
+        vacateRequest.CurrentApprovalStepOrder = firstStep.StepOrder;
+        vacateRequest.NeedsResubmission = false;
+        vacateRequest.Status = "AwaitingApproval";
+        vacateRequest.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        try { await _notificationService.SendToUserAsync(firstStep.ApproverId.ToString(), $"Vacate request for house {houseNumber} has been resubmitted and requires your approval (step {firstStep.StepOrder}).", "property"); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify first approver of vacate resubmission"); }
+
+        var firstApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == firstStep.ApproverId);
+        if (firstApprover != null)
+        {
+            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"Vacate — {houseNumber}", firstStep.StepOrder); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email to first vacate approver on resubmission"); }
+        }
+
+        return Ok(new { success = true, data = new { vacateRequest.ApprovalAttemptNumber } });
+    }
+
+    // PATCH /api/vacate/{id}/final-remarks
+    [HttpPatch("{id:guid}/final-remarks")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> IssueFinalRemarks(Guid id, [FromBody] VacateFinalRemarksDto dto)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (vacateRequest.Status != "Rejected" && vacateRequest.Status != "AwaitingFinalRemarks")
+            return BadRequest(new { success = false, message = "Final remarks cannot be issued for this request's current status." });
+
+        if (dto.Outcome != "Approved" && dto.Outcome != "Rejected")
+            return BadRequest(new { success = false, message = "Outcome must be 'Approved' or 'Rejected'." });
+
+        if (vacateRequest.Status == "AwaitingFinalRemarks" && dto.Outcome != "Approved")
+            return BadRequest(new { success = false, message = "Outcome must be 'Approved' when internal approval succeeded, or 'Rejected' when closing out a rejected request." });
+
+        if (vacateRequest.Status == "Rejected" && dto.Outcome != "Rejected")
+            return BadRequest(new { success = false, message = "Outcome must be 'Approved' when internal approval succeeded, or 'Rejected' when closing out a rejected request." });
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        vacateRequest.FinalRemarks = dto.Remarks;
+        vacateRequest.FinalRemarksAt = DateTime.UtcNow;
+        vacateRequest.FinalRemarksByAdminId = GetCallerId();
+        vacateRequest.Status = dto.Outcome;
+        vacateRequest.NeedsResubmission = false;
+        vacateRequest.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        if (dto.Outcome == "Approved")
+        {
             var settlementResult = await _paymentService.CalculateVacateSettlementAsync(vacateRequest.Id);
 
             var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
@@ -1098,6 +1374,20 @@ public class VacateController : ControllerBase
                     settlementResult.DepositRefunded
                 }
             });
+        }
+        else
+        {
+            var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
+            if (tenant != null)
+            {
+                try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"Your vacate request for house {houseNumber} has been closed. See final remarks in your portal.", "property"); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate final rejection"); }
+
+                try { await _emailService.SendVacateFinalRejectionTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber, dto.Remarks); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate final rejection email to tenant"); }
+            }
+
+            return Ok(new { success = true, message = "Vacate request has been closed with final remarks." });
         }
     }
 }
@@ -1130,4 +1420,15 @@ public class VacateLineAmountDto
 {
     public Guid LineId { get; set; }
     public decimal Amount { get; set; }
+}
+
+public class VacateResubmitDto
+{
+    public List<VacateLineAmountDto>? LineAmounts { get; set; }
+}
+
+public class VacateFinalRemarksDto
+{
+    public string Remarks { get; set; } = string.Empty;
+    public string Outcome { get; set; } = string.Empty;
 }

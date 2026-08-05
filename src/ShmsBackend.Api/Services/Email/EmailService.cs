@@ -1178,4 +1178,30 @@ public class EmailService : IEmailService
 
         return WrapInLayout($"Vacate Request Rejected — {houseNumber}", inner);
     }
+
+    public async Task SendVacateFinalRejectionTenantEmailAsync(string toEmail, string firstName, string houseNumber, string remarks)
+    {
+        _logger.LogInformation("Sending vacate final rejection email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Request Closed — {houseNumber}",
+            GetVacateFinalRejectionTenantTemplate(firstName, houseNumber, remarks));
+    }
+
+    private string GetVacateFinalRejectionTenantTemplate(string firstName, string houseNumber, string remarks)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your vacate request for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been reviewed by management and has been closed.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para($"<strong>Management Remarks:</strong> {remarks}")}
+{Para("If you believe this decision was made in error or you have further questions, please contact management directly.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Request Closed — {houseNumber}", inner);
+    }
 }
