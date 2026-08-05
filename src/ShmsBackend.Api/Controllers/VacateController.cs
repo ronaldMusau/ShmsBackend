@@ -718,6 +718,242 @@ public class VacateController : ControllerBase
         return Ok(new { success = true });
     }
 
+    // GET /api/vacate/all
+    [HttpGet("all")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetAllVacateRequests(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] string? status = null,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] Guid? houseId = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
+    {
+        var query = _context.VacateRequests.Where(v => !v.IsDeleted).AsQueryable();
+
+        if (!string.IsNullOrEmpty(status))
+            query = query.Where(v => v.Status == status);
+        if (flatId.HasValue)
+            query = query.Where(v => v.FlatId == flatId.Value);
+        if (houseId.HasValue)
+            query = query.Where(v => v.HouseId == houseId.Value);
+        if (fromDate.HasValue)
+            query = query.Where(v => v.CreatedAt >= fromDate.Value);
+        if (toDate.HasValue)
+            query = query.Where(v => v.CreatedAt <= toDate.Value.AddDays(1));
+
+        var total = await query.CountAsync();
+
+        var pagedRequests = await query
+            .OrderByDescending(v => v.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var houseIds = pagedRequests.Select(v => v.HouseId).Distinct().ToList();
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var flatIds = pagedRequests.Select(v => v.FlatId).Distinct().ToList();
+        var flats = await _context.Flats
+            .Where(f => flatIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id, f => f.FlatName);
+
+        var tenantIds = pagedRequests.Select(v => v.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var agentIds = pagedRequests
+            .Where(v => v.AssignedAgentId.HasValue)
+            .Select(v => v.AssignedAgentId!.Value)
+            .Distinct().ToList();
+        var agents = await _context.Agents
+            .Where(a => agentIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, a => $"{a.FirstName} {a.LastName}");
+
+        var data = pagedRequests.Select(v => new
+        {
+            v.Id,
+            v.Status,
+            v.VacateMonth,
+            v.VacateYear,
+            v.SitDeposit,
+            HouseNumber = houses.GetValueOrDefault(v.HouseId, "-"),
+            FlatName = flats.GetValueOrDefault(v.FlatId, "-"),
+            TenantName = tenants.GetValueOrDefault(v.TenantId, "-"),
+            AssignedAgentName = v.AssignedAgentId.HasValue ? agents.GetValueOrDefault(v.AssignedAgentId.Value, "-") : null,
+            v.CreatedAt,
+            v.InspectionSubmittedAt
+        }).ToList();
+
+        var totals = new
+        {
+            TotalOpen = await _context.VacateRequests.CountAsync(v => !v.IsDeleted && v.Status == "Open"),
+            TotalAwaitingApproval = await _context.VacateRequests.CountAsync(v => !v.IsDeleted && v.Status == "AwaitingApproval"),
+            TotalApproved = await _context.VacateRequests.CountAsync(v => !v.IsDeleted && v.Status == "Approved")
+        };
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize),
+            totals
+        });
+    }
+
+    // GET /api/vacate/my-approval-queue
+    [HttpGet("my-approval-queue")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetMyVacateApprovalQueue()
+    {
+        var adminId = GetCallerId();
+        var myStepOrders = await _context.ApprovalSequenceSteps
+            .Where(s => s.Module == "Vacate" && s.ApproverId == adminId)
+            .Select(s => s.StepOrder)
+            .ToListAsync();
+
+        var requests = await _context.VacateRequests
+            .Where(v => !v.IsDeleted && v.CurrentApprovalStepOrder != null && myStepOrders.Contains(v.CurrentApprovalStepOrder.Value))
+            .OrderBy(v => v.InspectionSubmittedAt)
+            .ToListAsync();
+
+        var houseIds = requests.Select(v => v.HouseId).Distinct().ToList();
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var flatIds = requests.Select(v => v.FlatId).Distinct().ToList();
+        var flats = await _context.Flats
+            .Where(f => flatIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id, f => f.FlatName);
+
+        var tenantIds = requests.Select(v => v.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var data = requests.Select(v => new
+        {
+            v.Id,
+            HouseNumber = houses.GetValueOrDefault(v.HouseId, "-"),
+            FlatName = flats.GetValueOrDefault(v.FlatId, "-"),
+            TenantName = tenants.GetValueOrDefault(v.TenantId, "-"),
+            v.VacateMonth,
+            v.VacateYear,
+            v.CurrentApprovalStepOrder,
+            v.InspectionSubmittedAt
+        }).ToList();
+
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/vacate/{id}
+    [HttpGet("{id:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetVacateRequestById(Guid id)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .Include(v => v.InspectionLines)
+                .ThenInclude(l => l.Attachments)
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var flat = await _context.Flats.FirstOrDefaultAsync(f => f.Id == vacateRequest.FlatId);
+        var agent = vacateRequest.AssignedAgentId.HasValue
+            ? await _context.Agents.FirstOrDefaultAsync(a => a.Id == vacateRequest.AssignedAgentId.Value)
+            : null;
+
+        var approvalActions = await _context.VacateApprovalActions
+            .Where(a => a.VacateRequestId == id)
+            .OrderBy(a => a.AttemptNumber)
+            .ThenBy(a => a.StepOrder)
+            .ToListAsync();
+
+        var approverIds = approvalActions.Select(a => a.ApproverId).Distinct().ToList();
+        var approvers = await _context.PortalUsers
+            .Where(u => approverIds.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+
+        var settlement = await _context.VacateSettlements
+            .FirstOrDefaultAsync(s => s.VacateRequestId == id && !s.IsVoided);
+
+        var forfeitedAdvance = await _context.VacateForfeitedAdvances
+            .FirstOrDefaultAsync(f => f.VacateRequestId == id && !f.IsVoided);
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                vacateRequest.Id,
+                vacateRequest.Status,
+                vacateRequest.VacateMonth,
+                vacateRequest.VacateYear,
+                vacateRequest.SitDeposit,
+                vacateRequest.CurrentApprovalStepOrder,
+                vacateRequest.InspectionAssignedAt,
+                vacateRequest.InspectionSubmittedAt,
+                vacateRequest.SettledAt,
+                vacateRequest.FinalRemarks,
+                vacateRequest.FinalRemarksAt,
+                tenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : "-",
+                houseNumber = house?.HouseNumber ?? "-",
+                flatName = flat?.FlatName ?? "-",
+                assignedAgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
+                inspectionLines = vacateRequest.InspectionLines
+                    .OrderBy(l => l.LineOrder)
+                    .Select(l => new
+                    {
+                        l.Id,
+                        l.Description,
+                        l.AssessedAmount,
+                        l.LineOrder,
+                        l.CreatedAt,
+                        attachments = l.Attachments.Select(a => new
+                        {
+                            a.FilePath,
+                            a.FileType,
+                            a.FileSizeBytes,
+                            a.UploadedAt
+                        })
+                    }),
+                approvalHistory = approvalActions.Select(a => new
+                {
+                    a.AttemptNumber,
+                    a.StepOrder,
+                    a.Decision,
+                    a.Notes,
+                    approverName = approvers.TryGetValue(a.ApproverId, out var name) ? name : a.ApproverId.ToString(),
+                    a.ActionedAt
+                }),
+                settlement = settlement == null ? null : (object)new
+                {
+                    settlement.Direction,
+                    settlement.Amount,
+                    settlement.Description,
+                    settlement.PaidAt
+                },
+                forfeitedAdvance = forfeitedAdvance == null ? null : (object)new
+                {
+                    forfeitedAdvance.TotalAdvanceAmount,
+                    forfeitedAdvance.AmountAppliedToDamages,
+                    forfeitedAdvance.AmountForfeitedUnused
+                }
+            }
+        });
+    }
+
     // PATCH /api/vacate/{id}/approval-action
     [HttpPatch("{id:guid}/approval-action")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
