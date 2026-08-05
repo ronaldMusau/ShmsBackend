@@ -23,6 +23,7 @@ public interface IPaymentService
     Task<decimal> GetServiceChargeAsync(decimal rentAmount);
     Task GenerateMonthlyPaymentsAsync();
     Task CheckOverduePaymentsAsync();
+    Task<VacateSettlementResult> CalculateVacateSettlementAsync(Guid vacateRequestId);
 }
 
 public class PaymentService : IPaymentService
@@ -830,4 +831,132 @@ public class PaymentService : IPaymentService
         await _context.SaveChangesAsync();
         _logger.LogInformation("Marked {Count} payments as overdue", overduePayments.Count);
     }
+
+    public async Task<VacateSettlementResult> CalculateVacateSettlementAsync(Guid vacateRequestId)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .Include(v => v.InspectionLines)
+            .FirstOrDefaultAsync(v => v.Id == vacateRequestId);
+        if (vacateRequest == null) throw new InvalidOperationException("Vacate request not found.");
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
+        if (tenant == null) throw new InvalidOperationException("Tenant not found.");
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var depositFee = house?.DepositFee ?? 0m;
+
+        var totalDamages = vacateRequest.InspectionLines.Sum(l => l.AssessedAmount ?? 0m);
+
+        decimal unpaidRent = 0m;
+        if (vacateRequest.SitDeposit)
+        {
+            unpaidRent = await _context.Payments
+                .Where(p => p.TenantId == tenant.Id
+                    && p.TenancyCycle == tenant.TenancyCycle
+                    && !p.IsDeleted
+                    && (p.PaymentStatus == PaymentTransactionStatus.Overdue
+                        || p.PaymentStatus == PaymentTransactionStatus.Pending
+                        || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))
+                .SumAsync(p => p.Balance);
+        }
+
+        var totalOwed = totalDamages + unpaidRent;
+
+        decimal depositApplied;
+        decimal remainingAfterDeposit;
+        decimal depositRefund = 0m;
+
+        if (vacateRequest.SitDeposit)
+        {
+            depositApplied = Math.Min(depositFee, totalOwed);
+            remainingAfterDeposit = Math.Max(0, totalOwed - depositFee);
+        }
+        else
+        {
+            depositApplied = Math.Min(depositFee, totalOwed);
+            remainingAfterDeposit = Math.Max(0, totalOwed - depositFee);
+            depositRefund = Math.Max(0, depositFee - totalOwed);
+        }
+
+        var advanceBalance = await GetRemainingCreditAsync(tenant.Id);
+        var advanceAppliedToDamages = Math.Min(advanceBalance, remainingAfterDeposit);
+        var advanceForfeitedUnused = advanceBalance - advanceAppliedToDamages;
+        var remainingAfterAdvance = Math.Max(0, remainingAfterDeposit - advanceBalance);
+
+        if (advanceBalance > 0)
+        {
+            _context.VacateForfeitedAdvances.Add(new VacateForfeitedAdvance
+            {
+                VacateRequestId = vacateRequest.Id,
+                TenantId = vacateRequest.TenantId,
+                HouseId = vacateRequest.HouseId,
+                FlatId = vacateRequest.FlatId,
+                LandlordId = vacateRequest.LandlordId,
+                TotalAdvanceAmount = advanceBalance,
+                AmountAppliedToDamages = advanceAppliedToDamages,
+                AmountForfeitedUnused = advanceForfeitedUnused
+            });
+        }
+
+        string direction;
+        decimal settlementAmount;
+        string description;
+
+        if (remainingAfterAdvance > 0)
+        {
+            direction = "TenantOwes";
+            settlementAmount = remainingAfterAdvance;
+            description = $"Vacate settlement: damages/arrears of {totalOwed:N2} exceeded deposit and advance credit.";
+        }
+        else if (depositRefund > 0)
+        {
+            direction = "ManagementOwes";
+            settlementAmount = depositRefund;
+            description = $"Vacate settlement: deposit refund after deducting {totalOwed:N2} in damages/arrears.";
+        }
+        else
+        {
+            direction = "Settled";
+            settlementAmount = 0m;
+            description = "Vacate settlement: fully covered by deposit, no balance either way.";
+        }
+
+        _context.VacateSettlements.Add(new VacateSettlement
+        {
+            VacateRequestId = vacateRequest.Id,
+            LandlordId = vacateRequest.LandlordId,
+            TenantId = vacateRequest.TenantId,
+            HouseId = vacateRequest.HouseId,
+            FlatId = vacateRequest.FlatId,
+            Direction = direction,
+            Amount = settlementAmount,
+            Description = description
+        });
+
+        await _context.SaveChangesAsync();
+
+        return new VacateSettlementResult
+        {
+            TotalDamages = totalDamages,
+            UnpaidRentAbsorbed = unpaidRent,
+            DepositApplied = depositApplied,
+            DepositRefunded = depositRefund,
+            AdvanceApplied = advanceAppliedToDamages,
+            AdvanceForfeited = advanceForfeitedUnused,
+            Direction = direction,
+            FinalAmount = settlementAmount
+        };
+    }
+}
+
+public class VacateSettlementResult
+{
+    public decimal TotalDamages { get; set; }
+    public decimal UnpaidRentAbsorbed { get; set; }
+    public decimal DepositApplied { get; set; }
+    public decimal DepositRefunded { get; set; }
+    public decimal AdvanceApplied { get; set; }
+    public decimal AdvanceForfeited { get; set; }
+    public string Direction { get; set; } = string.Empty;
+    public decimal FinalAmount { get; set; }
 }

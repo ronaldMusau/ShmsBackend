@@ -70,6 +70,7 @@ public class ShmsDbContext : DbContext
     public DbSet<VacateAppeal> VacateAppeals { get; set; }
     public DbSet<VacateAppealLine> VacateAppealLines { get; set; }
     public DbSet<VacateSettlement> VacateSettlements { get; set; }
+    public DbSet<VacateForfeitedAdvance> VacateForfeitedAdvances { get; set; }
     public DbSet<VacateMessage> VacateMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -460,6 +461,13 @@ public class ShmsDbContext : DbContext
         modelBuilder.Entity<VacateSettlement>(entity =>
         {
             entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+        });
+
+        modelBuilder.Entity<VacateForfeitedAdvance>(entity =>
+        {
+            entity.Property(e => e.TotalAdvanceAmount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.AmountAppliedToDamages).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.AmountForfeitedUnused).HasColumnType("decimal(18,2)");
         });
 
         // ── Global soft-delete filters ───────────────────────────────────────
