@@ -671,6 +671,12 @@ public class PaymentService : IPaymentService
 
                 if (exists) continue;
 
+                var hasVacateRequest = await _context.VacateRequests.AnyAsync(r =>
+                    r.TenantId == tenant.Id && !r.IsDeleted
+                    && r.Status != "Closed" && r.Status != "Cancelled"
+                    && (r.VacateYear < now.Year || (r.VacateYear == now.Year && r.VacateMonth <= now.Month)));
+                if (hasVacateRequest) continue;
+
                 var house = tenant.House!;
                 var flat = house.Flat!;
                 var serviceCharge = await GetServiceChargeAsync(house.RentFee);

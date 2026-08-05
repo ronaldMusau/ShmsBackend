@@ -1026,4 +1026,29 @@ public class EmailService : IEmailService
 
         return WrapInLayout($"Vacate Inspection Assigned — {houseNumber}", inner);
     }
+
+    public async Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber)
+    {
+        _logger.LogInformation("Sending vacate inspection cancelled email to agent: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Inspection Cancelled — {houseNumber}",
+            GetVacateCancelledAgentTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateCancelledAgentTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A vacate inspection previously assigned to you on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been cancelled.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("No further action is required from you for this inspection. If you have any questions, please contact management through the Romah Estates agent portal.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Inspection Cancelled — {houseNumber}", inner);
+    }
 }

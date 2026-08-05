@@ -235,6 +235,58 @@ public class VacateController : ControllerBase
 
         return Ok(new { success = true, data = new { vacateRequest.Id } });
     }
+
+    // PATCH /api/vacate/{id}/cancel
+    [HttpPatch("{id:guid}/cancel")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Agent,Tenant")]
+    public async Task<IActionResult> CancelRequest(Guid id)
+    {
+        var callerId = GetCallerId();
+        var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+
+        var vacateRequest = await _context.VacateRequests
+            .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (callerRole == "Tenant" && callerId != vacateRequest.TenantId)
+            return Forbid();
+
+        if (vacateRequest.Status == "Closed" || vacateRequest.Status == "Cancelled")
+            return BadRequest(new { success = false, message = "This vacate request cannot be cancelled." });
+
+        vacateRequest.Status = "Cancelled";
+        vacateRequest.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var house = await _context.Houses.FindAsync(vacateRequest.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        if (vacateRequest.AssignedAgentId.HasValue)
+        {
+            var agent = await _context.Agents.FindAsync(vacateRequest.AssignedAgentId.Value);
+            if (agent != null)
+            {
+                try { await _emailService.SendVacateCancelledAgentEmailAsync(agent.Email, agent.FirstName, houseNumber); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate cancelled email to agent {AgentId}", agent.Id); }
+
+                try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Vacate request for house {houseNumber} has been cancelled.", "property"); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of vacate cancellation"); }
+            }
+        }
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                $"Vacate request for house {houseNumber} has been cancelled.",
+                "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate cancellation"); }
+
+        return Ok(new { success = true, data = new { vacateRequest.Status } });
+    }
 }
 
 public class CreateVacateRequestDto

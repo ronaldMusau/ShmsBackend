@@ -34,4 +34,5 @@ public interface IEmailService
     Task SendComplaintOverdueAgentEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen);
     Task SendComplaintOverdueLandlordEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen);
     Task SendVacateAssignedAgentEmailAsync(string toEmail, string firstName, string houseNumber);
+    Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber);
 }

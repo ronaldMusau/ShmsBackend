@@ -2,6 +2,7 @@ using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Data.Context;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Models.Enums;
 
 namespace ShmsBackend.Api.Services.Payment;
 
@@ -12,6 +13,7 @@ public class PaymentSchedulerService : BackgroundService
     private DateTime? _lastMonthlyGenerationDate;
     private DateTime? _lastOverdueCheckDate;
     private DateTime? _lastReminderDate;
+    private DateTime? _lastVacateStatusFlipDate;
 
     public PaymentSchedulerService(
         IServiceProvider serviceProvider,
@@ -55,6 +57,14 @@ public class PaymentSchedulerService : BackgroundService
                     _lastReminderDate = now.Date;
                 }
 
+                // Flip Active tenants to SettlingVacate daily at 10:00
+                if (now.Hour == 10 && now.Minute >= 0 && now.Minute < 2
+                    && _lastVacateStatusFlipDate?.Date != now.Date)
+                {
+                    await RunVacateStatusFlip();
+                    _lastVacateStatusFlipDate = now.Date;
+                }
+
                 // Auto-timeout payments stuck in Processing on every tick
                 await RunStuckPaymentTimeout();
 
@@ -87,6 +97,40 @@ public class PaymentSchedulerService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var paymentService = scope.ServiceProvider.GetRequiredService<IPaymentService>();
         await paymentService.CheckOverduePaymentsAsync();
+    }
+
+    private async Task RunVacateStatusFlip()
+    {
+        _logger.LogInformation("Running vacate status flip");
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ShmsDbContext>();
+
+        var now = DateTime.UtcNow;
+
+        var tenants = await dbContext.Tenants
+            .Where(t => t.TenantStatus == TenantStatus.Active && !t.IsDeleted)
+            .ToListAsync();
+
+        var tenantIds = tenants.Select(t => t.Id).ToList();
+
+        var vacatingTenantIds = await dbContext.VacateRequests
+            .Where(r => tenantIds.Contains(r.TenantId)
+                && !r.IsDeleted
+                && r.Status != "Closed" && r.Status != "Cancelled"
+                && (r.VacateYear < now.Year || (r.VacateYear == now.Year && r.VacateMonth < now.Month)))
+            .Select(r => r.TenantId)
+            .Distinct()
+            .ToListAsync();
+
+        var toFlip = tenants.Where(t => vacatingTenantIds.Contains(t.Id)).ToList();
+
+        foreach (var tenant in toFlip)
+            tenant.TenantStatus = TenantStatus.SettlingVacate;
+
+        if (toFlip.Count > 0)
+            await dbContext.SaveChangesAsync();
+
+        _logger.LogInformation("Flipped {Count} tenants to SettlingVacate", toFlip.Count);
     }
 
     private async Task RunStuckPaymentTimeout()
