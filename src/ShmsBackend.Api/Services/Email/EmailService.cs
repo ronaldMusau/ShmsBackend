@@ -1026,4 +1026,79 @@ public class EmailService : IEmailService
 
         return WrapInLayout($"Vacate Inspection Assigned — {houseNumber}", inner);
     }
+
+    public async Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber)
+    {
+        _logger.LogInformation("Sending vacate inspection cancelled email to agent: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Inspection Cancelled — {houseNumber}",
+            GetVacateCancelledAgentTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateCancelledAgentTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A vacate inspection previously assigned to you on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been cancelled.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("No further action is required from you for this inspection. If you have any questions, please contact management through the Romah Estates agent portal.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Inspection Cancelled — {houseNumber}", inner);
+    }
+
+    public async Task SendVacateArrearsBlockEmailAsync(string toEmail, string firstName, decimal arrearsAmount)
+    {
+        _logger.LogInformation("Sending vacate arrears block email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, "Vacate Request Blocked — Outstanding Arrears",
+            GetVacateArrearsBlockTemplate(firstName, arrearsAmount));
+    }
+
+    private string GetVacateArrearsBlockTemplate(string firstName, decimal arrearsAmount)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your vacate request on the <strong style='color:{ColourGold};'>Romah Estates</strong> system could not be processed because you have outstanding arrears that must be cleared first.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>OUTSTANDING ARREARS</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    KES {arrearsAmount:N2}
+  </span>
+")}
+{Para("Please clear all outstanding arrears through the Romah Estates tenant portal and then re-submit your vacate request.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout("Vacate Request Blocked — Outstanding Arrears", inner);
+    }
+
+    public async Task SendVacateSettlementReversedEmailAsync(string toEmail, string firstName, string houseNumber)
+    {
+        _logger.LogInformation("Sending vacate settlement reversed email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Settlement Reversed — {houseNumber}",
+            GetVacateSettlementReversedTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateSettlementReversedTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your vacate request for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been cancelled by management. Any forfeited deposit or advance credit amounts have been fully restored to your account.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("If you have any questions about this reversal, please contact management through the Romah Estates tenant portal.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Settlement Reversed — {houseNumber}", inner);
+    }
 }

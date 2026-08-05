@@ -409,6 +409,49 @@ public class VacateController : ControllerBase
         return Ok(new { success = true, data = new { vacateRequest.Status } });
     }
 
+    // GET /api/vacate/agent/my-requests
+    [HttpGet("agent/my-requests")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> GetMyAgentRequests()
+    {
+        var callerId = GetCallerId();
+
+        var requests = await _context.VacateRequests
+            .Where(v => v.AssignedAgentId == callerId && !v.IsDeleted)
+            .OrderByDescending(v => v.CreatedAt)
+            .ToListAsync();
+
+        var tenantIds = requests.Select(v => v.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var houseIds = requests.Select(v => v.HouseId).Distinct().ToList();
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var flatIds = requests.Select(v => v.FlatId).Distinct().ToList();
+        var flats = await _context.Flats
+            .Where(f => flatIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id, f => f.FlatName);
+
+        var data = requests.Select(v => new
+        {
+            v.Id,
+            v.Status,
+            v.VacateMonth,
+            v.VacateYear,
+            v.InspectionAssignedAt,
+            v.InspectionSubmittedAt,
+            tenantName = tenants.GetValueOrDefault(v.TenantId, ""),
+            houseNumber = houses.GetValueOrDefault(v.HouseId, ""),
+            flatName = flats.GetValueOrDefault(v.FlatId, "")
+        });
+
+        return Ok(new { success = true, data });
+    }
+
     // GET /api/vacate/agent/{id}
     [HttpGet("agent/{id:guid}")]
     [Authorize(Roles = "Agent")]
