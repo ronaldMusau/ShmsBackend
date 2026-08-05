@@ -654,7 +654,8 @@ public class PaymentService : IPaymentService
         var tenants = await _context.Tenants
             .Include(t => t.House)
             .ThenInclude(h => h!.Flat)
-            .Where(t => t.HouseId != null && t.IsActive && !t.IsDeleted)
+            .Where(t => t.HouseId != null && !t.IsDeleted && t.HasCompletedInitialPayment
+                && (t.TenantStatus == TenantStatus.Active || t.TenantStatus == TenantStatus.Pending))
             .ToListAsync();
 
         foreach (var tenant in tenants)
@@ -672,11 +673,16 @@ public class PaymentService : IPaymentService
 
                 if (exists) continue;
 
-                var hasVacateRequest = await _context.VacateRequests.AnyAsync(r =>
+                var activeVacate = await _context.VacateRequests.FirstOrDefaultAsync(r =>
                     r.TenantId == tenant.Id && !r.IsDeleted
-                    && r.Status != "Closed" && r.Status != "Cancelled"
-                    && (r.VacateYear < now.Year || (r.VacateYear == now.Year && r.VacateMonth <= now.Month)));
-                if (hasVacateRequest) continue;
+                    && r.Status != "Closed" && r.Status != "Cancelled");
+                if (activeVacate != null)
+                {
+                    bool isAfterVacateMonth = activeVacate.VacateYear < now.Year || (activeVacate.VacateYear == now.Year && activeVacate.VacateMonth < now.Month);
+                    bool isVacateMonthItself = activeVacate.VacateYear == now.Year && activeVacate.VacateMonth == now.Month;
+                    if (isAfterVacateMonth) continue;
+                    if (isVacateMonthItself && activeVacate.SitDeposit) continue;
+                }
 
                 var house = tenant.House!;
                 var flat = house.Flat!;
@@ -846,21 +852,12 @@ public class PaymentService : IPaymentService
         var depositFee = house?.DepositFee ?? 0m;
 
         var totalDamages = vacateRequest.InspectionLines.Sum(l => l.AssessedAmount ?? 0m);
+        var totalOwed = totalDamages;
 
-        decimal unpaidRent = 0m;
-        if (vacateRequest.SitDeposit)
-        {
-            unpaidRent = await _context.Payments
-                .Where(p => p.TenantId == tenant.Id
-                    && p.TenancyCycle == tenant.TenancyCycle
-                    && !p.IsDeleted
-                    && (p.PaymentStatus == PaymentTransactionStatus.Overdue
-                        || p.PaymentStatus == PaymentTransactionStatus.Pending
-                        || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))
-                .SumAsync(p => p.Balance);
-        }
-
-        var totalOwed = totalDamages + unpaidRent;
+        var advanceBalance = await GetRemainingCreditAsync(tenant.Id);
+        var advanceAppliedToDamages = Math.Min(advanceBalance, totalOwed);
+        var advanceForfeitedUnused = advanceBalance - advanceAppliedToDamages;
+        var remainingAfterAdvance = Math.Max(0, totalOwed - advanceBalance);
 
         decimal depositApplied;
         decimal remainingAfterDeposit;
@@ -868,20 +865,15 @@ public class PaymentService : IPaymentService
 
         if (vacateRequest.SitDeposit)
         {
-            depositApplied = Math.Min(depositFee, totalOwed);
-            remainingAfterDeposit = Math.Max(0, totalOwed - depositFee);
+            depositApplied = Math.Min(depositFee, remainingAfterAdvance);
+            remainingAfterDeposit = Math.Max(0, remainingAfterAdvance - depositFee);
         }
         else
         {
-            depositApplied = Math.Min(depositFee, totalOwed);
-            remainingAfterDeposit = Math.Max(0, totalOwed - depositFee);
-            depositRefund = Math.Max(0, depositFee - totalOwed);
+            depositApplied = Math.Min(depositFee, remainingAfterAdvance);
+            remainingAfterDeposit = Math.Max(0, remainingAfterAdvance - depositFee);
+            depositRefund = Math.Max(0, depositFee - remainingAfterAdvance);
         }
-
-        var advanceBalance = await GetRemainingCreditAsync(tenant.Id);
-        var advanceAppliedToDamages = Math.Min(advanceBalance, remainingAfterDeposit);
-        var advanceForfeitedUnused = advanceBalance - advanceAppliedToDamages;
-        var remainingAfterAdvance = Math.Max(0, remainingAfterDeposit - advanceBalance);
 
         if (advanceBalance > 0)
         {
@@ -902,23 +894,23 @@ public class PaymentService : IPaymentService
         decimal settlementAmount;
         string description;
 
-        if (remainingAfterAdvance > 0)
+        if (remainingAfterDeposit > 0)
         {
             direction = "TenantOwes";
-            settlementAmount = remainingAfterAdvance;
-            description = $"Vacate settlement: damages/arrears of {totalOwed:N2} exceeded deposit and advance credit.";
+            settlementAmount = remainingAfterDeposit;
+            description = $"Vacate settlement: damages of {totalOwed:N2} exceeded advance credit and deposit.";
         }
         else if (depositRefund > 0)
         {
             direction = "ManagementOwes";
             settlementAmount = depositRefund;
-            description = $"Vacate settlement: deposit refund after deducting {totalOwed:N2} in damages/arrears.";
+            description = $"Vacate settlement: deposit refund after deducting {totalOwed:N2} in damages.";
         }
         else
         {
             direction = "Settled";
             settlementAmount = 0m;
-            description = "Vacate settlement: fully covered by deposit, no balance either way.";
+            description = "Vacate settlement: fully covered by advance credit and deposit, no balance either way.";
         }
 
         _context.VacateSettlements.Add(new VacateSettlement
@@ -938,7 +930,6 @@ public class PaymentService : IPaymentService
         return new VacateSettlementResult
         {
             TotalDamages = totalDamages,
-            UnpaidRentAbsorbed = unpaidRent,
             DepositApplied = depositApplied,
             DepositRefunded = depositRefund,
             AdvanceApplied = advanceAppliedToDamages,
@@ -952,7 +943,6 @@ public class PaymentService : IPaymentService
 public class VacateSettlementResult
 {
     public decimal TotalDamages { get; set; }
-    public decimal UnpaidRentAbsorbed { get; set; }
     public decimal DepositApplied { get; set; }
     public decimal DepositRefunded { get; set; }
     public decimal AdvanceApplied { get; set; }

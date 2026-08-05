@@ -13,5 +13,6 @@ public class VacateSettlement
     public decimal Amount { get; set; }
     public string? Description { get; set; }
     public DateTime? PaidAt { get; set; }
+    public bool IsVoided { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

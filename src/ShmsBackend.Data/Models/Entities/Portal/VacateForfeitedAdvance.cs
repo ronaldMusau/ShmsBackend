@@ -12,5 +12,6 @@ public class VacateForfeitedAdvance
     public decimal TotalAdvanceAmount { get; set; }
     public decimal AmountAppliedToDamages { get; set; }
     public decimal AmountForfeitedUnused { get; set; }
+    public bool IsVoided { get; set; } = false;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
