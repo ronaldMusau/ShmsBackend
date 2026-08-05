@@ -179,7 +179,7 @@ public class VacateController : ControllerBase
             return BadRequest(new { success = false, message = "Vacate month must be between now and 5 months from today." });
 
         var existingRequest = await _context.VacateRequests.AnyAsync(r =>
-            r.TenantId == dto.TenantId && r.Status != "Closed" && !r.IsDeleted);
+            r.TenantId == dto.TenantId && r.Status != "Closed" && r.Status != "Cancelled" && !r.IsDeleted);
         if (existingRequest)
             return BadRequest(new { success = false, message = "A vacate request already exists for this tenancy." });
 
