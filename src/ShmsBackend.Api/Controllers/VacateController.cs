@@ -776,6 +776,15 @@ public class VacateController : ControllerBase
             .Where(a => agentIds.Contains(a.Id))
             .ToDictionaryAsync(a => a.Id, a => $"{a.FirstName} {a.LastName}");
 
+        var vacateIds = pagedRequests.Select(v => v.Id).ToList();
+        var unreadCounts = await _context.VacateMessages
+            .Where(m => vacateIds.Contains(m.VacateRequestId)
+                     && m.SenderRole == "Tenant"
+                     && !m.IsReadByManagement)
+            .GroupBy(m => m.VacateRequestId)
+            .Select(g => new { VacateRequestId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.VacateRequestId, g => g.Count);
+
         var data = pagedRequests.Select(v => new
         {
             v.Id,
@@ -788,7 +797,8 @@ public class VacateController : ControllerBase
             TenantName = tenants.GetValueOrDefault(v.TenantId, "-"),
             AssignedAgentName = v.AssignedAgentId.HasValue ? agents.GetValueOrDefault(v.AssignedAgentId.Value, "-") : null,
             v.CreatedAt,
-            v.InspectionSubmittedAt
+            v.InspectionSubmittedAt,
+            UnreadMessageCount = unreadCounts.GetValueOrDefault(v.Id, 0)
         }).ToList();
 
         var totals = new
@@ -911,6 +921,8 @@ public class VacateController : ControllerBase
                 vacateRequest.SettledAt,
                 vacateRequest.FinalRemarks,
                 vacateRequest.FinalRemarksAt,
+                vacateRequest.ClosedAt,
+                vacateRequest.ClosedByAdminId,
                 tenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : "-",
                 houseNumber = house?.HouseNumber ?? "-",
                 flatName = flat?.FlatName ?? "-",
@@ -1005,6 +1017,7 @@ public class VacateController : ControllerBase
                 settledAt = vacateRequest.SettledAt,
                 finalRemarks = vacateRequest.FinalRemarks,
                 finalRemarksAt = vacateRequest.FinalRemarksAt,
+                closedAt = vacateRequest.ClosedAt,
                 houseNumber = house?.HouseNumber ?? "-",
                 flatName = flat?.FlatName ?? "-",
                 assignedAgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
@@ -1716,6 +1729,188 @@ public class VacateController : ControllerBase
 
         return Ok(new { success = true, message = "Refund marked as paid." });
     }
+
+    // GET /api/vacate/{id}/messages
+    [HttpGet("{id:guid}/messages")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetVacateMessages(Guid id)
+    {
+        var vacateRequest = await _context.VacateRequests.FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        var messages = await _context.VacateMessages
+            .Where(m => m.VacateRequestId == id)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        var unread = messages.Where(m => m.SenderRole == "Tenant" && !m.IsReadByManagement).ToList();
+        foreach (var msg in unread)
+            msg.IsReadByManagement = true;
+        if (unread.Count > 0)
+            await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            messages = messages.Select(m => new
+            {
+                m.Id,
+                m.SenderRole,
+                m.SenderUserId,
+                m.Message,
+                m.CreatedAt,
+                m.IsReadByManagement,
+                m.IsReadByTenant
+            })
+        });
+    }
+
+    // POST /api/vacate/{id}/messages
+    [HttpPost("{id:guid}/messages")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> SendVacateMessage(Guid id, [FromBody] VacateMessageDto dto)
+    {
+        var vacateRequest = await _context.VacateRequests.FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (vacateRequest.Status == "Cancelled" || vacateRequest.ClosedAt != null)
+            return BadRequest(new { success = false, message = "This vacate request is closed. Messaging is disabled." });
+
+        if (string.IsNullOrWhiteSpace(dto.Message))
+            return BadRequest(new { success = false, message = "Message cannot be empty." });
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        var message = new VacateMessage
+        {
+            VacateRequestId = id,
+            SenderRole = "Management",
+            SenderUserId = GetCallerId(),
+            Message = dto.Message,
+            IsReadByManagement = true,
+            IsReadByTenant = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.VacateMessages.Add(message);
+        await _context.SaveChangesAsync();
+
+        try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"New message on your vacate request for house {houseNumber}: {dto.Message}", "property"); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of new management vacate message"); }
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                message.Id,
+                message.SenderRole,
+                message.SenderUserId,
+                message.Message,
+                message.CreatedAt,
+                message.IsReadByManagement,
+                message.IsReadByTenant
+            }
+        });
+    }
+
+    // GET /api/vacate/tenant/{id}/messages
+    [HttpGet("tenant/{id:guid}/messages")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetTenantVacateMessages(Guid id)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted && v.TenantId == GetCallerId());
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        var messages = await _context.VacateMessages
+            .Where(m => m.VacateRequestId == id)
+            .OrderBy(m => m.CreatedAt)
+            .ToListAsync();
+
+        var unread = messages.Where(m => m.SenderRole == "Management" && !m.IsReadByTenant).ToList();
+        foreach (var msg in unread)
+            msg.IsReadByTenant = true;
+        if (unread.Count > 0)
+            await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            messages = messages.Select(m => new
+            {
+                m.Id,
+                m.SenderRole,
+                m.SenderUserId,
+                m.Message,
+                m.CreatedAt,
+                m.IsReadByManagement,
+                m.IsReadByTenant
+            })
+        });
+    }
+
+    // POST /api/vacate/tenant/{id}/messages
+    [HttpPost("tenant/{id:guid}/messages")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> SendTenantVacateMessage(Guid id, [FromBody] VacateMessageDto dto)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted && v.TenantId == GetCallerId());
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (vacateRequest.Status == "Cancelled" || vacateRequest.ClosedAt != null)
+            return BadRequest(new { success = false, message = "This vacate request is closed. Messaging is disabled." });
+
+        if (string.IsNullOrWhiteSpace(dto.Message))
+            return BadRequest(new { success = false, message = "Message cannot be empty." });
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        var message = new VacateMessage
+        {
+            VacateRequestId = id,
+            SenderRole = "Tenant",
+            SenderUserId = GetCallerId(),
+            Message = dto.Message,
+            IsReadByManagement = false,
+            IsReadByTenant = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.VacateMessages.Add(message);
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                $"New message from tenant on vacate request for house {houseNumber}: {dto.Message}",
+                "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of new tenant vacate message"); }
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                message.Id,
+                message.SenderRole,
+                message.SenderUserId,
+                message.Message,
+                message.CreatedAt,
+                message.IsReadByManagement,
+                message.IsReadByTenant
+            }
+        });
+    }
 }
 
 public class CreateVacateRequestDto
@@ -1773,4 +1968,9 @@ public class VacateAppealLineDto
 public class VacateSettlementPayDto
 {
     public string PhoneNumber { get; set; } = string.Empty;
+}
+
+public class VacateMessageDto
+{
+    public string Message { get; set; } = string.Empty;
 }

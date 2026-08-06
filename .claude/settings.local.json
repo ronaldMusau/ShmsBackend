@@ -21,7 +21,8 @@
       "Bash(findstr \":50\")",
       "Bash(xargs grep -l \"approval-queue\\\\|approvalQueue\\\\|my-approval-queue\")",
       "Bash(dir \"C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing\")",
-      "Bash(npx ng *)"
+      "Bash(npx ng *)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing\\\\ShmsBackend\\\\src\\\\ShmsBackend.Api\\\\Controllers\\\\VacateController.cs\" | Measure-Object -Line\\).Lines)"
     ]
   }
 }
