@@ -897,6 +897,8 @@ public class VacateController : ControllerBase
             {
                 vacateRequest.Id,
                 vacateRequest.Status,
+                vacateRequest.NeedsResubmission,
+                vacateRequest.ApprovalAttemptNumber,
                 vacateRequest.VacateMonth,
                 vacateRequest.VacateYear,
                 vacateRequest.SitDeposit,
