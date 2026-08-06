@@ -1025,6 +1025,7 @@ public class VacateController : ControllerBase
                     }),
                 settlement = settlement == null ? null : (object)new
                 {
+                    settlement.Id,
                     settlement.Direction,
                     settlement.Amount,
                     settlement.Description,
@@ -1549,6 +1550,33 @@ public class VacateController : ControllerBase
                 amount = settlement.Amount
             }
         });
+    }
+
+    // POST /api/vacate/settlement/mark-timeout/{checkoutRequestId}
+    [HttpPost("settlement/mark-timeout/{checkoutRequestId}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Tenant")]
+    public async Task<IActionResult> MarkVacateSettlementTimeout(string checkoutRequestId)
+    {
+        var attempt = await _context.VacateCheckoutAttempts
+            .Include(a => a.VacateSettlement)
+            .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+
+        if (attempt == null)
+            return NotFound(new { success = false, message = "Checkout attempt not found." });
+
+        var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (callerRole == "Tenant" && attempt.VacateSettlement?.TenantId != GetCallerId())
+            return Forbid();
+
+        if (attempt.ProcessedAt == null)
+        {
+            attempt.AttemptStatus = "Failed";
+            attempt.ResultDesc = "Timed out — no callback received";
+            attempt.ProcessedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true, attemptStatus = attempt.AttemptStatus });
     }
 
     // GET /api/vacate/settlement/checkout-status/{checkoutRequestId}

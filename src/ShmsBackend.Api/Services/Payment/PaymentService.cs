@@ -239,14 +239,25 @@ public class PaymentService : IPaymentService
                 }
                 else
                 {
+                    var mappedDesc = details.ResultCode switch
+                    {
+                        1 or 1001 => "Insufficient M-Pesa balance",
+                        1002      => "M-Pesa transaction limit exceeded",
+                        2001      => "Wrong M-Pesa PIN entered",
+                        1037      => "Payment timed out — phone not reached",
+                        _         => !string.IsNullOrWhiteSpace(details.ResultDescription)
+                                         ? details.ResultDescription
+                                         : "Payment failed"
+                    };
                     vacateAttempt.AttemptStatus = "Failed";
+                    vacateAttempt.ResultDesc = mappedDesc;
                     vacateAttempt.RetryCount++;
                     await _context.SaveChangesAsync();
 
                     var vacateTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
                     if (vacateTenant != null)
                     {
-                        try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), "Your vacate settlement payment failed. Please try again from the tenant portal.", "property"); }
+                        try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Your vacate settlement payment failed: {mappedDesc}. Please try again from the tenant portal.", "property"); }
                         catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate settlement payment failure"); }
                     }
                 }
