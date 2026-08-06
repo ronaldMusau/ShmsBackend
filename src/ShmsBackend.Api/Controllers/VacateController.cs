@@ -1550,6 +1550,36 @@ public class VacateController : ControllerBase
             }
         });
     }
+
+    // GET /api/vacate/settlement/checkout-status/{checkoutRequestId}
+    [HttpGet("settlement/checkout-status/{checkoutRequestId}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Tenant")]
+    public async Task<IActionResult> GetVacateSettlementCheckoutStatus(string checkoutRequestId)
+    {
+        var attempt = await _context.VacateCheckoutAttempts
+            .Include(a => a.VacateSettlement)
+            .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+
+        if (attempt == null)
+            return Ok(new { success = true, data = new { attemptStatus = "Processing" } });
+
+        var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (callerRole == "Tenant" && attempt.VacateSettlement?.TenantId != GetCallerId())
+            return Forbid();
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                attemptStatus = attempt.AttemptStatus,
+                resultCode = attempt.ResultCode,
+                resultDesc = attempt.ResultDesc,
+                settlementId = attempt.VacateSettlementId,
+                paidAt = attempt.VacateSettlement?.PaidAt
+            }
+        });
+    }
 }
 
 public class CreateVacateRequestDto
