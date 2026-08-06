@@ -1608,6 +1608,114 @@ public class VacateController : ControllerBase
             }
         });
     }
+
+    // GET /api/vacate/refunds/all
+    [HttpGet("refunds/all")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetAllRefunds(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] Guid? tenantId = null,
+        [FromQuery] int? month = null,
+        [FromQuery] int? year = null)
+    {
+        var baseQuery = _context.VacateSettlements
+            .Where(s => s.Direction == "ManagementOwes" && !s.IsVoided);
+
+        var totalRefundable = await baseQuery.Where(s => s.PaidAt == null).SumAsync(s => s.Amount);
+        var totalPaid = await baseQuery.Where(s => s.PaidAt != null).SumAsync(s => s.Amount);
+
+        var query = baseQuery.AsQueryable();
+        if (tenantId.HasValue) query = query.Where(s => s.TenantId == tenantId.Value);
+        if (month.HasValue) query = query.Where(s => s.CreatedAt.Month == month.Value);
+        if (year.HasValue) query = query.Where(s => s.CreatedAt.Year == year.Value);
+
+        var total = await query.CountAsync();
+        var paged = await query.OrderByDescending(s => s.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+
+        var tenantIds = paged.Select(s => s.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var houseIds = paged.Select(s => s.HouseId).Distinct().ToList();
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var data = paged.Select(s => new
+        {
+            s.Id,
+            tenantName = tenants.GetValueOrDefault(s.TenantId, "-"),
+            houseNumber = houses.GetValueOrDefault(s.HouseId, "-"),
+            s.Amount,
+            s.Description,
+            s.PaidAt,
+            s.CreatedAt
+        });
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize),
+            totals = new { totalRefundable, totalPaid }
+        });
+    }
+
+    // GET /api/vacate/refunds/years
+    [HttpGet("refunds/years")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetRefundYears()
+    {
+        var years = await _context.VacateSettlements
+            .Where(s => s.Direction == "ManagementOwes" && !s.IsVoided)
+            .Select(s => s.CreatedAt.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        return Ok(new { success = true, data = years });
+    }
+
+    // PATCH /api/vacate/refunds/{id}/mark-paid
+    [HttpPatch("refunds/{id:guid}/mark-paid")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> MarkRefundPaid(Guid id)
+    {
+        var settlement = await _context.VacateSettlements
+            .FirstOrDefaultAsync(s => s.Id == id && !s.IsVoided);
+
+        if (settlement == null)
+            return NotFound(new { success = false, message = "Settlement not found." });
+
+        if (settlement.Direction != "ManagementOwes")
+            return BadRequest(new { success = false, message = "This is not a refund record." });
+
+        if (settlement.PaidAt != null)
+            return BadRequest(new { success = false, message = "This refund has already been marked as paid." });
+
+        settlement.PaidAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
+        if (tenant != null)
+        {
+            try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Management has processed your vacate refund for house {houseNumber}. Please check your portal for details.", "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate refund payment"); }
+
+            try { await _emailService.SendVacateRefundPaidTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate refund paid email to tenant"); }
+        }
+
+        return Ok(new { success = true, message = "Refund marked as paid." });
+    }
 }
 
 public class CreateVacateRequestDto
