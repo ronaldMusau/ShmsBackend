@@ -981,6 +981,10 @@ public class VacateController : ControllerBase
         var forfeitedAdvance = await _context.VacateForfeitedAdvances
             .FirstOrDefaultAsync(f => f.VacateRequestId == id && !f.IsVoided);
 
+        var existingAppeal = await _context.VacateAppeals
+            .Include(a => a.Lines)
+            .FirstOrDefaultAsync(a => a.VacateRequestId == id);
+
         return Ok(new
         {
             success = true,
@@ -1026,9 +1030,94 @@ public class VacateController : ControllerBase
                     forfeitedAdvance.TotalAdvanceAmount,
                     forfeitedAdvance.AmountAppliedToDamages,
                     forfeitedAdvance.AmountForfeitedUnused
-                }
+                },
+                hasAppealed = existingAppeal != null,
+                appealLines = existingAppeal == null ? null : existingAppeal.Lines.Select(l => new
+                {
+                    l.VacateInspectionLineId,
+                    l.Reason
+                })
             }
         });
+    }
+
+    // POST /api/vacate/{id}/appeal
+    [HttpPost("{id:guid}/appeal")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> SubmitVacateAppeal(Guid id, [FromBody] VacateAppealSubmitDto dto)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .Include(v => v.InspectionLines)
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (vacateRequest.TenantId != GetCallerId())
+            return Forbid();
+
+        if (vacateRequest.Status != "Approved")
+            return BadRequest(new { success = false, message = "You can only appeal an approved settlement." });
+
+        if (await _context.VacateAppeals.AnyAsync(a => a.VacateRequestId == id))
+            return BadRequest(new { success = false, message = "You have already submitted an appeal for this request." });
+
+        if (dto.Lines == null || !dto.Lines.Any())
+            return BadRequest(new { success = false, message = "Select at least one line to appeal." });
+
+        var validLineIds = vacateRequest.InspectionLines.Select(l => l.Id).ToHashSet();
+        var invalidLine = dto.Lines.FirstOrDefault(l => !validLineIds.Contains(l.LineId));
+        if (invalidLine != null)
+            return BadRequest(new { success = false, message = "One or more selected lines do not belong to this request." });
+
+        var appeal = new VacateAppeal
+        {
+            VacateRequestId = id,
+            SubmittedAt = DateTime.UtcNow
+        };
+        foreach (var entry in dto.Lines)
+        {
+            appeal.Lines.Add(new VacateAppealLine
+            {
+                VacateAppealId = appeal.Id,
+                VacateInspectionLineId = entry.LineId,
+                Reason = entry.Reason
+            });
+        }
+        _context.VacateAppeals.Add(appeal);
+
+        vacateRequest.Status = "UnderAppeal";
+        vacateRequest.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                $"Tenant has appealed the vacate settlement for house {houseNumber}.",
+                "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate appeal"); }
+
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+            foreach (var mgr in managementUsers)
+            {
+                try { await _emailService.SendVacateAppealManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send appeal email to {Email}", mgr.Email); }
+            }
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate appeal email"); }
+
+        return Ok(new { success = true, message = "Your appeal has been submitted and management has been notified." });
     }
 
     // GET /api/vacate/landlord/my-requests
@@ -1267,8 +1356,10 @@ public class VacateController : ControllerBase
         if (vacateRequest == null)
             return NotFound(new { success = false, message = "Vacate request not found." });
 
-        if (!(vacateRequest.Status == "Rejected" && vacateRequest.NeedsResubmission))
-            return BadRequest(new { success = false, message = "This request is not pending resubmission." });
+        var isRejectedPendingResubmission = vacateRequest.Status == "Rejected" && vacateRequest.NeedsResubmission;
+        var isUnderAppeal = vacateRequest.Status == "UnderAppeal";
+        if (!isRejectedPendingResubmission && !isUnderAppeal)
+            return BadRequest(new { success = false, message = "This request is not pending resubmission or appeal review." });
 
         if (dto.LineAmounts != null)
         {
@@ -1431,4 +1522,15 @@ public class VacateFinalRemarksDto
 {
     public string Remarks { get; set; } = string.Empty;
     public string Outcome { get; set; } = string.Empty;
+}
+
+public class VacateAppealSubmitDto
+{
+    public List<VacateAppealLineDto> Lines { get; set; } = new();
+}
+
+public class VacateAppealLineDto
+{
+    public Guid LineId { get; set; }
+    public string Reason { get; set; } = string.Empty;
 }

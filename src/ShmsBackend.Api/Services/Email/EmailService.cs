@@ -1186,6 +1186,31 @@ public class EmailService : IEmailService
             GetVacateFinalRejectionTenantTemplate(firstName, houseNumber, remarks));
     }
 
+    public async Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber)
+    {
+        _logger.LogInformation("Sending vacate appeal alert email to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Settlement Appeal — {houseNumber}",
+            GetVacateAppealManagementTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateAppealManagementTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A tenant has appealed the approved vacate settlement for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("Please log in to the management portal to review the tenant's appeal, inspect the disputed inspection lines, and take appropriate action.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Settlement Appeal — {houseNumber}", inner);
+    }
+
     private string GetVacateFinalRejectionTenantTemplate(string firstName, string houseNumber, string remarks)
     {
         var inner = $@"
