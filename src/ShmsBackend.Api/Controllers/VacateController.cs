@@ -1911,6 +1911,147 @@ public class VacateController : ControllerBase
             }
         });
     }
+
+    // GET /api/vacate/{id}/clear-checklist
+    [HttpGet("{id:guid}/clear-checklist")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetClearChecklist(Guid id)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        var tenant = await _context.Tenants
+            .FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId && !t.IsDeleted);
+        if (tenant == null)
+            return NotFound(new { success = false, message = "Tenant not found." });
+
+        if (tenant.TenantStatus != TenantStatus.SettlingVacate)
+            return Ok(new
+            {
+                success = true,
+                eligible = false,
+                message = "Tenant is not yet in SettlingVacate status. Clearance is not yet applicable."
+            });
+
+        var arrears = await _context.Payments
+            .Where(p => p.TenantId == vacateRequest.TenantId
+                && p.TenancyCycle == tenant.TenancyCycle
+                && !p.IsDeleted
+                && (p.PaymentStatus == PaymentTransactionStatus.Overdue
+                    || p.PaymentStatus == PaymentTransactionStatus.Pending
+                    || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))
+            .SumAsync(p => p.Balance);
+
+        var settlement = await _context.VacateSettlements
+            .FirstOrDefaultAsync(s => s.VacateRequestId == id && !s.IsVoided);
+
+        var isSettlementClear = settlement == null
+            || settlement.Direction == "ManagementOwes"
+            || settlement.PaidAt != null;
+
+        var canClear = arrears == 0 && isSettlementClear;
+
+        return Ok(new
+        {
+            success = true,
+            eligible = true,
+            data = new
+            {
+                arrearsAmount = arrears,
+                arrearsCleared = arrears == 0,
+                settlementDirection = settlement?.Direction,
+                settlementPaid = settlement == null || settlement.PaidAt != null,
+                settlementRequiresPayment = settlement != null && settlement.Direction == "TenantOwes",
+                hasRefundPending = settlement != null && settlement.Direction == "ManagementOwes" && settlement.PaidAt == null,
+                canClear
+            }
+        });
+    }
+
+    // PATCH /api/vacate/{id}/clear
+    [HttpPatch("{id:guid}/clear")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> ClearVacateRequest(Guid id)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        var tenant = await _context.Tenants
+            .Include(t => t.House)
+            .FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId && !t.IsDeleted);
+        if (tenant == null)
+            return NotFound(new { success = false, message = "Tenant not found." });
+
+        var arrears = await _context.Payments
+            .Where(p => p.TenantId == vacateRequest.TenantId
+                && p.TenancyCycle == tenant.TenancyCycle
+                && !p.IsDeleted
+                && (p.PaymentStatus == PaymentTransactionStatus.Overdue
+                    || p.PaymentStatus == PaymentTransactionStatus.Pending
+                    || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))
+            .SumAsync(p => p.Balance);
+
+        if (arrears > 0)
+            return BadRequest(new { success = false, message = $"Tenant has KES {arrears:N2} in outstanding arrears. Clear before closing out." });
+
+        var settlement = await _context.VacateSettlements
+            .FirstOrDefaultAsync(s => s.VacateRequestId == id && !s.IsVoided);
+
+        if (settlement != null && settlement.Direction == "TenantOwes" && settlement.PaidAt == null)
+            return BadRequest(new { success = false, message = "Tenant still owes a settlement payment. This must be paid before clearance." });
+
+        var houseNumber = "";
+
+        if (tenant.House != null)
+        {
+            houseNumber = tenant.House.HouseNumber;
+            var hasOtherActiveTenant = await _context.Tenants.AnyAsync(t =>
+                t.Id != tenant.Id
+                && t.HouseId == tenant.House.Id
+                && !t.IsDeleted
+                && t.TenantStatus == TenantStatus.Active);
+
+            if (!hasOtherActiveTenant)
+            {
+                tenant.House.OccupancyStatus = OccupancyStatus.Vacant;
+                tenant.House.PaymentStatus = PaymentStatus.NotPaid;
+                tenant.House.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        var openHistory = await _context.TenantHouseHistories
+            .Where(h => h.TenantId == tenant.Id && h.RemovedAt == null)
+            .FirstOrDefaultAsync();
+        if (openHistory != null)
+            openHistory.RemovedAt = DateTime.UtcNow;
+
+        tenant.IsDeleted = true;
+        tenant.DeletedAt = DateTime.UtcNow;
+        tenant.IsActive = false;
+
+        vacateRequest.ClosedAt = DateTime.UtcNow;
+        vacateRequest.ClosedByAdminId = GetCallerId();
+
+        await _context.SaveChangesAsync();
+
+        try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), "Your tenancy has been formally closed out. Thank you for your tenancy.", "property"); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate clearance"); }
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                $"Vacate request for house {houseNumber} has been fully closed out.",
+                "property");
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate clearance"); }
+
+        return Ok(new { success = true, message = "Vacate request closed out successfully." });
+    }
 }
 
 public class CreateVacateRequestDto
