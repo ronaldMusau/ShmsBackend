@@ -1211,6 +1211,31 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Settlement Appeal — {houseNumber}", inner);
     }
 
+    public async Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber)
+    {
+        _logger.LogInformation("Sending vacate settlement paid email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Settlement Payment Received — {houseNumber}",
+            GetVacateSettlementPaidTenantTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateSettlementPaidTenantTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your vacate settlement payment for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been received and recorded.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("Your vacate process is now complete. If you have any questions, please contact the Romah Estates management team.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Settlement Payment Received — {houseNumber}", inner);
+    }
+
     private string GetVacateFinalRejectionTenantTemplate(string firstName, string houseNumber, string remarks)
     {
         var inner = $@"

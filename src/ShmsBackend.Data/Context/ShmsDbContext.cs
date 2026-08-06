@@ -71,6 +71,7 @@ public class ShmsDbContext : DbContext
     public DbSet<VacateAppealLine> VacateAppealLines { get; set; }
     public DbSet<VacateSettlement> VacateSettlements { get; set; }
     public DbSet<VacateForfeitedAdvance> VacateForfeitedAdvances { get; set; }
+    public DbSet<VacateCheckoutAttempt> VacateCheckoutAttempts { get; set; }
     public DbSet<VacateMessage> VacateMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

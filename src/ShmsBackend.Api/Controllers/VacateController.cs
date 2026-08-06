@@ -22,19 +22,22 @@ public class VacateController : ControllerBase
     private readonly INotificationService _notificationService;
     private readonly ILogger<VacateController> _logger;
     private readonly IPaymentService _paymentService;
+    private readonly IMpesaService _mpesaService;
 
     public VacateController(
         ShmsDbContext context,
         IEmailService emailService,
         INotificationService notificationService,
         ILogger<VacateController> logger,
-        IPaymentService paymentService)
+        IPaymentService paymentService,
+        IMpesaService mpesaService)
     {
         _context = context;
         _emailService = emailService;
         _notificationService = notificationService;
         _logger = logger;
         _paymentService = paymentService;
+        _mpesaService = mpesaService;
     }
 
     private Guid GetCallerId()
@@ -1483,6 +1486,70 @@ public class VacateController : ControllerBase
             return Ok(new { success = true, message = "Vacate request has been closed with final remarks." });
         }
     }
+
+    // POST /api/vacate/settlement/{settlementId}/pay
+    [HttpPost("settlement/{settlementId:guid}/pay")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Tenant")]
+    public async Task<IActionResult> PayVacateSettlement(Guid settlementId, [FromBody] VacateSettlementPayDto dto)
+    {
+        var settlement = await _context.VacateSettlements
+            .FirstOrDefaultAsync(s => s.Id == settlementId && !s.IsVoided);
+
+        if (settlement == null)
+            return NotFound(new { success = false, message = "Settlement not found." });
+
+        if (settlement.Direction != "TenantOwes")
+            return BadRequest(new { success = false, message = "This settlement does not require payment." });
+
+        if (settlement.PaidAt != null)
+            return BadRequest(new { success = false, message = "This settlement has already been paid." });
+
+        var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        if (callerRole == "Tenant" && settlement.TenantId != GetCallerId())
+            return Forbid();
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        var reference = $"VAC-{settlementId.ToString().Substring(0, 8).ToUpper()}";
+
+        STKPushResponse stkResponse;
+        try
+        {
+            stkResponse = await _mpesaService.InitiateSTKPushAsync(new STKPushRequest
+            {
+                PhoneNumber = dto.PhoneNumber,
+                Amount = settlement.Amount,
+                AccountReference = reference,
+                TransactionDesc = $"Vacate Settlement — {houseNumber}"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "STK push failed for vacate settlement {SettlementId}", settlementId);
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+
+        _context.VacateCheckoutAttempts.Add(new VacateCheckoutAttempt
+        {
+            VacateSettlementId = settlementId,
+            CheckoutRequestId = stkResponse.CheckoutRequestID,
+            AttemptStatus = "Processing"
+        });
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            success = true,
+            message = "Payment initiated. Please check your phone.",
+            data = new
+            {
+                settlementId,
+                checkoutRequestId = stkResponse.CheckoutRequestID,
+                amount = settlement.Amount
+            }
+        });
+    }
 }
 
 public class CreateVacateRequestDto
@@ -1535,4 +1602,9 @@ public class VacateAppealLineDto
 {
     public Guid LineId { get; set; }
     public string Reason { get; set; } = string.Empty;
+}
+
+public class VacateSettlementPayDto
+{
+    public string PhoneNumber { get; set; } = string.Empty;
 }

@@ -42,4 +42,5 @@ public interface IEmailService
     Task SendVacateRejectedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? rejectionNotes);
     Task SendVacateFinalRejectionTenantEmailAsync(string toEmail, string firstName, string houseNumber, string remarks);
     Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber);
+    Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber);
 }

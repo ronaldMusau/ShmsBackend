@@ -188,6 +188,73 @@ public class PaymentService : IPaymentService
             return;
         }
 
+        // ── Vacate Settlement Branch ─────────────────────────────────────────────
+        if (checkoutAttempt == null)
+        {
+            var vacateAttempt = await _context.VacateCheckoutAttempts
+                .Include(a => a.VacateSettlement)
+                .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+
+            if (vacateAttempt != null)
+            {
+                if (vacateAttempt.ProcessedAt != null)
+                {
+                    _logger.LogWarning("Duplicate callback received for already-processed vacate CheckoutRequestId: {CheckoutRequestId} — ignoring.", checkoutRequestId);
+                    return;
+                }
+
+                vacateAttempt.ProcessedAt = DateTime.UtcNow;
+                vacateAttempt.ResultCode = details.ResultCode.ToString();
+                vacateAttempt.ResultDesc = details.ResultDescription;
+
+                var settlement = vacateAttempt.VacateSettlement!;
+
+                if (details.IsSuccess)
+                {
+                    vacateAttempt.AttemptStatus = "Success";
+                    settlement.PaidAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+
+                    var vacateTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
+                    var vacateHouse = await _context.Houses.FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
+                    var vacateHouseNumber = vacateHouse?.HouseNumber ?? "";
+
+                    if (vacateTenant != null)
+                    {
+                        try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Your vacate settlement payment for house {vacateHouseNumber} has been received.", "property"); }
+                        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate settlement payment"); }
+
+                        try { await _emailService.SendVacateSettlementPaidTenantEmailAsync(vacateTenant.Email, vacateTenant.FirstName, vacateHouseNumber); }
+                        catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate settlement paid email to tenant"); }
+                    }
+
+                    try
+                    {
+                        await _notificationService.SendToRolesAsync(
+                            new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                            $"Vacate settlement payment received for house {vacateHouseNumber}.",
+                            "property");
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate settlement payment"); }
+                }
+                else
+                {
+                    vacateAttempt.AttemptStatus = "Failed";
+                    vacateAttempt.RetryCount++;
+                    await _context.SaveChangesAsync();
+
+                    var vacateTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
+                    if (vacateTenant != null)
+                    {
+                        try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), "Your vacate settlement payment failed. Please try again from the tenant portal.", "property"); }
+                        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate settlement payment failure"); }
+                    }
+                }
+
+                return;
+            }
+        }
+
         var payment = checkoutAttempt != null
             ? await _context.Payments
                 .Include(p => p.Tenant)
