@@ -238,6 +238,200 @@ public class HouseController : ControllerBase
         return Ok(new { success = true, data = new { house.Id, house.CommentsMuted } });
     }
 
+    [HttpGet("listing-stats/all")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetAllListingStats(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? houseType = null,
+        [FromQuery] decimal? minRent = null,
+        [FromQuery] decimal? maxRent = null,
+        [FromQuery] string? county = null,
+        [FromQuery] string? constituency = null,
+        [FromQuery] string? ward = null,
+        [FromQuery] string? sort = null,
+        [FromQuery] bool? isHidden = null,
+        [FromQuery] bool? commentsMuted = null)
+    {
+        IQueryable<House> baseQuery = _context.Houses
+            .Include(h => h.Flat)
+            .Include(h => h.Images)
+            .Include(h => h.HouseTypeRef);
+
+        if (!string.IsNullOrEmpty(search))
+            baseQuery = baseQuery.Where(h =>
+                h.HouseNumber.Contains(search) ||
+                (h.Flat != null && h.Flat.FlatName.Contains(search)));
+        if (!string.IsNullOrEmpty(county))
+            baseQuery = baseQuery.Where(h => h.Flat != null && h.Flat.County == county);
+        if (!string.IsNullOrEmpty(constituency))
+            baseQuery = baseQuery.Where(h => h.Flat != null && h.Flat.Constituency == constituency);
+        if (!string.IsNullOrEmpty(ward))
+            baseQuery = baseQuery.Where(h => h.Flat != null && h.Flat.Ward == ward);
+        if (!string.IsNullOrEmpty(houseType))
+            baseQuery = baseQuery.Where(h => h.HouseTypeRef != null && h.HouseTypeRef.Name == houseType);
+        if (minRent.HasValue)
+            baseQuery = baseQuery.Where(h => h.RentFee >= minRent.Value);
+        if (maxRent.HasValue)
+            baseQuery = baseQuery.Where(h => h.RentFee <= maxRent.Value);
+        if (isHidden.HasValue)
+            baseQuery = baseQuery.Where(h => h.IsListingHidden == isHidden.Value);
+        if (commentsMuted.HasValue)
+            baseQuery = baseQuery.Where(h => h.CommentsMuted == commentsMuted.Value);
+
+        var total = await baseQuery.CountAsync();
+
+        List<House> pagedHouses;
+        Dictionary<Guid, int> likeDict;
+        Dictionary<Guid, int> dislikeDict;
+        Dictionary<Guid, double?> ratingDict;
+
+        if (sort == "popular" || sort == "trending")
+        {
+            var allLight = await baseQuery
+                .Select(h => new { h.Id, h.CreatedAt })
+                .ToListAsync();
+
+            var allIds = allLight.Select(h => h.Id).ToList();
+
+            var allLikeCounts = await _context.HouseListingLikes
+                .Where(l => allIds.Contains(l.HouseId))
+                .GroupBy(l => new { l.HouseId, l.IsLike })
+                .Select(g => new { g.Key.HouseId, g.Key.IsLike, Count = g.Count() })
+                .ToListAsync();
+
+            var allRatings = await _context.HouseListingRatings
+                .Where(r => allIds.Contains(r.HouseId))
+                .GroupBy(r => r.HouseId)
+                .Select(g => new { HouseId = g.Key, Avg = g.Average(r => (double)r.Stars) })
+                .ToListAsync();
+
+            var sortLikeDict = allLikeCounts.Where(l => l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+            var sortDislikeDict = allLikeCounts.Where(l => !l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+            var sortRatingDict = allRatings.ToDictionary(r => r.HouseId, r => r.Avg);
+
+            var pageIds = (sort == "popular"
+                ? allLight
+                    .OrderByDescending(h => sortRatingDict.GetValueOrDefault(h.Id))
+                    .ThenByDescending(h => h.CreatedAt)
+                : allLight
+                    .OrderByDescending(h =>
+                        sortLikeDict.GetValueOrDefault(h.Id) - sortDislikeDict.GetValueOrDefault(h.Id))
+                    .ThenByDescending(h => h.CreatedAt))
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(h => h.Id)
+                .ToList();
+
+            var pageHouseList = await _context.Houses
+                .Include(h => h.Flat)
+                .Include(h => h.Images)
+                .Include(h => h.HouseTypeRef)
+                .Where(h => pageIds.Contains(h.Id))
+                .ToListAsync();
+
+            pagedHouses = pageIds.Select(id => pageHouseList.First(h => h.Id == id)).ToList();
+
+            likeDict = sortLikeDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            dislikeDict = sortDislikeDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            ratingDict = sortRatingDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => (double?)kv.Value);
+        }
+        else
+        {
+            pagedHouses = await baseQuery
+                .OrderByDescending(h => h.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            var houseIds = pagedHouses.Select(h => h.Id).ToList();
+
+            var likeCounts = await _context.HouseListingLikes
+                .Where(l => houseIds.Contains(l.HouseId))
+                .GroupBy(l => new { l.HouseId, l.IsLike })
+                .Select(g => new { g.Key.HouseId, g.Key.IsLike, Count = g.Count() })
+                .ToListAsync();
+
+            var ratings = await _context.HouseListingRatings
+                .Where(r => houseIds.Contains(r.HouseId))
+                .GroupBy(r => r.HouseId)
+                .Select(g => new { HouseId = g.Key, Avg = g.Average(r => (double)r.Stars) })
+                .ToListAsync();
+
+            likeDict = likeCounts.Where(l => l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+            dislikeDict = likeCounts.Where(l => !l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+            ratingDict = ratings.ToDictionary(r => r.HouseId, r => (double?)r.Avg);
+        }
+
+        var pageHouseIds = pagedHouses.Select(h => h.Id).ToList();
+        var flatIds = pagedHouses.Select(h => h.FlatId).Distinct().ToList();
+
+        var commentCounts = await _context.HouseListingComments
+            .Where(c => pageHouseIds.Contains(c.HouseId))
+            .GroupBy(c => c.HouseId)
+            .Select(g => new { HouseId = g.Key, Count = g.Count() })
+            .ToListAsync();
+        var commentCountDict = commentCounts.ToDictionary(c => c.HouseId, c => c.Count);
+
+        var agentFlats = await _context.AgentFlats
+            .Include(af => af.Agent)
+            .Where(af => flatIds.Contains(af.FlatId))
+            .ToListAsync();
+
+        var agentDict = agentFlats
+            .GroupBy(af => af.FlatId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
+
+        var data = pagedHouses.Select(h =>
+        {
+            likeDict.TryGetValue(h.Id, out var likeCount);
+            dislikeDict.TryGetValue(h.Id, out var dislikeCount);
+            ratingDict.TryGetValue(h.Id, out var avgRating);
+            commentCountDict.TryGetValue(h.Id, out var commentCount);
+            agentDict.TryGetValue(h.FlatId, out var agent);
+            return (object)new
+            {
+                id = h.Id,
+                houseNumber = h.HouseNumber,
+                houseType = h.HouseTypeRef?.Name,
+                flatName = h.Flat?.FlatName,
+                rentFee = h.RentFee,
+                depositFee = h.DepositFee,
+                county = h.Flat?.County,
+                constituency = h.Flat?.Constituency,
+                ward = h.Flat?.Ward,
+                occupancyStatus = h.OccupancyStatus.ToString(),
+                images = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                isListingHidden = h.IsListingHidden,
+                commentsMuted = h.CommentsMuted,
+                isPubliclyVisible = h.OccupancyStatus == OccupancyStatus.Vacant
+                                 && !h.IsListingHidden
+                                 && h.Images.Any(),
+                avgRating,
+                likeCount,
+                dislikeCount,
+                commentCount,
+                agent = agent == null ? null : new
+                {
+                    name = $"{agent.FirstName} {agent.LastName}".Trim(),
+                    phone = agent.PhoneNumber,
+                    agencyName = agent.AgencyName
+                }
+            };
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
+    }
+
     [HttpGet("{id:guid}/listing-stats")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
     public async Task<IActionResult> GetListingStats(Guid id)
