@@ -214,6 +214,56 @@ public class HouseController : ControllerBase
         return Ok(new { success = true, message = "Images uploaded successfully.", data = savedPaths });
     }
 
+    [HttpPatch("{id:guid}/listing-visibility")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> SetListingVisibility(Guid id, [FromBody] SetListingVisibilityDto dto)
+    {
+        var house = await _context.Houses.FindAsync(id);
+        if (house == null) return NotFound(new { success = false, message = "House not found." });
+        house.IsListingHidden = dto.Hidden;
+        house.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, data = new { house.Id, house.IsListingHidden } });
+    }
+
+    [HttpPatch("{id:guid}/comments-mute")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> SetCommentsMute(Guid id, [FromBody] SetCommentsMuteDto dto)
+    {
+        var house = await _context.Houses.FindAsync(id);
+        if (house == null) return NotFound(new { success = false, message = "House not found." });
+        house.CommentsMuted = dto.Muted;
+        house.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, data = new { house.Id, house.CommentsMuted } });
+    }
+
+    [HttpGet("{id:guid}/listing-stats")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetListingStats(Guid id)
+    {
+        var house = await _context.Houses.FindAsync(id);
+        if (house == null) return NotFound(new { success = false, message = "House not found." });
+
+        var likeCount = await _context.HouseListingLikes.CountAsync(l => l.HouseId == id && l.IsLike);
+        var dislikeCount = await _context.HouseListingLikes.CountAsync(l => l.HouseId == id && !l.IsLike);
+        var avgRating = await _context.HouseListingRatings
+            .Where(r => r.HouseId == id)
+            .AverageAsync(r => (double?)r.Stars);
+
+        var comments = await _context.HouseListingComments
+            .Where(c => c.HouseId == id)
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new { c.Id, c.CommenterName, c.Comment, c.IsHidden, c.CreatedAt })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            success = true,
+            data = new { likeCount, dislikeCount, avgRating, comments }
+        });
+    }
+
     [HttpDelete("images/{imageId:guid}")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Agent")]
     public async Task<IActionResult> DeleteImage(Guid imageId)

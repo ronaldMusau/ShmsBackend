@@ -276,6 +276,14 @@ public class VacateController : ControllerBase
         if (vacateRequest.Status == "Closed" || vacateRequest.Status == "Cancelled")
             return BadRequest(new { success = false, message = "This vacate request cannot be cancelled." });
 
+        var paidSuccessor = await _context.Tenants.AnyAsync(t =>
+            t.HouseId == vacateRequest.HouseId
+            && !t.IsDeleted
+            && t.TenantStatus != TenantStatus.SettlingVacate
+            && t.HasCompletedInitialPayment);
+        if (paidSuccessor)
+            return BadRequest(new { success = false, message = "A new tenant has already been confirmed for this house. This vacate request can no longer be cancelled." });
+
         var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
         var house = await _context.Houses
             .Include(h => h.Flat)

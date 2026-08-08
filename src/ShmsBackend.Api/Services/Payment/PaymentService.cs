@@ -361,6 +361,35 @@ public class PaymentService : IPaymentService
                         tenant.HasCompletedInitialPayment = true;
                         tenant.TenantStatus = TenantStatus.Pending;
 
+                        if (tenant.HouseId.HasValue)
+                        {
+                            try
+                            {
+                                var historyHouse = await _context.Houses
+                                    .Include(h => h.Flat)
+                                    .FirstOrDefaultAsync(h => h.Id == tenant.HouseId.Value);
+                                if (historyHouse != null)
+                                {
+                                    await _context.TenantHouseHistories.AddAsync(new TenantHouseHistory
+                                    {
+                                        Id = Guid.NewGuid(),
+                                        HouseId = historyHouse.Id,
+                                        TenantId = tenant.Id,
+                                        TenantFirstName = tenant.FirstName,
+                                        TenantLastName = tenant.LastName,
+                                        TenantEmail = tenant.Email,
+                                        TenantPhone = tenant.PhoneNumber,
+                                        HouseNumber = historyHouse.HouseNumber,
+                                        FlatName = historyHouse.Flat?.FlatName ?? "",
+                                        AssignedAt = DateTime.UtcNow,
+                                        RemovedAt = null,
+                                        TenancyCycle = tenant.TenancyCycle
+                                    });
+                                }
+                            }
+                            catch (Exception ex) { _logger.LogError(ex, "Failed to write TenantHouseHistory for tenant {TenantId}", tenant.Id); }
+                        }
+
                         // TemporaryInitialPassword is intentionally NOT cleared here — it stays intact until
                         // the tenant actually verifies (see PortalAuthService.VerifyEmailAsync), so a resend
                         // remains possible indefinitely if this send fails or the tenant never clicks the link.
@@ -760,6 +789,13 @@ public class PaymentService : IPaymentService
                     bool isVacateMonthItself = activeVacate.VacateYear == now.Year && activeVacate.VacateMonth == now.Month;
                     if (isAfterVacateMonth) continue;
                     if (isVacateMonthItself && activeVacate.SitDeposit) continue;
+                }
+
+                if (tenant.LeaseStartMonth.HasValue && tenant.LeaseStartYear.HasValue)
+                {
+                    bool isBeforeLeaseStart = now.Year < tenant.LeaseStartYear.Value
+                        || (now.Year == tenant.LeaseStartYear.Value && now.Month < tenant.LeaseStartMonth.Value);
+                    if (isBeforeLeaseStart) continue;
                 }
 
                 var house = tenant.House!;

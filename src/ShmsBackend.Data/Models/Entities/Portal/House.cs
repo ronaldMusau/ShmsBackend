@@ -42,6 +42,8 @@ public class House : ISoftDelete
     public Guid FlatId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public bool IsListingHidden { get; set; } = false;
+    public bool CommentsMuted { get; set; } = false;
     public bool IsDeleted { get; set; } = false;
     public DateTime? DeletedAt { get; set; }
 

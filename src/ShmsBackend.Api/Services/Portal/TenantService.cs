@@ -63,7 +63,7 @@ public class TenantService : ITenantService
             deleted.EmergencyContactPhone = dto.EmergencyContactPhone;
             if (dto.HouseId.HasValue)
             {
-                var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted);
+                var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.TenantStatus != TenantStatus.SettlingVacate);
                 if (houseTaken)
                     throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
             }
@@ -88,23 +88,32 @@ public class TenantService : ITenantService
             deleted.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
             await _unitOfWork.SaveChangesAsync();
 
-            if (dto.HouseId.HasValue)
-            {
-                try { await WriteHouseHistoryAsync(deleted, dto.HouseId.Value); }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to write TenantHouseHistory for tenant {TenantId}, house {HouseId}", deleted.Id, dto.HouseId);
-                }
-            }
-
             return deleted;
         }
 
         if (dto.HouseId.HasValue)
         {
-            var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted);
+            var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.TenantStatus != TenantStatus.SettlingVacate);
             if (houseTaken)
                 throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
+        }
+
+        VacateRequest? approvedVacate = null;
+        if (dto.HouseId.HasValue)
+            approvedVacate = await _context.VacateRequests
+                .FirstOrDefaultAsync(r => r.HouseId == dto.HouseId && !r.IsDeleted && r.Status == "Approved");
+
+        int? leaseStartMonth = null;
+        int? leaseStartYear = null;
+        if (dto.LeaseStartMonth.HasValue && dto.LeaseStartYear.HasValue)
+        {
+            leaseStartMonth = dto.LeaseStartMonth;
+            leaseStartYear = dto.LeaseStartYear;
+        }
+        else if (approvedVacate != null)
+        {
+            leaseStartMonth = approvedVacate.VacateMonth == 12 ? 1 : approvedVacate.VacateMonth + 1;
+            leaseStartYear = approvedVacate.VacateMonth == 12 ? approvedVacate.VacateYear + 1 : approvedVacate.VacateYear;
         }
 
         var tenant = new Tenant
@@ -125,6 +134,8 @@ public class TenantService : ITenantService
             HasCompletedInitialPayment = false,
             IsEmailVerified = false,
             TemporaryInitialPassword = dto.Password,
+            LeaseStartMonth = leaseStartMonth,
+            LeaseStartYear = leaseStartYear,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -155,15 +166,6 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send notification for tenant creation {Email}", tenant.Email);
-        }
-
-        if (dto.HouseId.HasValue)
-        {
-            try { await WriteHouseHistoryAsync(tenant, dto.HouseId.Value); }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to write TenantHouseHistory for tenant {TenantId}, house {HouseId}", tenant.Id, dto.HouseId);
-            }
         }
 
         _logger.LogInformation("Tenant created: {Email}", tenant.Email);
@@ -210,7 +212,7 @@ public class TenantService : ITenantService
         if (!string.IsNullOrEmpty(dto.EmergencyContactPhone)) tenant.EmergencyContactPhone = dto.EmergencyContactPhone;
         if (dto.HouseId.HasValue)
         {
-            var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.Id != tenant.Id);
+            var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.Id != tenant.Id && t.TenantStatus != TenantStatus.SettlingVacate);
             if (houseTaken)
                 throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
             tenant.HouseId = dto.HouseId.Value;
@@ -325,7 +327,7 @@ public class TenantService : ITenantService
         var hasAnyHistory = await _context.TenantHouseHistories.AnyAsync(h => h.TenantId == id);
         var hasAnyPayments = await _context.Payments.AnyAsync(p => p.TenantId == id);
 
-        if (!hasAnyHistory && !hasAnyPayments && tenant.HouseId == null)
+        if (!hasAnyHistory && !hasAnyPayments && !tenant.HasCompletedInitialPayment)
         {
             _context.Tenants.Remove(tenant);
             await _context.SaveChangesAsync();
@@ -334,9 +336,18 @@ public class TenantService : ITenantService
 
         if (tenant.House != null)
         {
-            tenant.House.OccupancyStatus = OccupancyStatus.Vacant;
-            tenant.House.PaymentStatus = PaymentStatus.NotPaid;
-            tenant.House.UpdatedAt = DateTime.UtcNow;
+            var hasOtherActiveTenant = await _context.Tenants.AnyAsync(t =>
+                t.Id != id
+                && t.HouseId == tenant.House.Id
+                && !t.IsDeleted
+                && t.TenantStatus != TenantStatus.SettlingVacate);
+
+            if (!hasOtherActiveTenant)
+            {
+                tenant.House.OccupancyStatus = OccupancyStatus.Vacant;
+                tenant.House.PaymentStatus = PaymentStatus.NotPaid;
+                tenant.House.UpdatedAt = DateTime.UtcNow;
+            }
         }
 
         var openHistory = await _context.TenantHouseHistories

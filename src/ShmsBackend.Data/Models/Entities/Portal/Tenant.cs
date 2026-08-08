@@ -15,6 +15,8 @@ public class Tenant : PortalUser
     public int TenancyCycle { get; set; } = 1;
     public string? TemporaryInitialPassword { get; set; }
     public DateTime? VerificationEmailSentAt { get; set; }
+    public int? LeaseStartMonth { get; set; }
+    public int? LeaseStartYear { get; set; }
 
     public Tenant()
     {

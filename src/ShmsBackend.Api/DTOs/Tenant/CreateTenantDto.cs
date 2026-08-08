@@ -31,4 +31,6 @@ public class CreateTenantDto
     public string? EmergencyContactPhone { get; set; }
 
     public Guid? HouseId { get; set; }
+    public int? LeaseStartMonth { get; set; }
+    public int? LeaseStartYear { get; set; }
 }

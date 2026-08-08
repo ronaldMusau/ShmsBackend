@@ -38,6 +38,11 @@ public class ShmsDbContext : DbContext
     // Agent–Flat assignments
     public DbSet<AgentFlat> AgentFlats { get; set; }
 
+    // House listing engagement
+    public DbSet<HouseListingLike> HouseListingLikes { get; set; }
+    public DbSet<HouseListingRating> HouseListingRatings { get; set; }
+    public DbSet<HouseListingComment> HouseListingComments { get; set; }
+
     // Notifications
     public DbSet<Notification> Notifications { get; set; }
 
@@ -469,6 +474,29 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.TotalAdvanceAmount).HasColumnType("decimal(18,2)");
             entity.Property(e => e.AmountAppliedToDamages).HasColumnType("decimal(18,2)");
             entity.Property(e => e.AmountForfeitedUnused).HasColumnType("decimal(18,2)");
+        });
+
+        // ── House Listing Engagement ─────────────────────────────────────────
+        modelBuilder.Entity<HouseListingLike>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.HouseId, e.ExplorerId }).IsUnique();
+            entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<HouseListingRating>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.HouseId, e.ExplorerId }).IsUnique();
+            entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<HouseListingComment>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CommenterName).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Comment).IsRequired();
+            entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── Global soft-delete filters ───────────────────────────────────────
