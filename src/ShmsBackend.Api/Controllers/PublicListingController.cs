@@ -122,6 +122,99 @@ public class PublicListingController : ControllerBase
         });
     }
 
+    // GET /api/public/listings/upcoming
+    [HttpGet("upcoming")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetUpcomingListings(
+        [FromQuery] string? county,
+        [FromQuery] string? constituency,
+        [FromQuery] string? ward,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var query = _context.Houses
+            .Include(h => h.Flat)
+            .Include(h => h.Images)
+            .Include(h => h.HouseTypeRef)
+            .Where(h => h.OccupancyStatus == OccupancyStatus.Occupied
+                     && !h.IsListingHidden
+                     && h.Images.Any()
+                     && _context.VacateRequests
+                         .Any(v => v.HouseId == h.Id && v.Status == "Approved" && !v.IsDeleted));
+
+        if (!string.IsNullOrEmpty(county))
+            query = query.Where(h => h.Flat != null && h.Flat.County == county);
+        if (!string.IsNullOrEmpty(constituency))
+            query = query.Where(h => h.Flat != null && h.Flat.Constituency == constituency);
+        if (!string.IsNullOrEmpty(ward))
+            query = query.Where(h => h.Flat != null && h.Flat.Ward == ward);
+
+        var total = await query.CountAsync();
+        var houses = await query
+            .OrderByDescending(h => h.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var houseIds = houses.Select(h => h.Id).ToList();
+        var flatIds = houses.Select(h => h.FlatId).Distinct().ToList();
+
+        var vacateData = await _context.VacateRequests
+            .Where(v => houseIds.Contains(v.HouseId) && v.Status == "Approved" && !v.IsDeleted)
+            .Select(v => new { v.HouseId, v.VacateMonth, v.VacateYear, v.CreatedAt })
+            .ToListAsync();
+
+        var vacateDict = vacateData
+            .GroupBy(v => v.HouseId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(v => v.CreatedAt).First());
+
+        var agentFlats = await _context.AgentFlats
+            .Include(af => af.Agent)
+            .Where(af => flatIds.Contains(af.FlatId))
+            .ToListAsync();
+
+        var agentDict = agentFlats
+            .GroupBy(af => af.FlatId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
+
+        var data = houses.Select(h =>
+        {
+            agentDict.TryGetValue(h.FlatId, out var agent);
+            vacateDict.TryGetValue(h.Id, out var vacate);
+            return (object)new
+            {
+                id = h.Id,
+                houseNumber = h.HouseNumber,
+                houseType = h.HouseTypeRef?.Name,
+                flatName = h.Flat?.FlatName,
+                rentFee = h.RentFee,
+                depositFee = h.DepositFee,
+                county = h.Flat?.County,
+                constituency = h.Flat?.Constituency,
+                ward = h.Flat?.Ward,
+                images = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                availableFromMonth = vacate?.VacateMonth,
+                availableFromYear = vacate?.VacateYear,
+                agent = agent == null ? null : new
+                {
+                    name = $"{agent.FirstName} {agent.LastName}".Trim(),
+                    phone = agent.PhoneNumber,
+                    agencyName = agent.AgencyName
+                }
+            };
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
+    }
+
     // GET /api/public/listings/{id}
     [HttpGet("{id:guid}")]
     [AllowAnonymous]
