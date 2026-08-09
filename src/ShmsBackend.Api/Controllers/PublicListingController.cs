@@ -12,6 +12,7 @@ namespace ShmsBackend.Api.Controllers;
 public class LikeDto { public bool IsLike { get; set; } public string? DeviceId { get; set; } }
 public class RateDto { public int Stars { get; set; } public string? DeviceId { get; set; } }
 public class CommentBodyDto { public string Comment { get; set; } = string.Empty; }
+public class MergeDeviceDto { public string DeviceId { get; set; } = string.Empty; }
 
 [ApiController]
 [Route("api/public/listings")]
@@ -546,6 +547,67 @@ public class PublicListingController : ControllerBase
             .Where(r => r.HouseId == id)
             .AverageAsync(r => (double?)r.Stars);
         return Ok(new { success = true, data = new { avgRating } });
+    }
+
+    // POST /api/public/listings/merge-device
+    [HttpPost("merge-device")]
+    [Authorize(Roles = "Explorer")]
+    public async Task<IActionResult> MergeDevice([FromBody] MergeDeviceDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.DeviceId))
+            return BadRequest(new { success = false, message = "DeviceId is required." });
+
+        var explorerId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        // Likes
+        var anonLikes = await _context.HouseListingLikes
+            .Where(l => l.AnonymousDeviceId == dto.DeviceId)
+            .ToListAsync();
+
+        var anonLikeHouseIds = anonLikes.Select(l => l.HouseId).ToList();
+        var explorerLikeHouseIds = await _context.HouseListingLikes
+            .Where(l => l.ExplorerId == explorerId && anonLikeHouseIds.Contains(l.HouseId))
+            .Select(l => l.HouseId)
+            .ToListAsync();
+
+        int mergedLikes = anonLikes.Count;
+        foreach (var anonLike in anonLikes)
+        {
+            if (explorerLikeHouseIds.Contains(anonLike.HouseId))
+                _context.HouseListingLikes.Remove(anonLike);
+            else
+            {
+                anonLike.ExplorerId = explorerId;
+                anonLike.AnonymousDeviceId = null;
+            }
+        }
+
+        // Ratings
+        var anonRatings = await _context.HouseListingRatings
+            .Where(r => r.AnonymousDeviceId == dto.DeviceId)
+            .ToListAsync();
+
+        var anonRatingHouseIds = anonRatings.Select(r => r.HouseId).ToList();
+        var explorerRatingHouseIds = await _context.HouseListingRatings
+            .Where(r => r.ExplorerId == explorerId && anonRatingHouseIds.Contains(r.HouseId))
+            .Select(r => r.HouseId)
+            .ToListAsync();
+
+        int mergedRatings = anonRatings.Count;
+        foreach (var anonRating in anonRatings)
+        {
+            if (explorerRatingHouseIds.Contains(anonRating.HouseId))
+                _context.HouseListingRatings.Remove(anonRating);
+            else
+            {
+                anonRating.ExplorerId = explorerId;
+                anonRating.AnonymousDeviceId = null;
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { success = true, mergedLikes, mergedRatings });
     }
 
     // POST /api/public/listings/{id}/comments
