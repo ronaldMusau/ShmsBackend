@@ -11,7 +11,7 @@ namespace ShmsBackend.Api.Controllers;
 
 public class LikeDto { public bool IsLike { get; set; } public string? DeviceId { get; set; } }
 public class RateDto { public int Stars { get; set; } public string? DeviceId { get; set; } }
-public class CommentBodyDto { public string Comment { get; set; } = string.Empty; }
+public class CommentBodyDto { public string Comment { get; set; } = string.Empty; public string? DeviceId { get; set; } }
 public class MergeDeviceDto { public string DeviceId { get; set; } = string.Empty; }
 
 [ApiController]
@@ -30,6 +30,15 @@ public class PublicListingController : ControllerBase
     private static string GetAnonymousDisplayName(Guid explorerId, Guid houseId)
     {
         var combined = $"{explorerId}-{houseId}";
+        var hash = MD5.HashData(Encoding.UTF8.GetBytes(combined));
+        var creatureIndex = hash[0] % AnonymousCreatures.Length;
+        var number = (BitConverter.ToUInt16(hash, 1) % 9000) + 1000;
+        return $"Anonymous {AnonymousCreatures[creatureIndex]} {number}";
+    }
+
+    private static string GetAnonymousDisplayName(string deviceId, Guid houseId)
+    {
+        var combined = $"{deviceId}-{houseId}";
         var hash = MD5.HashData(Encoding.UTF8.GetBytes(combined));
         var creatureIndex = hash[0] % AnonymousCreatures.Length;
         var number = (BitConverter.ToUInt16(hash, 1) % 9000) + 1000;
@@ -310,7 +319,9 @@ public class PublicListingController : ControllerBase
     // GET /api/public/listings/my-interactions
     [HttpGet("my-interactions")]
     [Authorize(Roles = "Explorer")]
-    public async Task<IActionResult> GetMyInteractions()
+    public async Task<IActionResult> GetMyInteractions(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 6)
     {
         var explorerId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
@@ -335,8 +346,10 @@ public class PublicListingController : ControllerBase
             .Union(commentRecords.Select(c => c.HouseId))
             .Distinct().ToList();
 
-        if (!allHouseIds.Any())
-            return Ok(new { success = true, data = Array.Empty<object>() });
+        var total = allHouseIds.Count;
+
+        if (total == 0)
+            return Ok(new { success = true, data = Array.Empty<object>(), total = 0, page, pageSize, totalPages = 0 });
 
         var houses = await _context.Houses
             .Include(h => h.Flat)
@@ -380,6 +393,8 @@ public class PublicListingController : ControllerBase
 
         var data = houses
             .OrderByDescending(h => latestInteractionDict.GetValueOrDefault(h.Id))
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(h =>
             {
                 likeDict.TryGetValue(h.Id, out var likeCount);
@@ -407,7 +422,15 @@ public class PublicListingController : ControllerBase
                 };
             }).ToList();
 
-        return Ok(new { success = true, data });
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
     }
 
     // GET /api/public/listings/{id}
@@ -521,18 +544,19 @@ public class PublicListingController : ControllerBase
 
         var total = await query.CountAsync();
 
-        // Load ExplorerId + HouseId so GetAnonymousDisplayName can be called in-process
         var rawComments = await query
             .OrderByDescending(c => c.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(c => new { c.Id, c.ExplorerId, c.HouseId, c.Comment, c.CreatedAt })
+            .Select(c => new { c.Id, c.ExplorerId, c.HouseId, c.CommenterName, c.Comment, c.CreatedAt })
             .ToListAsync();
 
         var comments = rawComments.Select(c => new
         {
             c.Id,
-            displayName = GetAnonymousDisplayName(c.ExplorerId, c.HouseId),
+            displayName = c.ExplorerId.HasValue
+                ? GetAnonymousDisplayName(c.ExplorerId.Value, c.HouseId)
+                : c.CommenterName,
             c.Comment,
             c.CreatedAt
         }).ToList();
@@ -708,14 +732,32 @@ public class PublicListingController : ControllerBase
             }
         }
 
+        // Comments
+        var anonComments = await _context.HouseListingComments
+            .Where(c => c.AnonymousDeviceId == dto.DeviceId)
+            .ToListAsync();
+
+        var explorerForName = await _context.Explorers.FindAsync(explorerId);
+        var explorerName = explorerForName != null
+            ? $"{explorerForName.FirstName} {explorerForName.LastName}".Trim()
+            : string.Empty;
+
+        int mergedComments = anonComments.Count;
+        foreach (var anonComment in anonComments)
+        {
+            anonComment.ExplorerId = explorerId;
+            anonComment.AnonymousDeviceId = null;
+            anonComment.CommenterName = explorerName;
+        }
+
         await _context.SaveChangesAsync();
 
-        return Ok(new { success = true, mergedLikes, mergedRatings });
+        return Ok(new { success = true, mergedLikes, mergedRatings, mergedComments });
     }
 
     // POST /api/public/listings/{id}/comments
     [HttpPost("{id:guid}/comments")]
-    [Authorize(Roles = "Explorer")]
+    [AllowAnonymous]
     public async Task<IActionResult> AddComment(Guid id, [FromBody] CommentBodyDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Comment))
@@ -728,17 +770,40 @@ public class PublicListingController : ControllerBase
         if (house.CommentsMuted)
             return BadRequest(new { success = false, message = "Comments are currently disabled for this listing." });
 
-        var explorerId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var explorer = await _context.Explorers.FindAsync(explorerId);
-        if (explorer == null) return Unauthorized();
+        HouseListingComment comment;
 
-        var comment = new HouseListingComment
+        var idStr = User.Identity?.IsAuthenticated == true && User.IsInRole("Explorer")
+            ? User.FindFirstValue(ClaimTypes.NameIdentifier)
+            : null;
+        Guid? explorerId = Guid.TryParse(idStr, out var eid) ? eid : null;
+
+        if (explorerId != null)
         {
-            HouseId = id,
-            ExplorerId = explorerId,
-            CommenterName = $"{explorer.FirstName} {explorer.LastName}".Trim(),
-            Comment = dto.Comment.Trim()
-        };
+            var explorer = await _context.Explorers.FindAsync(explorerId.Value);
+            if (explorer == null) return Unauthorized();
+
+            comment = new HouseListingComment
+            {
+                HouseId = id,
+                ExplorerId = explorerId.Value,
+                CommenterName = $"{explorer.FirstName} {explorer.LastName}".Trim(),
+                Comment = dto.Comment.Trim()
+            };
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(dto.DeviceId))
+                return BadRequest(new { success = false, message = "DeviceId is required for anonymous interactions." });
+
+            comment = new HouseListingComment
+            {
+                HouseId = id,
+                AnonymousDeviceId = dto.DeviceId,
+                CommenterName = GetAnonymousDisplayName(dto.DeviceId, id),
+                Comment = dto.Comment.Trim()
+            };
+        }
+
         _context.HouseListingComments.Add(comment);
         await _context.SaveChangesAsync();
 
