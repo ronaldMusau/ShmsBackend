@@ -307,6 +307,109 @@ public class PublicListingController : ControllerBase
         });
     }
 
+    // GET /api/public/listings/my-interactions
+    [HttpGet("my-interactions")]
+    [Authorize(Roles = "Explorer")]
+    public async Task<IActionResult> GetMyInteractions()
+    {
+        var explorerId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        var likeRecords = await _context.HouseListingLikes
+            .Where(l => l.ExplorerId == explorerId)
+            .Select(l => new { l.HouseId, l.IsLike, Timestamp = l.UpdatedAt })
+            .ToListAsync();
+
+        var ratingRecords = await _context.HouseListingRatings
+            .Where(r => r.ExplorerId == explorerId)
+            .Select(r => new { r.HouseId, r.Stars, Timestamp = r.UpdatedAt })
+            .ToListAsync();
+
+        var commentRecords = await _context.HouseListingComments
+            .Where(c => c.ExplorerId == explorerId && !c.IsHidden)
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new { c.HouseId, c.Comment, c.CreatedAt })
+            .ToListAsync();
+
+        var allHouseIds = likeRecords.Select(l => l.HouseId)
+            .Union(ratingRecords.Select(r => r.HouseId))
+            .Union(commentRecords.Select(c => c.HouseId))
+            .Distinct().ToList();
+
+        if (!allHouseIds.Any())
+            return Ok(new { success = true, data = Array.Empty<object>() });
+
+        var houses = await _context.Houses
+            .Include(h => h.Flat)
+            .Include(h => h.Images)
+            .Where(h => allHouseIds.Contains(h.Id))
+            .ToListAsync();
+
+        var likeCounts = await _context.HouseListingLikes
+            .Where(l => allHouseIds.Contains(l.HouseId))
+            .GroupBy(l => new { l.HouseId, l.IsLike })
+            .Select(g => new { g.Key.HouseId, g.Key.IsLike, Count = g.Count() })
+            .ToListAsync();
+
+        var ratings = await _context.HouseListingRatings
+            .Where(r => allHouseIds.Contains(r.HouseId))
+            .GroupBy(r => r.HouseId)
+            .Select(g => new { HouseId = g.Key, Avg = g.Average(r => (double)r.Stars) })
+            .ToListAsync();
+
+        var likeDict = likeCounts.Where(l => l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+        var dislikeDict = likeCounts.Where(l => !l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+        var ratingDict = ratings.ToDictionary(r => r.HouseId, r => (double?)r.Avg);
+
+        var myLikeDict = likeRecords.ToDictionary(l => l.HouseId, l => (bool?)l.IsLike);
+        var myRatingDict = ratingRecords.ToDictionary(r => r.HouseId, r => (int?)r.Stars);
+        var myCommentDict = commentRecords
+            .GroupBy(c => c.HouseId)
+            .ToDictionary(g => g.Key, g => g.First().Comment);
+
+        var latestInteractionDict = allHouseIds.ToDictionary(hid => hid, hid =>
+        {
+            var timestamps = new List<DateTime>();
+            var like = likeRecords.FirstOrDefault(l => l.HouseId == hid);
+            if (like != null) timestamps.Add(like.Timestamp);
+            var rating = ratingRecords.FirstOrDefault(r => r.HouseId == hid);
+            if (rating != null) timestamps.Add(rating.Timestamp);
+            var comment = commentRecords.FirstOrDefault(c => c.HouseId == hid);
+            if (comment != null) timestamps.Add(comment.CreatedAt);
+            return timestamps.Any() ? timestamps.Max() : DateTime.MinValue;
+        });
+
+        var data = houses
+            .OrderByDescending(h => latestInteractionDict.GetValueOrDefault(h.Id))
+            .Select(h =>
+            {
+                likeDict.TryGetValue(h.Id, out var likeCount);
+                dislikeDict.TryGetValue(h.Id, out var dislikeCount);
+                ratingDict.TryGetValue(h.Id, out var avgRating);
+                myLikeDict.TryGetValue(h.Id, out var myLike);
+                myRatingDict.TryGetValue(h.Id, out var myRating);
+                myCommentDict.TryGetValue(h.Id, out var myComment);
+                return (object)new
+                {
+                    id = h.Id,
+                    houseNumber = h.HouseNumber,
+                    flatName = h.Flat?.FlatName,
+                    rentFee = h.RentFee,
+                    county = h.Flat?.County,
+                    constituency = h.Flat?.Constituency,
+                    ward = h.Flat?.Ward,
+                    images = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                    avgRating,
+                    likeCount,
+                    dislikeCount,
+                    myLike,
+                    myRating,
+                    myComment
+                };
+            }).ToList();
+
+        return Ok(new { success = true, data });
+    }
+
     // GET /api/public/listings/{id}
     [HttpGet("{id:guid}")]
     [AllowAnonymous]
