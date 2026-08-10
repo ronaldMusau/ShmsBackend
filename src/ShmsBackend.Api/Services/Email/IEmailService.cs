@@ -44,4 +44,7 @@ public interface IEmailService
     Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber);
     Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber);
     Task SendVacateRefundPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber);
+    Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt);
+    Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt);
+    Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName);
 }

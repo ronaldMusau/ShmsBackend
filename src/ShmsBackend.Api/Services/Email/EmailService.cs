@@ -1279,4 +1279,92 @@ public class EmailService : IEmailService
 
         return WrapInLayout($"Vacate Request Closed — {houseNumber}", inner);
     }
+
+    public async Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt)
+    {
+        _logger.LogInformation("Sending viewing session request email to agent: {Email}", toEmail);
+        await SendEmail(toEmail, $"Viewing Session Requested — {houseNumber}",
+            GetSessionRequestAgentTemplate(firstName, houseNumber, scheduledAt));
+    }
+
+    private string GetSessionRequestAgentTemplate(string firstName, string houseNumber, DateTime scheduledAt)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A prospective tenant has requested a viewing session for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system and is awaiting your acceptance.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>REQUESTED DATE &amp; TIME</p>
+  <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
+    {scheduledAt:dddd, dd MMMM yyyy} at {scheduledAt:HH:mm} UTC
+  </span>
+")}
+{Para("Please log in to the Romah Estates agent portal to accept or decline this session request.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Viewing Session Requested — {houseNumber}", inner);
+    }
+
+    public async Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt)
+    {
+        _logger.LogInformation("Sending session confirmed email to explorer: {Email}", toEmail);
+        await SendEmail(toEmail, $"Viewing Session Confirmed — {houseNumber}",
+            GetSessionConfirmedExplorerTemplate(firstName, houseNumber, agentName, agentPhone, scheduledAt));
+    }
+
+    private string GetSessionConfirmedExplorerTemplate(string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Great news! Your viewing session for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been confirmed by the assigned agent.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>DATE &amp; TIME</p>
+  <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
+    {scheduledAt:dddd, dd MMMM yyyy} at {scheduledAt:HH:mm} UTC
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>AGENT</p>
+  <span style='font-size:15px;font-weight:600;color:{ColourTextPrime};'>{agentName}</span>
+  {(string.IsNullOrWhiteSpace(agentPhone) ? "" : $"<br/><span style='font-size:13px;color:{ColourTextSec};'>{agentPhone}</span>")}
+")}
+{Para("Please ensure you are available at the scheduled time. If you need to reschedule, contact the agent directly or reach out to management through the Romah Estates portal.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Viewing Session Confirmed — {houseNumber}", inner);
+    }
+
+    public async Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName)
+    {
+        _logger.LogInformation("Sending session declined alert to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"Viewing Session Declined — {houseNumber}",
+            GetSessionDeclinedManagementTemplate(firstName, houseNumber, agentName));
+    }
+
+    private string GetSessionDeclinedManagementTemplate(string firstName, string houseNumber, string agentName)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"An agent has declined a viewing session request on the <strong style='color:{ColourGold};'>Romah Estates</strong> system. Reassignment may be required.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>AGENT</p>
+  <span style='font-size:15px;font-weight:600;color:{ColourTextPrime};'>{agentName}</span>
+")}
+{Para("Please review this session in the management portal and reassign an agent or follow up with the prospective tenant as appropriate.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Viewing Session Declined — {houseNumber}", inner);
+    }
 }

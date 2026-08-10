@@ -68,6 +68,9 @@ public class ShmsDbContext : DbContext
     public DbSet<ComplaintLandlordDecision> ComplaintLandlordDecisions { get; set; }
     public DbSet<Deduction> Deductions { get; set; }
 
+    // Viewing Sessions
+    public DbSet<ListingViewingSession> ListingViewingSessions { get; set; }
+
     // Vacate
     public DbSet<VacateRequest> VacateRequests { get; set; }
     public DbSet<VacateInspectionLine> VacateInspectionLines { get; set; }

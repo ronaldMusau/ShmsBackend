@@ -489,6 +489,119 @@ public class PublicListingController : ControllerBase
         });
     }
 
+    // GET /api/public/listings/my-bookmarks
+    [HttpGet("my-bookmarks")]
+    [Authorize(Roles = "Explorer")]
+    public async Task<IActionResult> GetMyBookmarks(
+        [FromQuery] string? county,
+        [FromQuery] string? constituency,
+        [FromQuery] string? ward,
+        [FromQuery] string? houseType,
+        [FromQuery] decimal? minRent,
+        [FromQuery] decimal? maxRent,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 6)
+    {
+        var explorerId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        var bookmarkRecords = await _context.HouseListingBookmarks
+            .Where(b => b.ExplorerId == explorerId)
+            .Select(b => new { b.HouseId, b.CreatedAt })
+            .ToListAsync();
+
+        var allHouseIds = bookmarkRecords.Select(b => b.HouseId).Distinct().ToList();
+
+        if (!allHouseIds.Any())
+            return Ok(new { success = true, data = Array.Empty<object>(), total = 0, page, pageSize, totalPages = 0 });
+
+        var housesQuery = _context.Houses
+            .Include(h => h.Flat)
+            .Include(h => h.Images)
+            .Include(h => h.HouseTypeRef)
+            .Where(h => allHouseIds.Contains(h.Id));
+
+        if (!string.IsNullOrEmpty(county))
+            housesQuery = housesQuery.Where(h => h.Flat != null && h.Flat.County == county);
+        if (!string.IsNullOrEmpty(constituency))
+            housesQuery = housesQuery.Where(h => h.Flat != null && h.Flat.Constituency == constituency);
+        if (!string.IsNullOrEmpty(ward))
+            housesQuery = housesQuery.Where(h => h.Flat != null && h.Flat.Ward == ward);
+        if (!string.IsNullOrEmpty(houseType))
+            housesQuery = housesQuery.Where(h => h.HouseTypeRef != null && h.HouseTypeRef.Name == houseType);
+        if (minRent.HasValue)
+            housesQuery = housesQuery.Where(h => h.RentFee >= minRent.Value);
+        if (maxRent.HasValue)
+            housesQuery = housesQuery.Where(h => h.RentFee <= maxRent.Value);
+
+        var houses = await housesQuery.ToListAsync();
+
+        var likeCounts = await _context.HouseListingLikes
+            .Where(l => allHouseIds.Contains(l.HouseId))
+            .GroupBy(l => new { l.HouseId, l.IsLike })
+            .Select(g => new { g.Key.HouseId, g.Key.IsLike, Count = g.Count() })
+            .ToListAsync();
+
+        var ratings = await _context.HouseListingRatings
+            .Where(r => allHouseIds.Contains(r.HouseId))
+            .GroupBy(r => r.HouseId)
+            .Select(g => new { HouseId = g.Key, Avg = g.Average(r => (double)r.Stars) })
+            .ToListAsync();
+
+        var likeDict = likeCounts.Where(l => l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+        var dislikeDict = likeCounts.Where(l => !l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+        var ratingDict = ratings.ToDictionary(r => r.HouseId, r => (double?)r.Avg);
+
+        var bookmarkDict = bookmarkRecords.ToDictionary(b => b.HouseId, b => b.CreatedAt);
+
+        var filteredList = houses.Select(h =>
+        {
+            likeDict.TryGetValue(h.Id, out var likeCount);
+            dislikeDict.TryGetValue(h.Id, out var dislikeCount);
+            ratingDict.TryGetValue(h.Id, out var avgRating);
+            var isAvailable = h.OccupancyStatus == OccupancyStatus.Vacant && !h.IsListingHidden && h.Images.Any();
+            var latestInteraction = bookmarkDict.GetValueOrDefault(h.Id);
+            return new { h, likeCount, dislikeCount, avgRating, isAvailable, latestInteraction };
+        }).ToList();
+
+        var total = filteredList.Count;
+
+        var data = filteredList
+            .OrderByDescending(x => x.h.OccupancyStatus == OccupancyStatus.Vacant && !x.h.IsListingHidden && x.h.Images.Any())
+            .ThenByDescending(x => x.latestInteraction)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(x => (object)new
+            {
+                id = x.h.Id,
+                houseNumber = x.h.HouseNumber,
+                houseType = x.h.HouseTypeRef?.Name,
+                flatName = x.h.Flat?.FlatName,
+                rentFee = x.h.RentFee,
+                county = x.h.Flat?.County,
+                constituency = x.h.Flat?.Constituency,
+                ward = x.h.Flat?.Ward,
+                images = x.h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                avgRating = x.avgRating,
+                likeCount = x.likeCount,
+                dislikeCount = x.dislikeCount,
+                myLike = (bool?)null,
+                myRating = (int?)null,
+                myComment = (string?)null,
+                myBookmark = true,
+                isAvailable = x.isAvailable
+            }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
+    }
+
     // GET /api/public/listings/{id}
     [HttpGet("{id:guid}")]
     [AllowAnonymous]
