@@ -565,4 +565,74 @@ public class SessionController : ControllerBase
             }
         });
     }
+
+    // GET /api/sessions/my-sessions
+    [HttpGet("my-sessions")]
+    [Authorize(Roles = "Explorer")]
+    public async Task<IActionResult> GetMySessions(
+        [FromQuery] string? status,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 6)
+    {
+        var explorerId = GetCallerId();
+
+        var query = _context.ListingViewingSessions
+            .Where(s => s.ExplorerId == explorerId);
+
+        if (!string.IsNullOrEmpty(status))
+            query = query.Where(s => s.Status == status);
+
+        var total = await query.CountAsync();
+
+        var sessions = await query
+            .OrderByDescending(s => s.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var houseIds = sessions.Select(s => s.HouseId).Distinct().ToList();
+        var agentIds = sessions.Select(s => s.AgentId).Distinct().ToList();
+
+        var houses = await _context.Houses
+            .Include(h => h.Flat)
+            .Where(h => houseIds.Contains(h.Id))
+            .ToListAsync();
+
+        var agents = await _context.Agents
+            .Where(a => agentIds.Contains(a.Id))
+            .ToListAsync();
+
+        var houseDict = houses.ToDictionary(h => h.Id);
+        var agentDict = agents.ToDictionary(a => a.Id);
+
+        var data = sessions.Select(s =>
+        {
+            houseDict.TryGetValue(s.HouseId, out var house);
+            agentDict.TryGetValue(s.AgentId, out var agent);
+            return (object)new
+            {
+                id = s.Id,
+                houseNumber = house?.HouseNumber,
+                flatName = house?.Flat?.FlatName,
+                agentName = agent != null ? $"{agent.FirstName} {agent.LastName}".Trim() : (string?)null,
+                agentPhone = agent?.PhoneNumber,
+                scheduledAt = s.ScheduledAt,
+                status = s.Status,
+                closingComment = s.ClosingComment,
+                agentRating = s.AgentRating,
+                declineReason = s.DeclineReason,
+                rescheduleCount = s.RescheduleCount
+            };
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
+    }
 }
