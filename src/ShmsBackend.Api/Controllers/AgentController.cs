@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -89,6 +90,13 @@ public class AgentController : ControllerBase
             if (agent == null)
                 return NotFound(ApiResponse<object>.FailureResponse("Agent not found"));
 
+            var ratedSessions = _context.ListingViewingSessions
+                .Where(s => s.AgentId == id && s.Status == "Closed" && s.AgentRating != null);
+            var ratingCount = await ratedSessions.CountAsync();
+            var averageRating = ratingCount > 0
+                ? await ratedSessions.AverageAsync(s => (double)s.AgentRating!.Value)
+                : (double?)null;
+
             return Ok(ApiResponse<object>.SuccessResponse(new
             {
                 agent.Id,
@@ -105,7 +113,9 @@ public class AgentController : ControllerBase
                 agent.IsEmailVerified,
                 agent.PortalUserType,
                 agent.CreatedAt,
-                agent.UpdatedAt
+                agent.UpdatedAt,
+                averageRating,
+                ratingCount
             }));
         }
         catch (Exception ex)
@@ -123,7 +133,40 @@ public class AgentController : ControllerBase
         try
         {
             var agents = await _agentService.GetAllAsync();
-            return Ok(ApiResponse<object>.SuccessResponse(agents));
+            var agentIds = agents.Select(a => a.Id).ToList();
+            var ratingAggregates = await _context.ListingViewingSessions
+                .Where(s => agentIds.Contains(s.AgentId) && s.Status == "Closed" && s.AgentRating != null)
+                .GroupBy(s => s.AgentId)
+                .Select(g => new { AgentId = g.Key, Avg = g.Average(s => (double)s.AgentRating!.Value), Count = g.Count() })
+                .ToListAsync();
+            var ratingDict = ratingAggregates.ToDictionary(x => x.AgentId, x => x);
+
+            var data = agents.Select(a =>
+            {
+                ratingDict.TryGetValue(a.Id, out var r);
+                return (object)new
+                {
+                    a.Id,
+                    a.Email,
+                    a.FirstName,
+                    a.LastName,
+                    a.PhoneNumber,
+                    a.AgencyName,
+                    a.LicenseNumber,
+                    a.County,
+                    a.Constituency,
+                    a.Ward,
+                    a.IsActive,
+                    a.IsEmailVerified,
+                    a.PortalUserType,
+                    a.CreatedAt,
+                    a.UpdatedAt,
+                    averageRating = r != null ? (double?)r.Avg : null,
+                    ratingCount = r != null ? r.Count : 0
+                };
+            }).ToList();
+
+            return Ok(ApiResponse<object>.SuccessResponse(data));
         }
         catch (Exception ex)
         {
@@ -298,5 +341,73 @@ public class AgentController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { success = true, message = "Verification email sent." });
+    }
+
+    [HttpGet("{id:guid}/ratings")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Agent")]
+    public async Task<IActionResult> GetRatings(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        var callerId = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var cid) ? cid : Guid.Empty;
+        var callerRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+
+        if (callerRole == "Agent" && callerId != id)
+            return Forbid();
+
+        var baseQuery = _context.ListingViewingSessions
+            .Where(s => s.AgentId == id && s.Status == "Closed" && s.AgentRating != null);
+
+        var ratingCount = await baseQuery.CountAsync();
+        var averageRating = ratingCount > 0
+            ? await baseQuery.AverageAsync(s => (double)s.AgentRating!.Value)
+            : (double?)null;
+
+        var sessions = await baseQuery
+            .OrderByDescending(s => s.ClosedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var houseIds = sessions.Select(s => s.HouseId).Distinct().ToList();
+        var explorerIds = sessions.Select(s => s.ExplorerId).Distinct().ToList();
+
+        var houses = await _context.Houses
+            .Include(h => h.Flat)
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id);
+
+        var explorers = await _context.Explorers
+            .Where(e => explorerIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => $"{e.FirstName} {e.LastName}".Trim());
+
+        var data = sessions.Select(s =>
+        {
+            houses.TryGetValue(s.HouseId, out var house);
+            explorers.TryGetValue(s.ExplorerId, out var explorerName);
+            return (object)new
+            {
+                id = s.Id,
+                explorerName,
+                rating = s.AgentRating,
+                comment = s.ClosingComment,
+                houseNumber = house?.HouseNumber,
+                flatName = house?.Flat?.FlatName,
+                closedAt = s.ClosedAt
+            };
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total = ratingCount,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)ratingCount / pageSize),
+            averageRating,
+            ratingCount
+        });
     }
 }
