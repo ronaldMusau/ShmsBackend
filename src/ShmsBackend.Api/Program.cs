@@ -74,6 +74,7 @@ builder.Services.AddSingleton<IMpesaService, MpesaService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddHostedService<PaymentSchedulerService>();
 builder.Services.AddHostedService<ComplaintReminderSchedulerService>();
+builder.Services.AddHostedService<SessionSchedulerService>();
 
 // Add JWT Authentication
 var jwtOptions = builder.Configuration.GetSection("JwtOptions").Get<JwtOptions>();

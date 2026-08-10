@@ -70,6 +70,7 @@ public class ShmsDbContext : DbContext
 
     // Viewing Sessions
     public DbSet<ListingViewingSession> ListingViewingSessions { get; set; }
+    public DbSet<SessionMessage> SessionMessages { get; set; }
 
     // Vacate
     public DbSet<VacateRequest> VacateRequests { get; set; }
@@ -508,6 +509,27 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => new { e.HouseId, e.ExplorerId }).IsUnique();
             entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ListingViewingSession Configuration ──────────────────────────────
+        modelBuilder.Entity<ListingViewingSession>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── SessionMessage Configuration ──────────────────────────────────────
+        modelBuilder.Entity<SessionMessage>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.SenderRole).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Message).IsRequired();
+            entity.HasIndex(e => e.SessionId);
+            entity.HasIndex(e => new { e.SessionId, e.AgentId });
+            entity.HasOne(e => e.Session)
+                  .WithMany()
+                  .HasForeignKey(e => e.SessionId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── Global soft-delete filters ───────────────────────────────────────

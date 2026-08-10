@@ -1367,4 +1367,92 @@ public class EmailService : IEmailService
 
         return WrapInLayout($"Viewing Session Declined — {houseNumber}", inner);
     }
+
+    public async Task SendSessionReassignedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt)
+    {
+        _logger.LogInformation("Sending session reassigned email to explorer: {Email}", toEmail);
+        await SendEmail(toEmail, $"Viewing Session Reassigned — {houseNumber}",
+            GetSessionReassignedExplorerTemplate(firstName, houseNumber, agentName, agentPhone, scheduledAt));
+    }
+
+    private string GetSessionReassignedExplorerTemplate(string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your viewing session for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been reassigned to a new agent. The new agent will need to accept the session before it is confirmed.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>SCHEDULED DATE &amp; TIME</p>
+  <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
+    {scheduledAt:dddd, dd MMMM yyyy} at {scheduledAt:HH:mm} UTC
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>NEW AGENT</p>
+  <span style='font-size:15px;font-weight:600;color:{ColourTextPrime};'>{agentName}</span>
+  {(string.IsNullOrWhiteSpace(agentPhone) ? "" : $"<br/><span style='font-size:13px;color:{ColourTextSec};'>{agentPhone}</span>")}
+")}
+{Para("Your session is currently pending acceptance by the new agent. You will be notified once they confirm. If you have any questions, please contact management through the Romah Estates portal.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Viewing Session Reassigned — {houseNumber}", inner);
+    }
+
+    public async Task SendSessionFeedbackPromptEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt)
+    {
+        _logger.LogInformation("Sending session feedback prompt email to explorer: {Email}", toEmail);
+        await SendEmail(toEmail, $"How Was Your Viewing? — {houseNumber}",
+            GetSessionFeedbackPromptTemplate(firstName, houseNumber, scheduledAt));
+    }
+
+    private string GetSessionFeedbackPromptTemplate(string firstName, string houseNumber, DateTime scheduledAt)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your scheduled viewing session for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system was due on {scheduledAt:dddd, dd MMMM yyyy}. Did your viewing take place?")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>SCHEDULED DATE</p>
+  <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
+    {scheduledAt:dddd, dd MMMM yyyy} at {scheduledAt:HH:mm} UTC
+  </span>
+")}
+{Para("Please log in to the Romah Estates portal and <strong>close the session</strong> if your viewing took place, or <strong>reschedule</strong> if you need a new time. If no action is taken within 24 hours, the session will be automatically forfeited.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"How Was Your Viewing? — {houseNumber}", inner);
+    }
+
+    public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate)
+    {
+        _logger.LogInformation("Sending session capacity alert to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"Agent Capacity Alert — {scheduledDate}",
+            GetSessionCapacityAlertTemplate(firstName, agentName, scheduledDate));
+    }
+
+    private string GetSessionCapacityAlertTemplate(string firstName, string agentName, string scheduledDate)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"An agent on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has reached 5 or more live viewing sessions on a single day. Reassignment may be appropriate.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>AGENT</p>
+  <span style='font-size:18px;font-weight:700;color:{ColourGold};'>
+    {agentName}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>DATE</p>
+  <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>{scheduledDate}</span>
+")}
+{Para("Please review this agent's session load in the management portal and consider reassigning some sessions to other available agents in the same ward.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Agent Capacity Alert — {scheduledDate}", inner);
+    }
 }

@@ -47,4 +47,7 @@ public interface IEmailService
     Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt);
     Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt);
     Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName);
+    Task SendSessionReassignedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt);
+    Task SendSessionFeedbackPromptEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt);
+    Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate);
 }
