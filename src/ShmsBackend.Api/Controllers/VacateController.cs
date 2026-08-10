@@ -2060,6 +2060,88 @@ public class VacateController : ControllerBase
 
         return Ok(new { success = true, message = "Vacate request closed out successfully." });
     }
+
+    // GET /api/vacate/forfeited-advances/all
+    [HttpGet("forfeited-advances/all")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetAllForfeitedAdvances(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] Guid? tenantId = null,
+        [FromQuery] Guid? houseId = null,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] int? month = null,
+        [FromQuery] int? year = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] decimal? minAmount = null,
+        [FromQuery] decimal? maxAmount = null)
+    {
+        var allQuery = _context.VacateForfeitedAdvances.Where(f => !f.IsVoided);
+        var totalForfeited = await allQuery.SumAsync(f => f.AmountForfeitedUnused);
+        var totalAppliedToDamages = await allQuery.SumAsync(f => f.AmountAppliedToDamages);
+
+        var query = allQuery.AsQueryable();
+        if (tenantId.HasValue) query = query.Where(f => f.TenantId == tenantId.Value);
+        if (houseId.HasValue) query = query.Where(f => f.HouseId == houseId.Value);
+        if (flatId.HasValue) query = query.Where(f => f.FlatId == flatId.Value);
+        if (month.HasValue) query = query.Where(f => f.CreatedAt.Month == month.Value);
+        if (year.HasValue) query = query.Where(f => f.CreatedAt.Year == year.Value);
+        if (fromDate.HasValue) query = query.Where(f => f.CreatedAt >= fromDate.Value);
+        if (toDate.HasValue) query = query.Where(f => f.CreatedAt < toDate.Value.Date.AddDays(1));
+        if (minAmount.HasValue) query = query.Where(f => f.AmountForfeitedUnused >= minAmount.Value);
+        if (maxAmount.HasValue) query = query.Where(f => f.AmountForfeitedUnused <= maxAmount.Value);
+
+        var total = await query.CountAsync();
+        var paged = await query.OrderByDescending(f => f.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+
+        var tenantIds = paged.Select(f => f.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var houseIds = paged.Select(f => f.HouseId).Distinct().ToList();
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var data = paged.Select(f => new
+        {
+            f.Id,
+            tenantName = tenants.GetValueOrDefault(f.TenantId, "-"),
+            houseNumber = houses.GetValueOrDefault(f.HouseId, "-"),
+            f.TotalAdvanceAmount,
+            f.AmountAppliedToDamages,
+            f.AmountForfeitedUnused,
+            f.CreatedAt
+        });
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize),
+            totals = new { totalForfeited, totalAppliedToDamages }
+        });
+    }
+
+    // GET /api/vacate/forfeited-advances/years
+    [HttpGet("forfeited-advances/years")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetForfeitedAdvanceYears()
+    {
+        var years = await _context.VacateForfeitedAdvances
+            .Where(f => !f.IsVoided)
+            .Select(f => f.CreatedAt.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        return Ok(new { success = true, data = years });
+    }
 }
 
 public class CreateVacateRequestDto

@@ -644,6 +644,99 @@ public class PaymentController : ControllerBase
 
         return Ok(new { success = true, message = "Payment deleted." });
     }
+
+    // GET /api/payments/service-charges/all
+    [HttpGet("service-charges/all")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetAllServiceChargesCollected(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] Guid? tenantId = null,
+        [FromQuery] Guid? houseId = null,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] int? month = null,
+        [FromQuery] int? year = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] decimal? minAmount = null,
+        [FromQuery] decimal? maxAmount = null)
+    {
+        var query = _context.Payments
+            .Include(p => p.House)
+                .ThenInclude(h => h!.Flat)
+            .Where(p => p.ServiceChargeAmount > 0 && p.MpesaReceiptNumber != null)
+            .AsQueryable();
+
+        if (tenantId.HasValue) query = query.Where(p => p.TenantId == tenantId.Value);
+        if (houseId.HasValue) query = query.Where(p => p.HouseId == houseId.Value);
+        if (flatId.HasValue) query = query.Where(p => p.FlatId == flatId.Value);
+        if (month.HasValue) query = query.Where(p => p.Month == month.Value);
+        if (year.HasValue) query = query.Where(p => p.Year == year.Value);
+        if (fromDate.HasValue) query = query.Where(p => p.PaidAt >= fromDate.Value);
+        if (toDate.HasValue) query = query.Where(p => p.PaidAt < toDate.Value.Date.AddDays(1));
+        if (minAmount.HasValue) query = query.Where(p => p.ServiceChargeAmount >= minAmount.Value);
+        if (maxAmount.HasValue) query = query.Where(p => p.ServiceChargeAmount <= maxAmount.Value);
+
+        var total = await query.CountAsync();
+        var totalServiceChargeCollected = await query.SumAsync(p => p.ServiceChargeAmount ?? 0);
+
+        var paged = await query
+            .OrderByDescending(p => p.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var tenantIds = paged.Select(p => p.TenantId).Distinct().ToList();
+        var tenantLookup = await _context.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => tenantIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.FirstName, t.LastName })
+            .ToDictionaryAsync(t => t.Id);
+
+        var payments = paged.Select(p =>
+        {
+            tenantLookup.TryGetValue(p.TenantId, out var tenant);
+            return new
+            {
+                p.Id,
+                tenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : null,
+                houseNumber = p.House != null ? p.House.HouseNumber : null,
+                flatName = p.House != null && p.House.Flat != null ? p.House.Flat.FlatName : null,
+                p.Month,
+                p.Year,
+                p.RentAmount,
+                p.ServiceChargeAmount,
+                p.MpesaReceiptNumber,
+                p.PaidAt
+            };
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data = payments,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize),
+            totals = new { totalServiceChargeCollected }
+        });
+    }
+
+    // GET /api/payments/service-charges/years
+    [HttpGet("service-charges/years")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetServiceChargeYears()
+    {
+        var years = await _context.Payments
+            .Where(p => p.ServiceChargeAmount > 0 && p.MpesaReceiptNumber != null)
+            .Select(p => p.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        return Ok(new { success = true, data = years });
+    }
 }
 
 public class InitiatePaymentDto
