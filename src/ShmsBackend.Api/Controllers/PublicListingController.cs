@@ -320,6 +320,14 @@ public class PublicListingController : ControllerBase
     [HttpGet("my-interactions")]
     [Authorize(Roles = "Explorer")]
     public async Task<IActionResult> GetMyInteractions(
+        [FromQuery] string? county,
+        [FromQuery] string? constituency,
+        [FromQuery] string? ward,
+        [FromQuery] string? houseType,
+        [FromQuery] decimal? minRent,
+        [FromQuery] decimal? maxRent,
+        [FromQuery] int? minRating,
+        [FromQuery] string? reaction,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 6)
     {
@@ -346,16 +354,29 @@ public class PublicListingController : ControllerBase
             .Union(commentRecords.Select(c => c.HouseId))
             .Distinct().ToList();
 
-        var total = allHouseIds.Count;
-
-        if (total == 0)
+        if (!allHouseIds.Any())
             return Ok(new { success = true, data = Array.Empty<object>(), total = 0, page, pageSize, totalPages = 0 });
 
-        var houses = await _context.Houses
+        var housesQuery = _context.Houses
             .Include(h => h.Flat)
             .Include(h => h.Images)
-            .Where(h => allHouseIds.Contains(h.Id))
-            .ToListAsync();
+            .Include(h => h.HouseTypeRef)
+            .Where(h => allHouseIds.Contains(h.Id));
+
+        if (!string.IsNullOrEmpty(county))
+            housesQuery = housesQuery.Where(h => h.Flat != null && h.Flat.County == county);
+        if (!string.IsNullOrEmpty(constituency))
+            housesQuery = housesQuery.Where(h => h.Flat != null && h.Flat.Constituency == constituency);
+        if (!string.IsNullOrEmpty(ward))
+            housesQuery = housesQuery.Where(h => h.Flat != null && h.Flat.Ward == ward);
+        if (!string.IsNullOrEmpty(houseType))
+            housesQuery = housesQuery.Where(h => h.HouseTypeRef != null && h.HouseTypeRef.Name == houseType);
+        if (minRent.HasValue)
+            housesQuery = housesQuery.Where(h => h.RentFee >= minRent.Value);
+        if (maxRent.HasValue)
+            housesQuery = housesQuery.Where(h => h.RentFee <= maxRent.Value);
+
+        var houses = await housesQuery.ToListAsync();
 
         var likeCounts = await _context.HouseListingLikes
             .Where(l => allHouseIds.Contains(l.HouseId))
@@ -391,35 +412,57 @@ public class PublicListingController : ControllerBase
             return timestamps.Any() ? timestamps.Max() : DateTime.MinValue;
         });
 
-        var data = houses
-            .OrderByDescending(h => latestInteractionDict.GetValueOrDefault(h.Id))
+        var enriched = houses.Select(h =>
+        {
+            likeDict.TryGetValue(h.Id, out var likeCount);
+            dislikeDict.TryGetValue(h.Id, out var dislikeCount);
+            ratingDict.TryGetValue(h.Id, out var avgRating);
+            myLikeDict.TryGetValue(h.Id, out var myLike);
+            myRatingDict.TryGetValue(h.Id, out var myRating);
+            myCommentDict.TryGetValue(h.Id, out var myComment);
+            var isAvailable = h.OccupancyStatus == OccupancyStatus.Vacant && !h.IsListingHidden && h.Images.Any();
+            return new { h, likeCount, dislikeCount, avgRating, myLike, myRating, myComment, isAvailable };
+        }).AsEnumerable();
+
+        if (minRating.HasValue)
+            enriched = enriched.Where(x => x.myRating.HasValue && x.myRating.Value >= minRating.Value);
+        if (!string.IsNullOrEmpty(reaction))
+        {
+            enriched = reaction switch
+            {
+                "Liked" => enriched.Where(x => x.myLike == true),
+                "Disliked" => enriched.Where(x => x.myLike == false),
+                "Commented" => enriched.Where(x => x.myComment != null),
+                _ => enriched
+            };
+        }
+
+        var filteredList = enriched.ToList();
+        var total = filteredList.Count;
+
+        var data = filteredList
+            .OrderByDescending(x => x.h.OccupancyStatus == OccupancyStatus.Vacant && !x.h.IsListingHidden && x.h.Images.Any())
+            .ThenByDescending(x => latestInteractionDict.GetValueOrDefault(x.h.Id))
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .Select(h =>
+            .Select(x => (object)new
             {
-                likeDict.TryGetValue(h.Id, out var likeCount);
-                dislikeDict.TryGetValue(h.Id, out var dislikeCount);
-                ratingDict.TryGetValue(h.Id, out var avgRating);
-                myLikeDict.TryGetValue(h.Id, out var myLike);
-                myRatingDict.TryGetValue(h.Id, out var myRating);
-                myCommentDict.TryGetValue(h.Id, out var myComment);
-                return (object)new
-                {
-                    id = h.Id,
-                    houseNumber = h.HouseNumber,
-                    flatName = h.Flat?.FlatName,
-                    rentFee = h.RentFee,
-                    county = h.Flat?.County,
-                    constituency = h.Flat?.Constituency,
-                    ward = h.Flat?.Ward,
-                    images = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
-                    avgRating,
-                    likeCount,
-                    dislikeCount,
-                    myLike,
-                    myRating,
-                    myComment
-                };
+                id = x.h.Id,
+                houseNumber = x.h.HouseNumber,
+                houseType = x.h.HouseTypeRef?.Name,
+                flatName = x.h.Flat?.FlatName,
+                rentFee = x.h.RentFee,
+                county = x.h.Flat?.County,
+                constituency = x.h.Flat?.Constituency,
+                ward = x.h.Flat?.Ward,
+                images = x.h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                avgRating = x.avgRating,
+                likeCount = x.likeCount,
+                dislikeCount = x.dislikeCount,
+                myLike = x.myLike,
+                myRating = x.myRating,
+                myComment = x.myComment,
+                isAvailable = x.isAvailable
             }).ToList();
 
         return Ok(new
