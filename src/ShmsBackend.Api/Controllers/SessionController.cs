@@ -704,4 +704,234 @@ public class SessionController : ControllerBase
             totalPages = (int)Math.Ceiling((double)total / pageSize)
         });
     }
+
+    // GET /api/sessions/all
+    [HttpGet("all")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetAllSessions(
+        [FromQuery] string? status,
+        [FromQuery] Guid? agentId,
+        [FromQuery] bool? needsReassignment,
+        [FromQuery] DateTime? fromDate,
+        [FromQuery] DateTime? toDate,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var query = _context.ListingViewingSessions.AsQueryable();
+
+        if (needsReassignment == true)
+            query = query.Where(s => s.Status == "Declined");
+        else if (!string.IsNullOrEmpty(status))
+            query = query.Where(s => s.Status == status);
+
+        if (agentId.HasValue)
+            query = query.Where(s => s.AgentId == agentId.Value);
+
+        if (fromDate.HasValue)
+            query = query.Where(s => s.ScheduledAt >= fromDate.Value.Date);
+
+        if (toDate.HasValue)
+            query = query.Where(s => s.ScheduledAt < toDate.Value.Date.AddDays(1));
+
+        var total = await query.CountAsync();
+
+        var sessions = await query
+            .OrderByDescending(s => s.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var houseIds = sessions.Select(s => s.HouseId).Distinct().ToList();
+        var sessionAgentIds = sessions.Select(s => s.AgentId).Distinct().ToList();
+        var explorerIds = sessions.Select(s => s.ExplorerId).Distinct().ToList();
+
+        var houses = await _context.Houses
+            .Include(h => h.Flat)
+            .Where(h => houseIds.Contains(h.Id))
+            .ToListAsync();
+
+        var agents = await _context.Agents
+            .Where(a => sessionAgentIds.Contains(a.Id))
+            .ToListAsync();
+
+        var explorers = await _context.Explorers
+            .Where(e => explorerIds.Contains(e.Id))
+            .ToListAsync();
+
+        var houseDict = houses.ToDictionary(h => h.Id);
+        var agentDict = agents.ToDictionary(a => a.Id);
+        var explorerDict = explorers.ToDictionary(e => e.Id);
+
+        // Bulk load live session counts per (AgentId, Date) for the page's agents/dates
+        List<(Guid AgentId, DateTime Date)> liveSessionData = new();
+        if (sessions.Any())
+        {
+            var minDate = sessions.Min(s => s.ScheduledAt.Date);
+            var maxDate = sessions.Max(s => s.ScheduledAt.Date).AddDays(1);
+            var liveRaw = await _context.ListingViewingSessions
+                .Where(s => sessionAgentIds.Contains(s.AgentId) &&
+                            s.ScheduledAt >= minDate &&
+                            s.ScheduledAt < maxDate &&
+                            (s.Status == "Pending" || s.Status == "Accepted" || s.Status == "AwaitingFeedback"))
+                .Select(s => new { s.AgentId, s.ScheduledAt })
+                .ToListAsync();
+            liveSessionData = liveRaw.Select(x => (x.AgentId, x.ScheduledAt.Date)).ToList();
+        }
+
+        var loadCountDict = liveSessionData
+            .GroupBy(x => (x.AgentId, x.Date))
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var data = sessions.Select(s =>
+        {
+            houseDict.TryGetValue(s.HouseId, out var house);
+            agentDict.TryGetValue(s.AgentId, out var agent);
+            explorerDict.TryGetValue(s.ExplorerId, out var explorer);
+            var agentDayCount = loadCountDict.TryGetValue((s.AgentId, s.ScheduledAt.Date), out var cnt) ? cnt : 0;
+            var loadLevel = agentDayCount > 4 ? "Red" : agentDayCount == 4 ? "Amber" : "Green";
+            return (object)new
+            {
+                id = s.Id,
+                houseNumber = house?.HouseNumber,
+                flatName = house?.Flat?.FlatName,
+                agentId = s.AgentId,
+                agentName = agent != null ? $"{agent.FirstName} {agent.LastName}".Trim() : (string?)null,
+                explorerName = explorer != null ? $"{explorer.FirstName} {explorer.LastName}".Trim() : (string?)null,
+                explorerPhone = explorer?.PhoneNumber,
+                scheduledAt = s.ScheduledAt,
+                status = s.Status,
+                declineReason = s.DeclineReason,
+                loadLevel,
+                agentDayCount
+            };
+        }).ToList();
+
+        var totals = new
+        {
+            totalPending = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Pending"),
+            totalAccepted = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Accepted"),
+            totalAwaitingFeedback = await _context.ListingViewingSessions.CountAsync(s => s.Status == "AwaitingFeedback"),
+            totalDeclinedNeedsReassignment = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Declined")
+        };
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize),
+            totals
+        });
+    }
+
+    // GET /api/sessions/agent-calendar/{agentId}
+    [HttpGet("agent-calendar/{agentId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetAgentCalendar(
+        Guid agentId,
+        [FromQuery] DateTime fromDate,
+        [FromQuery] DateTime toDate)
+    {
+        var fromStart = fromDate.Date;
+        var toEnd = toDate.Date.AddDays(1);
+
+        var sessions = await _context.ListingViewingSessions
+            .Where(s => s.AgentId == agentId &&
+                        s.ScheduledAt >= fromStart &&
+                        s.ScheduledAt < toEnd &&
+                        (s.Status == "Pending" || s.Status == "Accepted" || s.Status == "AwaitingFeedback"))
+            .ToListAsync();
+
+        var houseIds = sessions.Select(s => s.HouseId).Distinct().ToList();
+        var explorerIds = sessions.Select(s => s.ExplorerId).Distinct().ToList();
+
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var explorers = await _context.Explorers
+            .Where(e => explorerIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => $"{e.FirstName} {e.LastName}".Trim());
+
+        var data = sessions
+            .GroupBy(s => s.ScheduledAt.Date)
+            .Select(g =>
+            {
+                var count = g.Count();
+                return (object)new
+                {
+                    date = g.Key,
+                    count,
+                    loadLevel = count > 4 ? "Red" : count == 4 ? "Amber" : "Green",
+                    sessions = g.OrderBy(s => s.ScheduledAt).Select(s => new
+                    {
+                        houseNumber = houses.GetValueOrDefault(s.HouseId),
+                        explorerName = explorers.GetValueOrDefault(s.ExplorerId),
+                        scheduledAt = s.ScheduledAt,
+                        status = s.Status
+                    }).ToList()
+                };
+            })
+            .OrderBy(d => ((dynamic)d).date)
+            .ToList();
+
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/sessions/{id}/candidate-agents
+    [HttpGet("{id:guid}/candidate-agents")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetCandidateAgents(Guid id)
+    {
+        var session = await _context.ListingViewingSessions.FindAsync(id);
+        if (session == null)
+            return NotFound(new { success = false, message = "Session not found." });
+
+        var house = await _context.Houses
+            .Include(h => h.Flat)
+            .FirstOrDefaultAsync(h => h.Id == session.HouseId);
+
+        if (house?.Flat == null)
+            return BadRequest(new { success = false, message = "House flat information not found." });
+
+        var targetWard = house.Flat.Ward;
+        var candidateAgentIds = await _context.AgentFlats
+            .Where(af => af.Flat.Ward == targetWard)
+            .Select(af => af.AgentId)
+            .Distinct()
+            .ToListAsync();
+
+        var candidates = await _context.Agents
+            .Where(a => candidateAgentIds.Contains(a.Id))
+            .ToListAsync();
+
+        var scheduledDate = session.ScheduledAt.Date;
+        var nextDate = scheduledDate.AddDays(1);
+
+        var dayLoadCounts = await _context.ListingViewingSessions
+            .Where(s => candidateAgentIds.Contains(s.AgentId) &&
+                        s.ScheduledAt >= scheduledDate &&
+                        s.ScheduledAt < nextDate &&
+                        (s.Status == "Pending" || s.Status == "Accepted" || s.Status == "AwaitingFeedback"))
+            .GroupBy(s => s.AgentId)
+            .Select(g => new { AgentId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var loadDict = dayLoadCounts.ToDictionary(x => x.AgentId, x => x.Count);
+
+        var data = candidates.Select(a =>
+        {
+            var dayLoad = loadDict.TryGetValue(a.Id, out var cnt) ? cnt : 0;
+            return (object)new
+            {
+                agentId = a.Id,
+                agentName = $"{a.FirstName} {a.LastName}".Trim(),
+                currentDayLoad = dayLoad
+            };
+        }).ToList();
+
+        return Ok(new { success = true, data });
+    }
 }
