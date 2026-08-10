@@ -635,4 +635,73 @@ public class SessionController : ControllerBase
             totalPages = (int)Math.Ceiling((double)total / pageSize)
         });
     }
+
+    // GET /api/sessions/agent-sessions
+    [HttpGet("agent-sessions")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> GetAgentSessions(
+        [FromQuery] string? status,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 6)
+    {
+        var agentId = GetCallerId();
+
+        var query = _context.ListingViewingSessions
+            .Where(s => s.AgentId == agentId);
+
+        if (!string.IsNullOrEmpty(status))
+            query = query.Where(s => s.Status == status);
+
+        var total = await query.CountAsync();
+
+        var sessions = await query
+            .OrderByDescending(s => s.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var houseIds = sessions.Select(s => s.HouseId).Distinct().ToList();
+        var explorerIds = sessions.Select(s => s.ExplorerId).Distinct().ToList();
+
+        var houses = await _context.Houses
+            .Include(h => h.Flat)
+            .Where(h => houseIds.Contains(h.Id))
+            .ToListAsync();
+
+        var explorers = await _context.Explorers
+            .Where(e => explorerIds.Contains(e.Id))
+            .ToListAsync();
+
+        var houseDict = houses.ToDictionary(h => h.Id);
+        var explorerDict = explorers.ToDictionary(e => e.Id);
+
+        var data = sessions.Select(s =>
+        {
+            houseDict.TryGetValue(s.HouseId, out var house);
+            explorerDict.TryGetValue(s.ExplorerId, out var explorer);
+            return (object)new
+            {
+                id = s.Id,
+                houseNumber = house?.HouseNumber,
+                flatName = house?.Flat?.FlatName,
+                explorerName = explorer != null ? $"{explorer.FirstName} {explorer.LastName}".Trim() : (string?)null,
+                explorerPhone = explorer?.PhoneNumber,
+                scheduledAt = s.ScheduledAt,
+                status = s.Status,
+                declineReason = s.DeclineReason,
+                rescheduleReason = s.RescheduleReason,
+                rescheduleCount = s.RescheduleCount
+            };
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
+    }
 }
