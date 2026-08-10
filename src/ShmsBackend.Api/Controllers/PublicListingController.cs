@@ -349,9 +349,15 @@ public class PublicListingController : ControllerBase
             .Select(c => new { c.HouseId, c.Comment, c.CreatedAt })
             .ToListAsync();
 
+        var bookmarkRecords = await _context.HouseListingBookmarks
+            .Where(b => b.ExplorerId == explorerId)
+            .Select(b => new { b.HouseId, b.CreatedAt })
+            .ToListAsync();
+
         var allHouseIds = likeRecords.Select(l => l.HouseId)
             .Union(ratingRecords.Select(r => r.HouseId))
             .Union(commentRecords.Select(c => c.HouseId))
+            .Union(bookmarkRecords.Select(b => b.HouseId))
             .Distinct().ToList();
 
         if (!allHouseIds.Any())
@@ -400,6 +406,8 @@ public class PublicListingController : ControllerBase
             .GroupBy(c => c.HouseId)
             .ToDictionary(g => g.Key, g => g.First().Comment);
 
+        var myBookmarkSet = bookmarkRecords.Select(b => b.HouseId).ToHashSet();
+
         var latestInteractionDict = allHouseIds.ToDictionary(hid => hid, hid =>
         {
             var timestamps = new List<DateTime>();
@@ -409,6 +417,8 @@ public class PublicListingController : ControllerBase
             if (rating != null) timestamps.Add(rating.Timestamp);
             var comment = commentRecords.FirstOrDefault(c => c.HouseId == hid);
             if (comment != null) timestamps.Add(comment.CreatedAt);
+            var bookmark = bookmarkRecords.FirstOrDefault(b => b.HouseId == hid);
+            if (bookmark != null) timestamps.Add(bookmark.CreatedAt);
             return timestamps.Any() ? timestamps.Max() : DateTime.MinValue;
         });
 
@@ -420,8 +430,9 @@ public class PublicListingController : ControllerBase
             myLikeDict.TryGetValue(h.Id, out var myLike);
             myRatingDict.TryGetValue(h.Id, out var myRating);
             myCommentDict.TryGetValue(h.Id, out var myComment);
+            var myBookmark = myBookmarkSet.Contains(h.Id);
             var isAvailable = h.OccupancyStatus == OccupancyStatus.Vacant && !h.IsListingHidden && h.Images.Any();
-            return new { h, likeCount, dislikeCount, avgRating, myLike, myRating, myComment, isAvailable };
+            return new { h, likeCount, dislikeCount, avgRating, myLike, myRating, myComment, myBookmark, isAvailable };
         }).AsEnumerable();
 
         if (minRating.HasValue)
@@ -433,6 +444,7 @@ public class PublicListingController : ControllerBase
                 "Liked" => enriched.Where(x => x.myLike == true),
                 "Disliked" => enriched.Where(x => x.myLike == false),
                 "Commented" => enriched.Where(x => x.myComment != null),
+                "Bookmarked" => enriched.Where(x => x.myBookmark),
                 _ => enriched
             };
         }
@@ -462,6 +474,7 @@ public class PublicListingController : ControllerBase
                 myLike = x.myLike,
                 myRating = x.myRating,
                 myComment = x.myComment,
+                myBookmark = x.myBookmark,
                 isAvailable = x.isAvailable
             }).ToList();
 
@@ -513,6 +526,7 @@ public class PublicListingController : ControllerBase
 
         bool? myLike = null;
         int? myRating = null;
+        bool myBookmark = false;
         if (User.Identity?.IsAuthenticated == true && User.IsInRole("Explorer"))
         {
             var idStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -525,6 +539,9 @@ public class PublicListingController : ControllerBase
                 var ratingRecord = await _context.HouseListingRatings
                     .FirstOrDefaultAsync(r => r.HouseId == id && r.ExplorerId == eid);
                 if (ratingRecord != null) myRating = ratingRecord.Stars;
+
+                myBookmark = await _context.HouseListingBookmarks
+                    .AnyAsync(b => b.HouseId == id && b.ExplorerId == eid);
             }
         }
         else if (!string.IsNullOrWhiteSpace(deviceId))
@@ -566,7 +583,8 @@ public class PublicListingController : ControllerBase
                     agencyName = agent.AgencyName
                 },
                 myLike,
-                myRating
+                myRating,
+                myBookmark
             }
         });
     }
@@ -717,6 +735,36 @@ public class PublicListingController : ControllerBase
             .Where(r => r.HouseId == id)
             .AverageAsync(r => (double?)r.Stars);
         return Ok(new { success = true, data = new { avgRating } });
+    }
+
+    // POST /api/public/listings/{id}/bookmark
+    [HttpPost("{id:guid}/bookmark")]
+    [Authorize(Roles = "Explorer")]
+    public async Task<IActionResult> Bookmark(Guid id)
+    {
+        var explorerId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        var existing = await _context.HouseListingBookmarks
+            .FirstOrDefaultAsync(b => b.HouseId == id && b.ExplorerId == explorerId);
+
+        bool bookmarked;
+        if (existing != null)
+        {
+            _context.HouseListingBookmarks.Remove(existing);
+            bookmarked = false;
+        }
+        else
+        {
+            _context.HouseListingBookmarks.Add(new HouseListingBookmark
+            {
+                HouseId = id,
+                ExplorerId = explorerId
+            });
+            bookmarked = true;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, data = new { bookmarked } });
     }
 
     // POST /api/public/listings/merge-device

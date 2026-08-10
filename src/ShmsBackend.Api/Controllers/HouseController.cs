@@ -436,7 +436,7 @@ public class HouseController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
     public async Task<IActionResult> GetListingStats(Guid id)
     {
-        var house = await _context.Houses.FindAsync(id);
+        var house = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == id);
         if (house == null) return NotFound(new { success = false, message = "House not found." });
 
         var likeCount = await _context.HouseListingLikes.CountAsync(l => l.HouseId == id && l.IsLike);
@@ -454,7 +454,139 @@ public class HouseController : ControllerBase
         return Ok(new
         {
             success = true,
-            data = new { likeCount, dislikeCount, avgRating, comments }
+            data = new { houseNumber = house.HouseNumber, flatName = house.Flat?.FlatName, likeCount, dislikeCount, avgRating, comments }
+        });
+    }
+
+    [HttpGet("{id:guid}/listing-comments")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetListingComments(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var house = await _context.Houses.FindAsync(id);
+        if (house == null) return NotFound(new { success = false, message = "House not found." });
+
+        var query = _context.HouseListingComments
+            .Where(c => c.HouseId == id)
+            .OrderByDescending(c => c.CreatedAt);
+
+        var total = await query.CountAsync();
+        var data = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new { c.Id, c.CommenterName, c.Comment, c.IsHidden, c.CreatedAt })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
+    }
+
+    [HttpGet("{id:guid}/listing-ratings")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetListingRatings(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var house = await _context.Houses.FindAsync(id);
+        if (house == null) return NotFound(new { success = false, message = "House not found." });
+
+        var query = _context.HouseListingRatings
+            .Where(r => r.HouseId == id)
+            .OrderByDescending(r => r.CreatedAt);
+
+        var total = await query.CountAsync();
+        var pageRows = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var explorerIds = pageRows
+            .Where(r => r.ExplorerId != null)
+            .Select(r => r.ExplorerId!.Value)
+            .Distinct()
+            .ToList();
+
+        var explorerNames = await _context.Explorers
+            .Where(e => explorerIds.Contains(e.Id))
+            .Select(e => new { e.Id, e.FirstName, e.LastName })
+            .ToDictionaryAsync(e => e.Id);
+
+        var data = pageRows.Select(r =>
+        {
+            var displayName = r.ExplorerId != null && explorerNames.TryGetValue(r.ExplorerId.Value, out var exp)
+                ? $"{exp.FirstName} {exp.LastName}".Trim()
+                : "Anonymous Visitor";
+            return (object)new { r.Id, displayName, r.Stars, r.CreatedAt };
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
+        });
+    }
+
+    [HttpGet("{id:guid}/listing-reactions")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetListingReactions(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
+    {
+        var house = await _context.Houses.FindAsync(id);
+        if (house == null) return NotFound(new { success = false, message = "House not found." });
+
+        var query = _context.HouseListingLikes
+            .Where(l => l.HouseId == id)
+            .OrderByDescending(l => l.CreatedAt);
+
+        var total = await query.CountAsync();
+        var pageRows = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var explorerIds = pageRows
+            .Where(l => l.ExplorerId != null)
+            .Select(l => l.ExplorerId!.Value)
+            .Distinct()
+            .ToList();
+
+        var explorerNames = await _context.Explorers
+            .Where(e => explorerIds.Contains(e.Id))
+            .Select(e => new { e.Id, e.FirstName, e.LastName })
+            .ToDictionaryAsync(e => e.Id);
+
+        var data = pageRows.Select(l =>
+        {
+            var displayName = l.ExplorerId != null && explorerNames.TryGetValue(l.ExplorerId.Value, out var exp)
+                ? $"{exp.FirstName} {exp.LastName}".Trim()
+                : "Anonymous Visitor";
+            return (object)new { l.Id, displayName, l.IsLike, l.CreatedAt };
+        }).ToList();
+
+        return Ok(new
+        {
+            success = true,
+            data,
+            total,
+            page,
+            pageSize,
+            totalPages = (int)Math.Ceiling((double)total / pageSize)
         });
     }
 

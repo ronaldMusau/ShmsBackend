@@ -42,6 +42,7 @@ public class ShmsDbContext : DbContext
     public DbSet<HouseListingLike> HouseListingLikes { get; set; }
     public DbSet<HouseListingRating> HouseListingRatings { get; set; }
     public DbSet<HouseListingComment> HouseListingComments { get; set; }
+    public DbSet<HouseListingBookmark> HouseListingBookmarks { get; set; }
 
     // Notifications
     public DbSet<Notification> Notifications { get; set; }
@@ -496,6 +497,13 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.CommenterName).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Comment).IsRequired();
+            entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<HouseListingBookmark>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.HouseId, e.ExplorerId }).IsUnique();
             entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
         });
 
