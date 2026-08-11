@@ -264,6 +264,7 @@ public class PortalPaymentController : ControllerBase
     [Authorize(Roles = "Landlord")]
     public async Task<IActionResult> GetLandlordPayments(
         [FromQuery] Guid? flatId,
+        [FromQuery] Guid? houseId,
         [FromQuery] string? status,
         [FromQuery] string? stage,
         [FromQuery] int? month,
@@ -288,6 +289,9 @@ public class PortalPaymentController : ControllerBase
 
         if (flatId.HasValue)
             query = query.Where(p => p.FlatId == flatId.Value);
+
+        if (houseId.HasValue)
+            query = query.Where(p => p.HouseId == houseId.Value);
 
         if (!string.IsNullOrEmpty(status) && Enum.TryParse<PaymentTransactionStatus>(status, out var ps))
             query = query.Where(p => p.PaymentStatus == ps);
