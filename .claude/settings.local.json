@@ -23,7 +23,8 @@
       "Bash(dir \"C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing\")",
       "Bash(npx ng *)",
       "PowerShell(\\(Get-Content \"C:\\\\Users\\\\musau\\\\OneDrive\\\\Desktop\\\\Housing\\\\ShmsBackend\\\\src\\\\ShmsBackend.Api\\\\Controllers\\\\VacateController.cs\" | Measure-Object -Line\\).Lines)",
-      "Bash(taskkill /PID 9356 /F)"
+      "Bash(taskkill /PID 9356 /F)",
+      "PowerShell(dotnet build *)"
     ]
   }
 }

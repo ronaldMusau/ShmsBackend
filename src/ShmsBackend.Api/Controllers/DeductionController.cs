@@ -20,12 +20,16 @@ public class DeductionController : ControllerBase
         [FromQuery] int pageSize = 50,
         [FromQuery] Guid? landlordId = null,
         [FromQuery] int? month = null,
-        [FromQuery] int? year = null)
+        [FromQuery] int? year = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
     {
         var query = _context.Deductions.AsQueryable();
         if (landlordId.HasValue) query = query.Where(d => d.LandlordId == landlordId.Value);
         if (month.HasValue) query = query.Where(d => d.DeductionMonth == month.Value);
         if (year.HasValue) query = query.Where(d => d.DeductionYear == year.Value);
+        if (fromDate.HasValue) query = query.Where(d => d.CreatedAt >= fromDate.Value);
+        if (toDate.HasValue) query = query.Where(d => d.CreatedAt.Date <= toDate.Value.Date);
         var total = await query.CountAsync();
         var paged = await query.OrderByDescending(d => d.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
@@ -61,7 +65,7 @@ public class DeductionController : ControllerBase
         var totalAmount = await query.SumAsync(d => d.Amount);
 
         var perLandlord = await _context.Deductions
-            .Where(d => (!landlordId.HasValue || d.LandlordId == landlordId.Value) && (!month.HasValue || d.DeductionMonth == month.Value) && (!year.HasValue || d.DeductionYear == year.Value))
+            .Where(d => (!landlordId.HasValue || d.LandlordId == landlordId.Value) && (!month.HasValue || d.DeductionMonth == month.Value) && (!year.HasValue || d.DeductionYear == year.Value) && (!fromDate.HasValue || d.CreatedAt >= fromDate.Value) && (!toDate.HasValue || d.CreatedAt.Date <= toDate.Value.Date))
             .GroupBy(d => d.LandlordId)
             .Select(g => new { LandlordId = g.Key, Total = g.Sum(x => x.Amount), Count = g.Count() })
             .ToListAsync();

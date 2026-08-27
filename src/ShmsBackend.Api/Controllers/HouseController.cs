@@ -94,7 +94,7 @@ public class HouseController : ControllerBase
     }
 
     [HttpGet("flat/{flatId:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Landlord,Agent")]
     public async Task<IActionResult> GetByFlat(Guid flatId)
     {
         var result = await _houseService.GetByFlatAsync(flatId);

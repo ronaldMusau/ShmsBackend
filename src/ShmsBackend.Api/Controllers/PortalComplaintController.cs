@@ -775,12 +775,14 @@ public class PortalComplaintController : ControllerBase
     // GET /api/portalcomplaint/landlord/my-deductions
     [HttpGet("landlord/my-deductions")]
     [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetMyDeductions([FromQuery] int? month = null, [FromQuery] int? year = null)
+    public async Task<IActionResult> GetMyDeductions([FromQuery] int? month = null, [FromQuery] int? year = null, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
     {
         var landlordId = GetUserId();
         var query = _context.Deductions.Where(d => d.LandlordId == landlordId);
         if (month.HasValue) query = query.Where(d => d.DeductionMonth == month.Value);
         if (year.HasValue) query = query.Where(d => d.DeductionYear == year.Value);
+        if (fromDate.HasValue) query = query.Where(d => d.CreatedAt >= fromDate.Value);
+        if (toDate.HasValue) query = query.Where(d => d.CreatedAt.Date <= toDate.Value.Date);
 
         var deductions = await query.OrderByDescending(d => d.CreatedAt).ToListAsync();
 

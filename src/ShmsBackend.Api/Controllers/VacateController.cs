@@ -1638,18 +1638,22 @@ public class VacateController : ControllerBase
         [FromQuery] int pageSize = 50,
         [FromQuery] Guid? tenantId = null,
         [FromQuery] int? month = null,
-        [FromQuery] int? year = null)
+        [FromQuery] int? year = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null)
     {
-        var baseQuery = _context.VacateSettlements
-            .Where(s => s.Direction == "ManagementOwes" && !s.IsVoided);
+        var query = _context.VacateSettlements
+            .Where(s => s.Direction == "ManagementOwes" && !s.IsVoided)
+            .AsQueryable();
 
-        var totalRefundable = await baseQuery.Where(s => s.PaidAt == null).SumAsync(s => s.Amount);
-        var totalPaid = await baseQuery.Where(s => s.PaidAt != null).SumAsync(s => s.Amount);
-
-        var query = baseQuery.AsQueryable();
         if (tenantId.HasValue) query = query.Where(s => s.TenantId == tenantId.Value);
         if (month.HasValue) query = query.Where(s => s.CreatedAt.Month == month.Value);
         if (year.HasValue) query = query.Where(s => s.CreatedAt.Year == year.Value);
+        if (fromDate.HasValue) query = query.Where(s => s.CreatedAt >= fromDate.Value);
+        if (toDate.HasValue) query = query.Where(s => s.CreatedAt.Date <= toDate.Value.Date);
+
+        var totalRefundable = await query.Where(s => s.PaidAt == null).SumAsync(s => s.Amount);
+        var totalPaid = await query.Where(s => s.PaidAt != null).SumAsync(s => s.Amount);
 
         var total = await query.CountAsync();
         var paged = await query.OrderByDescending(s => s.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
