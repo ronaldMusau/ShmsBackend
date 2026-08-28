@@ -11,5 +11,6 @@ public interface IFrontendUrlService
     string GetEmailVerificationPath(string token, string email);
     string GetPortalBaseUrl();
     string GetPortalEmailVerificationUrl(string token, string email, PortalUserType portalUserType);
+    string GetEmailChangeConfirmationUrl(string token, string email);
     string GetPortalLoginUrl();
 }

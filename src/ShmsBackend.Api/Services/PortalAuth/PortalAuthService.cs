@@ -514,7 +514,7 @@ public class PortalAuthService : IPortalAuthService
                 user.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
                 emailChangeRequested = true;
 
-                var confirmationLink = _frontendUrlService.GetEmailVerificationUrl(token, dto.NewEmail);
+                var confirmationLink = _frontendUrlService.GetEmailChangeConfirmationUrl(token, dto.NewEmail);
 
                 try
                 {

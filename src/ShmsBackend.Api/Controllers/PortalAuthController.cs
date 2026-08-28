@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.PortalAuth;
 using ShmsBackend.Api.Services.PortalAuth;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Enums;
 
 
 namespace ShmsBackend.Api.Controllers;
@@ -189,6 +190,28 @@ public class PortalAuthController : ControllerBase
         if (user == null)
             return NotFound(new { success = false, message = "User not found." });
 
+        // Location source: for Tenants, prefer the assigned flat's location
+        // (the tenant's own PortalUser County/Constituency/Ward are typically empty);
+        // for all other roles, use the user's own values.
+        var county = user.County;
+        var constituency = user.Constituency;
+        var ward = user.Ward;
+
+        if (user.PortalUserType == PortalUserType.Tenant)
+        {
+            var tenant = await _context.Tenants
+                .Include(t => t.House)
+                    .ThenInclude(h => h!.Flat)
+                .FirstOrDefaultAsync(t => t.Id == userId);
+
+            if (tenant?.House?.Flat != null)
+            {
+                county = tenant.House.Flat.County;
+                constituency = tenant.House.Flat.Constituency;
+                ward = tenant.House.Flat.Ward;
+            }
+        }
+
         return Ok(new
         {
             success = true,
@@ -202,9 +225,9 @@ public class PortalAuthController : ControllerBase
                 user.PhoneNumber,
                 user.NationalId,
                 user.DateOfBirth,
-                user.County,
-                user.Constituency,
-                user.Ward,
+                County = county,
+                Constituency = constituency,
+                Ward = ward,
                 user.IsActive,
                 user.IsEmailVerified,
                 user.PortalUserType,

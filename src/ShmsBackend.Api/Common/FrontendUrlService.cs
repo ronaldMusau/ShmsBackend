@@ -62,5 +62,10 @@ public class FrontendUrlService : IFrontendUrlService
         return $"{_portalFrontendUrl}/public/verify-email?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(email)}&type={(int)portalUserType}";
     }
 
+    public string GetEmailChangeConfirmationUrl(string token, string email)
+    {
+        return $"{_portalFrontendUrl}/public/confirm-email-change?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(email)}";
+    }
+
     public string GetPortalLoginUrl() => $"{_portalFrontendUrl}/public/login";
 }
