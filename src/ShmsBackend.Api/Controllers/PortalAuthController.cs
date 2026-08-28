@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Models.DTOs.PortalAuth;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.PortalAuth;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Enums;
@@ -20,15 +22,18 @@ public class PortalAuthController : ControllerBase
     private readonly IPortalAuthService _portalAuthService;
     private readonly ILogger<PortalAuthController> _logger;
     private readonly ShmsDbContext _context;
+    private readonly INotificationPreferenceService _notificationPreferenceService;
 
     public PortalAuthController(
         IPortalAuthService portalAuthService,
         ILogger<PortalAuthController> logger,
-        ShmsDbContext context)
+        ShmsDbContext context,
+        INotificationPreferenceService notificationPreferenceService)
     {
         _portalAuthService = portalAuthService;
         _logger = logger;
         _context = context;
+        _notificationPreferenceService = notificationPreferenceService;
     }
 
     /// <summary>
@@ -275,5 +280,29 @@ public class PortalAuthController : ControllerBase
             return BadRequest(result);
 
         return Ok(result);
+    }
+
+    [HttpGet("notification-preferences")]
+    [Authorize]
+    public async Task<IActionResult> GetNotificationPreferences()
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var pref = await _notificationPreferenceService.GetOrCreateAsync(userId, isPortalUser: true);
+        return Ok(new { success = true, data = NotificationPreferenceDto.FromEntity(pref) });
+    }
+
+    [HttpPut("notification-preferences")]
+    [Authorize]
+    public async Task<IActionResult> UpdateNotificationPreferences([FromBody] NotificationPreferenceDto dto)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        await _notificationPreferenceService.UpdateAsync(userId, isPortalUser: true, dto);
+        return Ok(new { success = true, message = "Notification preferences updated." });
     }
 }

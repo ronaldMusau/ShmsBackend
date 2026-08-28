@@ -46,6 +46,7 @@ public class ShmsDbContext : DbContext
 
     // Notifications
     public DbSet<Notification> Notifications { get; set; }
+    public DbSet<NotificationPreference> NotificationPreferences { get; set; }
 
     // Tenant house history
     public DbSet<TenantHouseHistory> TenantHouseHistories { get; set; }
@@ -324,6 +325,30 @@ public class ShmsDbContext : DbContext
             entity.HasIndex(e => e.Audience);
             entity.HasIndex(e => e.IsRead);
             entity.ToTable("Notifications");
+        });
+
+        // ── NotificationPreference Configuration ─────────────────────────────
+        modelBuilder.Entity<NotificationPreference>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.UserId, e.IsPortalUser }).IsUnique();
+            entity.Property(e => e.MasterEmailEnabled).HasDefaultValue(true);
+            entity.Property(e => e.MasterInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.RentEmailEnabled).HasDefaultValue(true);
+            entity.Property(e => e.RentInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.ComplaintsEmailEnabled).HasDefaultValue(true);
+            entity.Property(e => e.ComplaintsInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.ApprovalsEmailEnabled).HasDefaultValue(true);
+            entity.Property(e => e.ApprovalsInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.PropertiesEmailEnabled).HasDefaultValue(true);
+            entity.Property(e => e.PropertiesInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.AccountEmailEnabled).HasDefaultValue(true);
+            entity.Property(e => e.AccountInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.TeamActivityEmailEnabled).HasDefaultValue(true);
+            entity.Property(e => e.TeamActivityInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.ToTable("NotificationPreferences");
         });
 
         // ── TenantHouseHistory Configuration ────────────────────────────────

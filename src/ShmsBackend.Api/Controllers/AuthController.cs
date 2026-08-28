@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Services.Auth;
+using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Repositories.Interfaces;
 
 namespace ShmsBackend.Api.Controllers;
@@ -14,12 +15,18 @@ public class AuthController : ControllerBase
     private readonly IAuthService _authService;
     private readonly ILogger<AuthController> _logger;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationPreferenceService _notificationPreferenceService;
 
-    public AuthController(IAuthService authService, ILogger<AuthController> logger, IUnitOfWork unitOfWork)
+    public AuthController(
+        IAuthService authService,
+        ILogger<AuthController> logger,
+        IUnitOfWork unitOfWork,
+        INotificationPreferenceService notificationPreferenceService)
     {
         _authService = authService;
         _logger = logger;
         _unitOfWork = unitOfWork;
+        _notificationPreferenceService = notificationPreferenceService;
     }
 
     [HttpPost("login")]
@@ -176,5 +183,29 @@ public class AuthController : ControllerBase
                 admin.CreatedAt
             }
         });
+    }
+
+    [HttpGet("notification-preferences")]
+    [Authorize]
+    public async Task<IActionResult> GetNotificationPreferences()
+    {
+        var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(adminIdClaim, out var adminId))
+            return Unauthorized();
+
+        var pref = await _notificationPreferenceService.GetOrCreateAsync(adminId, isPortalUser: false);
+        return Ok(new { success = true, data = NotificationPreferenceDto.FromEntity(pref) });
+    }
+
+    [HttpPut("notification-preferences")]
+    [Authorize]
+    public async Task<IActionResult> UpdateNotificationPreferences([FromBody] NotificationPreferenceDto dto)
+    {
+        var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(adminIdClaim, out var adminId))
+            return Unauthorized();
+
+        await _notificationPreferenceService.UpdateAsync(adminId, isPortalUser: false, dto);
+        return Ok(new { success = true, message = "Notification preferences updated." });
     }
 }

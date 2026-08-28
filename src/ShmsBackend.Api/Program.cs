@@ -66,6 +66,7 @@ builder.Services.AddScoped<IFrontendUrlService, FrontendUrlService>();
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<INotificationPreferenceService, NotificationPreferenceService>();
 
 // M-Pesa
 builder.Services.Configure<MpesaConfig>(builder.Configuration.GetSection("Mpesa"));
