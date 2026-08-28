@@ -19,6 +19,7 @@ public abstract class PortalUser : ISoftDelete
     public string? NationalId { get; set; }
     public bool IsActive { get; set; } = true;
     public bool IsEmailVerified { get; set; } = false;
+    public string? PendingEmail { get; set; }
     public string? EmailVerificationToken { get; set; }
     public DateTime? EmailVerificationTokenExpiry { get; set; }
     public string? RefreshToken { get; set; }

@@ -490,4 +490,90 @@ public class PortalAuthService : IPortalAuthService
             return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }
+
+    public async Task<ApiResponse<string>> UpdateProfileAsync(Guid userId, UpdatePortalProfileDto dto)
+    {
+        try
+        {
+            var user = await _context.PortalUsers
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+                return ApiResponse<string>.FailureResponse("User not found.");
+
+            if (!string.IsNullOrWhiteSpace(dto.PhoneNumber))
+                user.PhoneNumber = dto.PhoneNumber;
+
+            var emailChangeRequested = false;
+            if (!string.IsNullOrWhiteSpace(dto.NewEmail) &&
+                !string.Equals(dto.NewEmail, user.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                var token = Guid.NewGuid().ToString("N");
+                user.PendingEmail = dto.NewEmail;
+                user.EmailVerificationToken = token;
+                user.EmailVerificationTokenExpiry = DateTime.UtcNow.AddDays(14);
+                emailChangeRequested = true;
+
+                var confirmationLink = _frontendUrlService.GetEmailVerificationUrl(token, dto.NewEmail);
+
+                try
+                {
+                    await _emailService.SendConfirmNewEmailAsync(dto.NewEmail, user.FirstName, confirmationLink);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send confirm-new-email to {NewEmail} for {UserId}", dto.NewEmail, userId);
+                }
+            }
+
+            user.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Portal profile updated for {UserId} (email change requested: {EmailChange})",
+                userId, emailChangeRequested);
+
+            return ApiResponse<string>.SuccessResponse(
+                emailChangeRequested
+                    ? "Profile updated. Check your new email address to confirm the change."
+                    : "Profile updated successfully.",
+                "Profile updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during portal profile update for {UserId}", userId);
+            return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
+        }
+    }
+
+    public async Task<ApiResponse<string>> ConfirmEmailChangeAsync(ConfirmEmailChangeDto dto)
+    {
+        try
+        {
+            var user = await _context.PortalUsers
+                .FirstOrDefaultAsync(u =>
+                    u.PendingEmail == dto.Email &&
+                    u.EmailVerificationToken == dto.Token &&
+                    u.EmailVerificationTokenExpiry > DateTime.UtcNow);
+
+            if (user == null)
+                return ApiResponse<string>.FailureResponse("Invalid or expired confirmation link.");
+
+            user.Email = user.PendingEmail!;
+            user.PendingEmail = null;
+            user.IsEmailVerified = true;
+            user.EmailVerificationToken = null;
+            user.EmailVerificationTokenExpiry = null;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Portal email change confirmed for {UserId}", user.Id);
+            return ApiResponse<string>.SuccessResponse(
+                "Email address updated successfully.", "Email updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error confirming portal email change for {Email}", dto.Email);
+            return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
+        }
+    }
 }

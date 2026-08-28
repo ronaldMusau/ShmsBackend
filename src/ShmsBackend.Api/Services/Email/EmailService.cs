@@ -104,6 +104,15 @@ public class EmailService : IEmailService
             GetPortalVerifyWithPasswordTemplate(firstName, verificationLink, temporaryPassword));
     }
 
+    public async Task<bool> SendConfirmNewEmailAsync(string toEmail, string firstName, string confirmationLink)
+    {
+        _logger.LogInformation("Sending confirm-new-email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Confirm Your New Email Address — Romah Estates",
+            GetConfirmNewEmailTemplate(firstName, confirmationLink));
+    }
+
     public async Task<bool> SendExplorerWelcomeEmailAsync(string toEmail, string firstName, string loginUrl)
     {
         _logger.LogInformation("Sending explorer welcome email to: {Email}", toEmail);
@@ -600,6 +609,22 @@ public class EmailService : IEmailService
 {SmallNote("If you didn't expect this email, please ignore it or contact your system administrator.")}";
 
         return WrapInLayout("Verify Your Email — Romah Estates", inner);
+    }
+
+    // ── Confirm New Email Template ──────────────────────────────────────────
+
+    private string GetConfirmNewEmailTemplate(string firstName, string confirmationLink)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"We received a request to change the email address on your <strong style='color:{ColourGold};'>Romah Estates</strong> account to this address.")}
+{Para("To confirm this change and start using this email to sign in, click the button below:")}
+{GoldButton(confirmationLink, "CONFIRM NEW EMAIL")}
+{Para($"This link will expire in <strong style='color:{ColourGold};'>14 days</strong>.")}
+{Divider()}
+{SmallNote("If you didn't request this change, you can safely ignore this email — your account isn't affected until the new address is confirmed.")}";
+
+        return WrapInLayout("Confirm Your New Email Address — Romah Estates", inner);
     }
 
     private string GetPaymentReceiptTemplate(string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt)

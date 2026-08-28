@@ -242,7 +242,7 @@ namespace ShmsBackend.Data.Migrations
 
                     b.HasIndex("LandlordId");
 
-                    b.ToTable("Flats");
+                    b.ToTable("Flats", (string)null);
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.House", b =>
@@ -297,7 +297,7 @@ namespace ShmsBackend.Data.Migrations
 
                     b.HasIndex("FlatId");
 
-                    b.ToTable("Houses");
+                    b.ToTable("Houses", (string)null);
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.Payment", b =>
@@ -413,7 +413,7 @@ namespace ShmsBackend.Data.Migrations
 
                     b.HasIndex("TenantId");
 
-                    b.ToTable("Payments");
+                    b.ToTable("Payments", (string)null);
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.PortalUser", b =>
@@ -569,7 +569,7 @@ namespace ShmsBackend.Data.Migrations
 
                     b.HasIndex("HouseId");
 
-                    b.ToTable("TenantHouseHistories");
+                    b.ToTable("TenantHouseHistories", (string)null);
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.ServiceChargeSetting", b =>
@@ -607,7 +607,7 @@ namespace ShmsBackend.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ServiceChargeSettings");
+                    b.ToTable("ServiceChargeSettings", (string)null);
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Accountant", b =>

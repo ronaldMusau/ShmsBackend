@@ -198,6 +198,7 @@ public class PortalAuthController : ControllerBase
                 user.FirstName,
                 user.LastName,
                 user.Email,
+                user.PendingEmail,
                 user.PhoneNumber,
                 user.NationalId,
                 user.DateOfBirth,
@@ -210,5 +211,46 @@ public class PortalAuthController : ControllerBase
                 user.CreatedAt
             }
         });
+    }
+
+    /// <summary>
+    /// Allows an authenticated portal user to update their own phone number and/or
+    /// request an email-address change. A phone change applies immediately; an email
+    /// change is staged in PendingEmail until confirmed via the link sent to the new address.
+    /// </summary>
+    [HttpPatch("update-profile")]
+    [Authorize]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdatePortalProfileDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var result = await _portalAuthService.UpdateProfileAsync(userId, dto);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Confirms a requested email-address change using the token sent to the new address.
+    /// AllowAnonymous because the link is clicked from an email, not an authenticated session.
+    /// </summary>
+    [HttpPost("confirm-email-change")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ConfirmEmailChange([FromBody] ConfirmEmailChangeDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var result = await _portalAuthService.ConfirmEmailChangeAsync(dto);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
     }
 }

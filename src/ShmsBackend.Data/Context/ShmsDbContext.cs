@@ -154,6 +154,7 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.NationalId).HasMaxLength(50);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.IsEmailVerified).HasDefaultValue(false);
+            entity.Property(e => e.PendingEmail).HasMaxLength(255);
             entity.Property(e => e.EmailVerificationToken).HasMaxLength(500);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
