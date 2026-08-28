@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Services.Auth;
+using ShmsBackend.Data.Repositories.Interfaces;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -12,11 +13,13 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly ILogger<AuthController> _logger;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public AuthController(IAuthService authService, ILogger<AuthController> logger)
+    public AuthController(IAuthService authService, ILogger<AuthController> logger, IUnitOfWork unitOfWork)
     {
         _authService = authService;
         _logger = logger;
+        _unitOfWork = unitOfWork;
     }
 
     [HttpPost("login")]
@@ -141,5 +144,37 @@ public class AuthController : ControllerBase
         if (!result.Success)
             return BadRequest(result);
         return Ok(result);
+    }
+
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<IActionResult> GetMe()
+    {
+        var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(adminIdClaim, out var adminId))
+            return Unauthorized();
+
+        var admin = await _unitOfWork.Admins.GetByIdAsync(adminId);
+        if (admin == null)
+            return NotFound(new { success = false, message = "Admin not found." });
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                admin.Id,
+                admin.FirstName,
+                admin.LastName,
+                admin.Email,
+                admin.PhoneNumber,
+                admin.NationalId,
+                admin.DateOfBirth,
+                admin.IsActive,
+                admin.IsEmailVerified,
+                admin.UserType,
+                admin.CreatedAt
+            }
+        });
     }
 }
