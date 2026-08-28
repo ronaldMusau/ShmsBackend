@@ -11,6 +11,7 @@ using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.PortalAuth;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Enums;
+using ShmsBackend.Data.Models.Entities;
 
 
 namespace ShmsBackend.Api.Controllers;
@@ -304,5 +305,93 @@ public class PortalAuthController : ControllerBase
 
         await _notificationPreferenceService.UpdateAsync(userId, isPortalUser: true, dto);
         return Ok(new { success = true, message = "Notification preferences updated." });
+    }
+
+    /// <summary>
+    /// Returns the current terms &amp; conditions for the authenticated user's role,
+    /// plus whether this user has accepted the current version.
+    /// </summary>
+    [HttpGet("terms")]
+    [Authorize]
+    public async Task<IActionResult> GetTerms()
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var roleStr = User.FindFirstValue(ClaimTypes.Role);
+        if (!Enum.TryParse<PortalUserType>(roleStr, out var role))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+        var roleValue = (int)role;
+
+        var terms = await _context.TermsAndConditions
+            .FirstOrDefaultAsync(t => t.Role == roleValue);
+
+        if (terms == null)
+        {
+            return Ok(new
+            {
+                success = true,
+                data = new { content = (string?)null, version = 0, hasAccepted = false, acceptedAt = (DateTime?)null }
+            });
+        }
+
+        var acceptance = await _context.TermsAcceptances
+            .Where(a => a.PortalUserId == userId && a.Role == roleValue && a.Version == terms.Version)
+            .OrderByDescending(a => a.AcceptedAt)
+            .FirstOrDefaultAsync();
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                content = terms.Content,
+                version = terms.Version,
+                hasAccepted = acceptance != null,
+                acceptedAt = acceptance?.AcceptedAt
+            }
+        });
+    }
+
+    /// <summary>
+    /// Records acceptance of the current terms version for the authenticated user's role.
+    /// Idempotent — accepting an already-accepted version is a no-op success.
+    /// </summary>
+    [HttpPost("terms/accept")]
+    [Authorize]
+    public async Task<IActionResult> AcceptTerms()
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var roleStr = User.FindFirstValue(ClaimTypes.Role);
+        if (!Enum.TryParse<PortalUserType>(roleStr, out var role))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+        var roleValue = (int)role;
+
+        var terms = await _context.TermsAndConditions
+            .FirstOrDefaultAsync(t => t.Role == roleValue);
+        if (terms == null)
+            return BadRequest(new { success = false, message = "No terms are configured for your account type." });
+
+        var alreadyAccepted = await _context.TermsAcceptances
+            .AnyAsync(a => a.PortalUserId == userId && a.Role == roleValue && a.Version == terms.Version);
+
+        if (!alreadyAccepted)
+        {
+            _context.TermsAcceptances.Add(new TermsAcceptance
+            {
+                Id = Guid.NewGuid(),
+                PortalUserId = userId,
+                Role = roleValue,
+                Version = terms.Version,
+                AcceptedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true, message = "Terms accepted." });
     }
 }

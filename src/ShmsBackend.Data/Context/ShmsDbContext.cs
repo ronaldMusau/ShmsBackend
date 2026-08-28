@@ -48,6 +48,10 @@ public class ShmsDbContext : DbContext
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<NotificationPreference> NotificationPreferences { get; set; }
 
+    // Terms & Conditions
+    public DbSet<TermsAndConditions> TermsAndConditions { get; set; }
+    public DbSet<TermsAcceptance> TermsAcceptances { get; set; }
+
     // Tenant house history
     public DbSet<TenantHouseHistory> TenantHouseHistories { get; set; }
 
@@ -349,6 +353,26 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.ToTable("NotificationPreferences");
+        });
+
+        // ── TermsAndConditions Configuration ────────────────────────────────
+        modelBuilder.Entity<TermsAndConditions>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.Version).HasDefaultValue(1);
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasIndex(e => e.Role).IsUnique();
+            entity.ToTable("TermsAndConditions");
+        });
+
+        // ── TermsAcceptance Configuration ───────────────────────────────────
+        modelBuilder.Entity<TermsAcceptance>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.AcceptedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasIndex(e => new { e.PortalUserId, e.Role, e.Version });
+            entity.ToTable("TermsAcceptances");
         });
 
         // ── TenantHouseHistory Configuration ────────────────────────────────
