@@ -14,4 +14,5 @@ public interface IPortalAuthService
     Task<ApiResponse<string>> ResetPasswordAsync(PortalResetPasswordDto dto);
     Task<ApiResponse<string>> VerifyEmailAsync(PortalVerifyEmailDto dto);
     Task<ApiResponse<string>> SetPasswordAsync(PortalSetPasswordDto dto);
+    Task<ApiResponse<string>> ChangePasswordAsync(Guid userId, PortalChangePasswordDto dto);
 }

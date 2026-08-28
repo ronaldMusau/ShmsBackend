@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Services.Auth;
@@ -120,6 +121,23 @@ public class AuthController : ControllerBase
             return BadRequest(ModelState);
 
         var result = await _authService.ResetPasswordAsync(dto);
+        if (!result.Success)
+            return BadRequest(result);
+        return Ok(result);
+    }
+
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(adminIdClaim, out var adminId))
+            return Unauthorized();
+
+        var result = await _authService.ChangePasswordAsync(adminId, dto);
         if (!result.Success)
             return BadRequest(result);
         return Ok(result);

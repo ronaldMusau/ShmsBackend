@@ -363,6 +363,38 @@ public class PortalAuthService : IPortalAuthService
         }
     }
 
+    public async Task<ApiResponse<string>> ChangePasswordAsync(Guid userId, PortalChangePasswordDto dto)
+    {
+        try
+        {
+            var user = await _context.PortalUsers
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+                return ApiResponse<string>.FailureResponse("User not found.");
+
+            if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+            {
+                _logger.LogWarning("Portal change password failed - incorrect current password for {UserId}", userId);
+                return ApiResponse<string>.FailureResponse("Current password is incorrect");
+            }
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, 12);
+            user.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Portal password changed for {UserId}", userId);
+            return ApiResponse<string>.SuccessResponse(
+                "Password changed successfully.", "Password updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during portal password change for {UserId}", userId);
+            return ApiResponse<string>.FailureResponse(
+                "An error occurred. Please try again.");
+        }
+    }
+
     public async Task<ApiResponse<string>> VerifyEmailAsync(PortalVerifyEmailDto dto)
     {
         try

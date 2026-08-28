@@ -13,4 +13,5 @@ public interface IAuthService
     Task<ApiResponse<string>> LogoutAsync(string token);
     Task<ApiResponse<string>> RequestPasswordResetAsync(RequestPasswordResetDto requestPasswordResetDto);
     Task<ApiResponse<string>> ResetPasswordAsync(ResetPasswordDto dto);
+    Task<ApiResponse<string>> ChangePasswordAsync(Guid adminId, ChangePasswordDto dto);
 }

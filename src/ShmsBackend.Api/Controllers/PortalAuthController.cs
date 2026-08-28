@@ -153,6 +153,28 @@ public class PortalAuthController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Allows an authenticated portal user (Landlord, Agent, Tenant, or Explorer) to change
+    /// their password by supplying their current password.
+    /// </summary>
+    [HttpPost("change-password")]
+    [Authorize]
+    public async Task<IActionResult> ChangePassword([FromBody] PortalChangePasswordDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var result = await _portalAuthService.ChangePasswordAsync(userId, dto);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
     [HttpGet("me")]
     [Authorize]
     public async Task<IActionResult> GetMe()

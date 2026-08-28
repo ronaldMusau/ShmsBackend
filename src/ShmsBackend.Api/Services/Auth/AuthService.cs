@@ -422,4 +422,34 @@ public class AuthService : IAuthService
             return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }
+
+    public async Task<ApiResponse<string>> ChangePasswordAsync(Guid adminId, ChangePasswordDto dto)
+    {
+        try
+        {
+            var admin = await _unitOfWork.Admins.GetByIdAsync(adminId);
+            if (admin == null)
+                return ApiResponse<string>.FailureResponse("Invalid request.");
+
+            if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, admin.PasswordHash))
+            {
+                _logger.LogWarning("Change password failed - incorrect current password for admin: {AdminId}", adminId);
+                return ApiResponse<string>.FailureResponse("Current password is incorrect");
+            }
+
+            admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+            admin.UpdatedAt = DateTime.UtcNow;
+
+            await _unitOfWork.Admins.UpdateAsync(admin);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation("Password changed successfully for admin: {AdminId}", adminId);
+            return ApiResponse<string>.SuccessResponse("Password changed successfully.", "Password updated");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during password change for admin: {AdminId}", adminId);
+            return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
+        }
+    }
 }
