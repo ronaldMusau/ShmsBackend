@@ -51,6 +51,7 @@ public class ShmsDbContext : DbContext
     // Terms & Conditions
     public DbSet<TermsAndConditions> TermsAndConditions { get; set; }
     public DbSet<TermsAcceptance> TermsAcceptances { get; set; }
+    public DbSet<TermsHistory> TermsHistories { get; set; }
 
     // Tenant house history
     public DbSet<TenantHouseHistory> TenantHouseHistories { get; set; }
@@ -373,6 +374,16 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.AcceptedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.HasIndex(e => new { e.PortalUserId, e.Role, e.Version });
             entity.ToTable("TermsAcceptances");
+        });
+
+        // ── TermsHistory Configuration ─────────────────────────────────────
+        modelBuilder.Entity<TermsHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Content).IsRequired();
+            entity.Property(e => e.ArchivedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasIndex(e => new { e.Role, e.Version });
+            entity.ToTable("TermsHistories");
         });
 
         // ── TenantHouseHistory Configuration ────────────────────────────────

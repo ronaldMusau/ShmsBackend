@@ -76,6 +76,18 @@ public class TermsAdminController : ControllerBase
         }
         else
         {
+            // Archive the version that's about to be replaced (not the new content).
+            _context.TermsHistories.Add(new TermsHistory
+            {
+                Id = Guid.NewGuid(),
+                Role = terms.Role,
+                Content = terms.Content,
+                Version = terms.Version,
+                UpdatedAt = terms.UpdatedAt,
+                ArchivedAt = DateTime.UtcNow,
+                UpdatedByAdminId = terms.UpdatedByAdminId
+            });
+
             terms.Content = dto.Content ?? string.Empty;
             terms.Version += 1;
             terms.UpdatedAt = DateTime.UtcNow;
@@ -84,6 +96,30 @@ public class TermsAdminController : ControllerBase
 
         await _context.SaveChangesAsync();
         return Ok(new { success = true, message = "Terms updated.", data = new { role, terms.Version } });
+    }
+
+    // GET /api/admin/terms/{role}/history — archived (superseded) versions for one role
+    [HttpGet("{role:int}/history")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> GetTermsHistory(int role)
+    {
+        if (!Enum.IsDefined(typeof(PortalUserType), role))
+            return BadRequest(new { success = false, message = "Invalid role." });
+
+        var data = await _context.TermsHistories
+            .Where(h => h.Role == role)
+            .OrderByDescending(h => h.Version)
+            .Select(h => new
+            {
+                version = h.Version,
+                content = h.Content,
+                updatedAt = h.UpdatedAt,
+                archivedAt = h.ArchivedAt,
+                updatedByAdminId = h.UpdatedByAdminId
+            })
+            .ToListAsync();
+
+        return Ok(new { success = true, data });
     }
 }
 
