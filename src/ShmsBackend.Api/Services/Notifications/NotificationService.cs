@@ -135,6 +135,23 @@ public class NotificationService : INotificationService
         await _context.SaveChangesAsync();
     }
 
+    public async Task MarkBulkAsReadAsync(string userId, IEnumerable<Guid> notificationIds)
+    {
+        var ids = notificationIds?.Distinct().ToList() ?? new List<Guid>();
+        if (ids.Count == 0) return;
+
+        var notifications = await _context.Notifications
+            .Where(n => ids.Contains(n.Id) && n.TargetUserId == userId)
+            .ToListAsync();
+
+        foreach (var notification in notifications)
+        {
+            notification.IsRead = true;
+            notification.ReadAt = DateTime.UtcNow;
+        }
+        await _context.SaveChangesAsync();
+    }
+
     public async Task<bool> DeleteAsync(Guid notificationId, string userId)
     {
         var notification = await _context.Notifications
@@ -145,6 +162,19 @@ public class NotificationService : INotificationService
         _context.Notifications.Remove(notification);
         await _context.SaveChangesAsync();
         return true;
+    }
+
+    public async Task DeleteBulkAsync(string userId, IEnumerable<Guid> notificationIds)
+    {
+        var ids = notificationIds?.Distinct().ToList() ?? new List<Guid>();
+        if (ids.Count == 0) return;
+
+        var notifications = await _context.Notifications
+            .Where(n => ids.Contains(n.Id) && n.TargetUserId == userId)
+            .ToListAsync();
+
+        _context.Notifications.RemoveRange(notifications);
+        await _context.SaveChangesAsync();
     }
 
     public async Task DeleteAllAsync(string userId, NotificationAudience? userRole)

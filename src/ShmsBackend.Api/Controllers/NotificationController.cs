@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ShmsBackend.Api.Models.DTOs.Notification;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Models.Entities;
 
@@ -36,7 +37,7 @@ public class NotificationController : ControllerBase
     {
         var userId = GetUserId();
         var notifications = await _notificationService.GetForUserAsync(userId, GetUserRole());
-        return Ok(notifications);
+        return Ok(new { success = true, data = notifications });
     }
 
     // GET /api/notifications/unread-count
@@ -83,6 +84,26 @@ public class NotificationController : ControllerBase
     {
         var userId = GetUserId();
         await _notificationService.DeleteAllAsync(userId, GetUserRole());
+        return Ok(new { success = true });
+    }
+
+    // PATCH /api/notifications/bulk/read
+    [HttpPatch("bulk/read")]
+    [Authorize]
+    public async Task<IActionResult> MarkBulkAsRead([FromBody] BulkNotificationIdsDto dto)
+    {
+        var userId = GetUserId();
+        await _notificationService.MarkBulkAsReadAsync(userId, dto.Ids);
+        return Ok(new { success = true });
+    }
+
+    // POST /api/notifications/bulk/delete
+    [HttpPost("bulk/delete")]
+    [Authorize]
+    public async Task<IActionResult> DeleteBulk([FromBody] BulkNotificationIdsDto dto)
+    {
+        var userId = GetUserId();
+        await _notificationService.DeleteBulkAsync(userId, dto.Ids);
         return Ok(new { success = true });
     }
 }

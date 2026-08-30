@@ -25,8 +25,14 @@ public interface INotificationService
     // Mark all notifications as read for a user
     Task MarkAllAsReadAsync(string userId, NotificationAudience? userRole);
 
+    // Mark a set of notifications as read (ownership-scoped to the user)
+    Task MarkBulkAsReadAsync(string userId, IEnumerable<Guid> notificationIds);
+
     // Delete a specific notification
     Task<bool> DeleteAsync(Guid notificationId, string userId);
+
+    // Delete a set of notifications (ownership-scoped to the user)
+    Task DeleteBulkAsync(string userId, IEnumerable<Guid> notificationIds);
 
     // Delete all notifications for a user
     Task DeleteAllAsync(string userId, NotificationAudience? userRole);
