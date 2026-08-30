@@ -347,6 +347,7 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.Message).IsRequired().HasMaxLength(500);
             entity.Property(e => e.Category).HasMaxLength(50).HasDefaultValue("general");
             entity.Property(e => e.TargetUserId).HasMaxLength(100);
+            entity.Property(e => e.EntityType).HasMaxLength(50);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.HasIndex(e => e.TargetUserId);
             entity.HasIndex(e => e.Audience);

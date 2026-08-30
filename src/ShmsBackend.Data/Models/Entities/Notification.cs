@@ -37,6 +37,11 @@ public class Notification : ISoftDelete
     // Categories: general, user, property, payment, security
     public string Category { get; set; } = "general";
 
+    // Optional drill-down reference to the record this notification is about.
+    // EntityType examples: "Complaint", "FlatEdit", "Vacate", "Flat"
+    public string? EntityType { get; set; }
+    public Guid? EntityId { get; set; }
+
     public bool IsRead { get; set; } = false;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

@@ -205,7 +205,7 @@ public class ComplaintController : ControllerBase
 
             try
             {
-                await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been reviewed and closed: {dto.ResolutionNotes}", "property");
+                await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been reviewed and closed: {dto.ResolutionNotes}", "property", "Complaint", complaint.Id.ToString());
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of complaint closure"); }
 
@@ -300,7 +300,7 @@ public class ComplaintController : ControllerBase
 
         try
         {
-            await _notificationService.SendToUserAsync(firstStep.ApproverId.ToString(), $"Complaint {complaint.TicketNumber} requires your approval (step 1).", "property");
+            await _notificationService.SendToUserAsync(firstStep.ApproverId.ToString(), $"Complaint {complaint.TicketNumber} requires your approval (step 1).", "property", "Complaint", complaint.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify first approver"); }
 
@@ -339,7 +339,7 @@ public class ComplaintController : ControllerBase
 
         try
         {
-            await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been reopened.", "property");
+            await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been reopened.", "property", "Complaint", complaint.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of complaint reopen"); }
 
@@ -390,7 +390,7 @@ public class ComplaintController : ControllerBase
 
         try { await _emailService.SendComplaintEscalatedAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to send agent escalation email"); }
-        try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Complaint {complaint.TicketNumber} has been escalated to you.", "property"); }
+        try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Complaint {complaint.TicketNumber} has been escalated to you.", "property", "Complaint", complaint.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of escalation"); }
 
         return Ok(new { success = true, message = "Escalated to agent." });
@@ -449,7 +449,7 @@ public class ComplaintController : ControllerBase
         {
             try { await _emailService.SendComplaintClosedEmailAsync(tenant.Email, tenant.FirstName, complaint.TicketNumber, dto.ClosingComment); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send final close email"); }
-            try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), $"Your complaint {complaint.TicketNumber} has been closed: {dto.ClosingComment}", "property"); }
+            try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), $"Your complaint {complaint.TicketNumber} has been closed: {dto.ClosingComment}", "property", "Complaint", complaint.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of final close"); }
         }
         return Ok(new { success = true, message = "Complaint closed." });
@@ -496,7 +496,7 @@ public class ComplaintController : ControllerBase
                 await _notificationService.SendToRolesAsync(
                     new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                     $"Complaint {complaint.TicketNumber} was rejected at the approval step: {dto.Notes}. Resubmit the billable decision to restart.",
-                    "property");
+                    "property", "Complaint", complaint.Id.ToString());
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of approval rejection"); }
 
@@ -527,7 +527,7 @@ public class ComplaintController : ControllerBase
             complaint.CurrentApprovalStepOrder = nextStep.StepOrder;
             await _context.SaveChangesAsync();
 
-            try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Complaint {complaint.TicketNumber} requires your approval (step {nextStep.StepOrder}).", "property"); }
+            try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Complaint {complaint.TicketNumber} requires your approval (step {nextStep.StepOrder}).", "property", "Complaint", complaint.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver"); }
 
             var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
@@ -553,7 +553,7 @@ public class ComplaintController : ControllerBase
             else
             {
                 await _context.SaveChangesAsync();
-                try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"Complaint {complaint.TicketNumber} requires your final approval.", "property"); }
+                try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"Complaint {complaint.TicketNumber} requires your final approval.", "property", "Complaint", complaint.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of pending approval"); }
                 var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == complaint.LandlordId);
                 if (landlord != null)
@@ -699,7 +699,7 @@ public class ComplaintController : ControllerBase
 
         try
         {
-            await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"New message on complaint {complaint.TicketNumber}: {dto.Message}", "property");
+            await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"New message on complaint {complaint.TicketNumber}: {dto.Message}", "property", "Complaint", complaint.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of new management message"); }
 

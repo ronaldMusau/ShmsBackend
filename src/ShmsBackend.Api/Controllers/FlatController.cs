@@ -200,7 +200,7 @@ public class FlatController : ControllerBase
         var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == flat.LandlordId);
         if (landlord != null)
         {
-            try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit has been submitted for your flat \"{flat.FlatName}\" and sent for approval.", "property"); }
+            try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit has been submitted for your flat \"{flat.FlatName}\" and sent for approval.", "property", "FlatEdit", flat.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of flat edit submission"); }
             try { await _emailService.SendFlatEditSubmittedEmailAsync(landlord.Email, landlord.FirstName, flat.FlatName); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit submission email"); }
@@ -209,7 +209,7 @@ public class FlatController : ControllerBase
         var firstApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == firstStep.ApproverId);
         if (firstApprover != null)
         {
-            try { await _notificationService.SendToUserAsync(firstApprover.Id.ToString(), $"A flat edit for \"{flat.FlatName}\" requires your approval.", "property"); }
+            try { await _notificationService.SendToUserAsync(firstApprover.Id.ToString(), $"A flat edit for \"{flat.FlatName}\" requires your approval.", "property", "FlatEdit", flat.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify first approver of flat edit"); }
             try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"FLAT-{flat.FlatName}", firstStep.StepOrder); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit approval-step email"); }
@@ -261,7 +261,7 @@ public class FlatController : ControllerBase
             var requester = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == request.RequestedByUserId);
             if (requester != null)
             {
-                try { await _notificationService.SendToUserAsync(requester.Id.ToString(), $"Your flat edit for \"{request.Flat!.FlatName}\" was rejected and needs revision.", "property"); }
+                try { await _notificationService.SendToUserAsync(requester.Id.ToString(), $"Your flat edit for \"{request.Flat!.FlatName}\" was rejected and needs revision.", "property", "FlatEdit", request.FlatId.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify requester of flat edit rejection"); }
                 try { await _emailService.SendApprovalRejectedEmailAsync(requester.Email, requester.FirstName, $"FLAT-{request.Flat!.FlatName}", dto.Notes!); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit rejection email"); }
@@ -279,7 +279,7 @@ public class FlatController : ControllerBase
             var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
             if (nextApprover != null)
             {
-                try { await _notificationService.SendToUserAsync(nextApprover.Id.ToString(), $"A flat edit for \"{request.Flat!.FlatName}\" requires your approval.", "property"); }
+                try { await _notificationService.SendToUserAsync(nextApprover.Id.ToString(), $"A flat edit for \"{request.Flat!.FlatName}\" requires your approval.", "property", "FlatEdit", request.FlatId.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver of flat edit"); }
                 try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"FLAT-{request.Flat!.FlatName}", nextStep.StepOrder); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit approval-step email"); }
@@ -296,7 +296,7 @@ public class FlatController : ControllerBase
             var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == editFlat.LandlordId);
             if (landlord != null)
             {
-                try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit to your flat \"{editFlat.FlatName}\" requires your final approval.", "property"); }
+                try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit to your flat \"{editFlat.FlatName}\" requires your final approval.", "property", "FlatEdit", editFlat.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of pending flat edit approval"); }
                 try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, $"FLAT-{editFlat.FlatName}"); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord flat edit approval-needed email"); }

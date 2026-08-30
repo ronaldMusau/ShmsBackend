@@ -152,7 +152,7 @@ public class VacateController : ControllerBase
             try { await _emailService.SendVacateArrearsBlockEmailAsync(tenant.Email, tenant.FirstName, arrears); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send arrears block email"); }
 
-            try { await _notificationService.SendToUserAsync(dto.TenantId.ToString(), $"You have KES {arrears:N2} in arrears. Please clear this before your vacate request can proceed.", "property"); }
+            try { await _notificationService.SendToUserAsync(dto.TenantId.ToString(), $"You have KES {arrears:N2} in arrears. Please clear this before your vacate request can proceed.", "property", "Vacate"); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of arrears block"); }
 
             return BadRequest(new
@@ -241,7 +241,7 @@ public class VacateController : ControllerBase
         try { await _emailService.SendVacateAssignedAgentEmailAsync(agent.Email, agent.FirstName, houseNumber); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate inspection email to agent {AgentId}", agent.Id); }
 
-        try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"You have a new vacate inspection assigned for house {houseNumber}.", "property"); }
+        try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"You have a new vacate inspection assigned for house {houseNumber}.", "property", "Vacate", vacateRequest.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of vacate inspection assignment"); }
 
         try
@@ -249,7 +249,7 @@ public class VacateController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"A new vacate request has been raised for house {houseNumber}.",
-                "property");
+                "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of new vacate request"); }
 
@@ -323,7 +323,7 @@ public class VacateController : ControllerBase
                 try { await _emailService.SendVacateSettlementReversedEmailAsync(tenant.Email, tenant.FirstName, houseNumber); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send settlement reversal email to tenant"); }
 
-                try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), "Your vacate request was cancelled and any forfeited amounts have been restored to your account.", "property"); }
+                try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), "Your vacate request was cancelled and any forfeited amounts have been restored to your account.", "property", "Vacate", vacateRequest.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of settlement reversal"); }
             }
         }
@@ -407,7 +407,7 @@ public class VacateController : ControllerBase
                 try { await _emailService.SendVacateCancelledAgentEmailAsync(agent.Email, agent.FirstName, houseNumber); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate cancelled email to agent {AgentId}", agent.Id); }
 
-                try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Vacate request for house {houseNumber} has been cancelled.", "property"); }
+                try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Vacate request for house {houseNumber} has been cancelled.", "property", "Vacate", vacateRequest.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of vacate cancellation"); }
             }
         }
@@ -417,7 +417,7 @@ public class VacateController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"Vacate request for house {houseNumber} has been cancelled.",
-                "property");
+                "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate cancellation"); }
 
@@ -721,7 +721,7 @@ public class VacateController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"Vacate inspection for house {houseNumber} has been submitted and is awaiting review.",
-                "property");
+                "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate inspection submission"); }
 
@@ -1178,7 +1178,7 @@ public class VacateController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"Tenant has appealed the vacate settlement for house {houseNumber}.",
-                "property");
+                "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate appeal"); }
 
@@ -1369,7 +1369,7 @@ public class VacateController : ControllerBase
                 await _notificationService.SendToRolesAsync(
                     new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                     $"Vacate request for house {houseNumber} was rejected at step {currentStep.StepOrder}.",
-                    "property");
+                    "property", "Vacate", vacateRequest.Id.ToString());
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate approval rejection"); }
 
@@ -1401,7 +1401,7 @@ public class VacateController : ControllerBase
             vacateRequest.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Vacate request for house {houseNumber} requires your approval (step {nextStep.StepOrder}).", "property"); }
+            try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Vacate request for house {houseNumber} requires your approval (step {nextStep.StepOrder}).", "property", "Vacate", vacateRequest.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver of vacate step"); }
 
             var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
@@ -1469,7 +1469,7 @@ public class VacateController : ControllerBase
         var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
         var houseNumber = house?.HouseNumber ?? "";
 
-        try { await _notificationService.SendToUserAsync(firstStep.ApproverId.ToString(), $"Vacate request for house {houseNumber} has been resubmitted and requires your approval (step {firstStep.StepOrder}).", "property"); }
+        try { await _notificationService.SendToUserAsync(firstStep.ApproverId.ToString(), $"Vacate request for house {houseNumber} has been resubmitted and requires your approval (step {firstStep.StepOrder}).", "property", "Vacate", vacateRequest.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify first approver of vacate resubmission"); }
 
         var firstApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == firstStep.ApproverId);
@@ -1523,7 +1523,7 @@ public class VacateController : ControllerBase
             var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
             if (tenant != null)
             {
-                try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"Your vacate request for house {houseNumber} has been approved. Settlement is ready for review.", "property"); }
+                try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"Your vacate request for house {houseNumber} has been approved. Settlement is ready for review.", "property", "Vacate", vacateRequest.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate approval"); }
 
                 try { await _emailService.SendVacateApprovedTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber); }
@@ -1551,7 +1551,7 @@ public class VacateController : ControllerBase
             var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
             if (tenant != null)
             {
-                try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"Your vacate request for house {houseNumber} has been closed. See final remarks in your portal.", "property"); }
+                try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"Your vacate request for house {houseNumber} has been closed. See final remarks in your portal.", "property", "Vacate", vacateRequest.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate final rejection"); }
 
                 try { await _emailService.SendVacateFinalRejectionTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber, dto.Remarks); }
@@ -1785,7 +1785,7 @@ public class VacateController : ControllerBase
         var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
         if (tenant != null)
         {
-            try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Management has processed your vacate refund for house {houseNumber}. Please check your portal for details.", "property"); }
+            try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Management has processed your vacate refund for house {houseNumber}. Please check your portal for details.", "property", "Vacate", settlement.VacateRequestId.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate refund payment"); }
 
             try { await _emailService.SendVacateRefundPaidTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber); }
@@ -1863,7 +1863,7 @@ public class VacateController : ControllerBase
         _context.VacateMessages.Add(message);
         await _context.SaveChangesAsync();
 
-        try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"New message on your vacate request for house {houseNumber}: {dto.Message}", "property"); }
+        try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"New message on your vacate request for house {houseNumber}: {dto.Message}", "property", "Vacate", vacateRequest.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of new management vacate message"); }
 
         return Ok(new
@@ -1957,7 +1957,7 @@ public class VacateController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"New message from tenant on vacate request for house {houseNumber}: {dto.Message}",
-                "property");
+                "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of new tenant vacate message"); }
 
@@ -2103,7 +2103,7 @@ public class VacateController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), "Your tenancy has been formally closed out. Thank you for your tenancy.", "property"); }
+        try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), "Your tenancy has been formally closed out. Thank you for your tenancy.", "property", "Vacate", vacateRequest.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate clearance"); }
 
         try
@@ -2111,7 +2111,7 @@ public class VacateController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"Vacate request for house {houseNumber} has been fully closed out.",
-                "property");
+                "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate clearance"); }
 

@@ -99,7 +99,7 @@ public class PortalComplaintController : ControllerBase
 
         try
         {
-            await _notificationService.SendToUserAsync(tenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been received.", "property");
+            await _notificationService.SendToUserAsync(tenantId.ToString(), $"Your complaint {complaint.TicketNumber} has been received.", "property", "Complaint", complaint.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to send tenant complaint notification"); }
 
@@ -126,14 +126,14 @@ public class PortalComplaintController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"New complaint {complaint.TicketNumber} raised by {tenant.FirstName} {tenant.LastName}.",
-                "property");
+                "property", "Complaint", complaint.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to process management complaint alerts"); }
 
         // Landlord notification
         try
         {
-            await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"A complaint has been raised at {tenant.House.HouseNumber} - {tenant.House.Flat.FlatName}.", "property");
+            await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"A complaint has been raised at {tenant.House.HouseNumber} - {tenant.House.Flat.FlatName}.", "property", "Complaint", complaint.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord complaint notification"); }
 
@@ -346,7 +346,7 @@ public class PortalComplaintController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"New message from tenant on complaint {complaint.TicketNumber}: {dto.Message}",
-                "property");
+                "property", "Complaint", complaint.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of new tenant message"); }
 
@@ -576,7 +576,7 @@ public class PortalComplaintController : ControllerBase
         });
         await _context.SaveChangesAsync();
 
-        try { await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Please review the completed work for complaint {complaint.TicketNumber}.", "property"); }
+        try { await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Please review the completed work for complaint {complaint.TicketNumber}.", "property", "Complaint", complaint.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of agent completion"); }
 
         return Ok(new { success = true, message = "Marked as completed. Awaiting tenant verification." });
@@ -625,7 +625,7 @@ public class PortalComplaintController : ControllerBase
                 await _notificationService.SendToRolesAsync(
                     new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                     $"Complaint {complaint.TicketNumber} verified by tenant — ready for final close.",
-                    "property");
+                    "property", "Complaint", complaint.Id.ToString());
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of tenant verification"); }
 
@@ -663,7 +663,7 @@ public class PortalComplaintController : ControllerBase
 
             if (complaint.EscalatedToAgentId.HasValue)
             {
-                try { await _notificationService.SendToUserAsync(complaint.EscalatedToAgentId.Value.ToString(), $"Complaint {complaint.TicketNumber} was rejected by the tenant: {dto.RejectionReason}. Please redo.", "property"); }
+                try { await _notificationService.SendToUserAsync(complaint.EscalatedToAgentId.Value.ToString(), $"Complaint {complaint.TicketNumber} was rejected by the tenant: {dto.RejectionReason}. Please redo.", "property", "Complaint", complaint.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of rejection"); }
             }
 
@@ -733,7 +733,7 @@ public class PortalComplaintController : ControllerBase
                     await _emailService.SendDeductionCreatedEmailAsync(landlordForEmail.Email, landlordForEmail.FirstName, complaint.TicketNumber, complaint.BillableAmount.Value, complaint.BillableExplanation);
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send deduction email to landlord"); }
-            try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"A deduction of KES {complaint.BillableAmount.Value:N2} has been created on complaint {complaint.TicketNumber}.", "property"); }
+            try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"A deduction of KES {complaint.BillableAmount.Value:N2} has been created on complaint {complaint.TicketNumber}.", "property", "Complaint", complaint.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of deduction"); }
         }
         else
@@ -749,7 +749,7 @@ public class PortalComplaintController : ControllerBase
             await _notificationService.SendToRolesAsync(
                 new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                 $"Landlord {(dto.Approved ? "approved" : "rejected")} complaint {complaint.TicketNumber}.",
-                "property");
+                "property", "Complaint", complaint.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of landlord's final decision"); }
 

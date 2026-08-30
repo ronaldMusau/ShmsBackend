@@ -95,7 +95,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
                 await notificationService.SendToRolesAsync(
                     new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
                     $"Complaint {complaint.TicketNumber} has been open for {daysOpen} days and requires attention.",
-                    "property");
+                    "property", "Complaint", complaint.Id.ToString());
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send management notification for overdue complaint {TicketNumber}", complaint.TicketNumber); }
 
@@ -114,7 +114,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
                     try { await emailService.SendComplaintOverdueAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber, daysOpen); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send overdue complaint email to agent {Email}", agent.Email); }
                 }
-                try { await notificationService.SendToUserAsync(complaint.EscalatedToAgentId.Value.ToString(), $"Complaint {complaint.TicketNumber} has been open for {daysOpen} days. Please complete your work.", "property"); }
+                try { await notificationService.SendToUserAsync(complaint.EscalatedToAgentId.Value.ToString(), $"Complaint {complaint.TicketNumber} has been open for {daysOpen} days. Please complete your work.", "property", "Complaint", complaint.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of overdue complaint {TicketNumber}", complaint.TicketNumber); }
             }
 
@@ -127,7 +127,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
                     try { await emailService.SendComplaintOverdueLandlordEmailAsync(landlord.Email, landlord.FirstName, complaint.TicketNumber, daysOpen); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send overdue complaint email to landlord {Email}", landlord.Email); }
                 }
-                try { await notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"Complaint {complaint.TicketNumber} has been awaiting your decision for {daysOpen} days.", "property"); }
+                try { await notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"Complaint {complaint.TicketNumber} has been awaiting your decision for {daysOpen} days.", "property", "Complaint", complaint.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of overdue complaint {TicketNumber}", complaint.TicketNumber); }
             }
 

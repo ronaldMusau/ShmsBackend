@@ -152,7 +152,7 @@ public class FlatService
                     NotificationAudience.Accountant
                 },
                 $"New flat '{flat.FlatName}' created in {location}{houseText}.",
-                "property"
+                "property", "Flat", flat.Id.ToString()
             );
         }
         catch (Exception ex)
@@ -165,7 +165,7 @@ public class FlatService
             await _notificationService.SendToUserAsync(
                 dto.LandlordId.ToString(),
                 $"A new flat '{flat.FlatName}' has been created and assigned to you.",
-                "property");
+                "property", "Flat", flat.Id.ToString());
         }
         catch (Exception ex)
         {
@@ -193,7 +193,7 @@ public class FlatService
                     await _notificationService.SendToUserAsync(
                         agent.Id.ToString(),
                         $"A new flat '{flat.FlatName}' has been added for you to manage.",
-                        "property");
+                        "property", "Flat", flat.Id.ToString());
                 }
             }
             catch (Exception ex)

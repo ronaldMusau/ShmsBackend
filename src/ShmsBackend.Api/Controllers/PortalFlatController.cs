@@ -369,7 +369,7 @@ public class PortalFlatController : ControllerBase
         var requester = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == request.RequestedByUserId);
         if (requester != null)
         {
-            try { await _notificationService.SendToUserAsync(requester.Id.ToString(), $"The landlord {(dto.Approved ? "approved" : "rejected")} your edit for \"{request.Flat.FlatName}\".", "property"); }
+            try { await _notificationService.SendToUserAsync(requester.Id.ToString(), $"The landlord {(dto.Approved ? "approved" : "rejected")} your edit for \"{request.Flat.FlatName}\".", "property", "FlatEdit", request.FlatId.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify requester of landlord's flat edit decision"); }
             try { await _emailService.SendLandlordDecisionEmailAsync(requester.Email, requester.FirstName, $"FLAT-{request.Flat.FlatName}", request.LandlordDecision!, request.LandlordDecisionNotes, null); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit landlord-decision email"); }

@@ -27,7 +27,8 @@ public class NotificationService : INotificationService
         _logger = logger;
     }
 
-    public async Task SendToRoleAsync(NotificationAudience audience, string message, string category = "general")
+    public async Task SendToRoleAsync(NotificationAudience audience, string message, string category = "general",
+        string? entityType = null, string? entityId = null)
     {
         var userIds = await GetUserIdsByAudienceAsync(audience);
 
@@ -37,6 +38,8 @@ public class NotificationService : INotificationService
             return;
         }
 
+        var parsedEntityId = string.IsNullOrEmpty(entityId) ? (Guid?)null : Guid.Parse(entityId);
+
         var notifications = userIds.Select(userId => new Notification
         {
             Id = Guid.NewGuid(),
@@ -44,6 +47,8 @@ public class NotificationService : INotificationService
             TargetUserId = userId,
             Message = message,
             Category = category,
+            EntityType = entityType,
+            EntityId = parsedEntityId,
             IsRead = false,
             CreatedAt = DateTime.UtcNow
         }).ToList();
@@ -51,7 +56,7 @@ public class NotificationService : INotificationService
         _context.Notifications.AddRange(notifications);
         await _context.SaveChangesAsync();
 
-        var payload = new { message, category, createdAt = DateTime.UtcNow };
+        var payload = new { message, category, entityType, entityId = parsedEntityId, createdAt = DateTime.UtcNow };
         foreach (var userId in userIds)
         {
             await _hubContext.Clients.Group($"user_{userId}").SendAsync("ReceiveNotification", payload);
@@ -61,16 +66,20 @@ public class NotificationService : INotificationService
             userIds.Count, audience, message);
     }
 
-    public async Task SendToRolesAsync(IEnumerable<NotificationAudience> audiences, string message, string category = "general")
+    public async Task SendToRolesAsync(IEnumerable<NotificationAudience> audiences, string message, string category = "general",
+        string? entityType = null, string? entityId = null)
     {
         foreach (var audience in audiences)
         {
-            await SendToRoleAsync(audience, message, category);
+            await SendToRoleAsync(audience, message, category, entityType, entityId);
         }
     }
 
-    public async Task SendToUserAsync(string userId, string message, string category = "general")
+    public async Task SendToUserAsync(string userId, string message, string category = "general",
+        string? entityType = null, string? entityId = null)
     {
+        var parsedEntityId = string.IsNullOrEmpty(entityId) ? (Guid?)null : Guid.Parse(entityId);
+
         var notification = new Notification
         {
             Id = Guid.NewGuid(),
@@ -78,6 +87,8 @@ public class NotificationService : INotificationService
             TargetUserId = userId,
             Message = message,
             Category = category,
+            EntityType = entityType,
+            EntityId = parsedEntityId,
             IsRead = false,
             CreatedAt = DateTime.UtcNow
         };
@@ -90,6 +101,8 @@ public class NotificationService : INotificationService
             id = notification.Id,
             message = notification.Message,
             category = notification.Category,
+            entityType = notification.EntityType,
+            entityId = notification.EntityId,
             isRead = false,
             createdAt = notification.CreatedAt
         });

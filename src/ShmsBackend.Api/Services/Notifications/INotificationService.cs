@@ -8,13 +8,16 @@ namespace ShmsBackend.Api.Services.Notifications;
 public interface INotificationService
 {
     // Send to all users of a specific role (e.g. all SuperAdmins)
-    Task SendToRoleAsync(NotificationAudience audience, string message, string category = "general");
+    Task SendToRoleAsync(NotificationAudience audience, string message, string category = "general",
+        string? entityType = null, string? entityId = null);
 
     // Send to multiple roles at once
-    Task SendToRolesAsync(IEnumerable<NotificationAudience> audiences, string message, string category = "general");
+    Task SendToRolesAsync(IEnumerable<NotificationAudience> audiences, string message, string category = "general",
+        string? entityType = null, string? entityId = null);
 
     // Send to one specific user by their ID
-    Task SendToUserAsync(string userId, string message, string category = "general");
+    Task SendToUserAsync(string userId, string message, string category = "general",
+        string? entityType = null, string? entityId = null);
 
     // Fetch all notifications for a specific user (by role + specific)
     Task<IEnumerable<Notification>> GetForUserAsync(string userId, NotificationAudience? userRole);
