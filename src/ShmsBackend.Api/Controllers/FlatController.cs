@@ -403,6 +403,7 @@ public class FlatController : ControllerBase
             {
                 a.Id,
                 flatEditRequestId = a.FlatEditRequestId,
+                flatId = r?.FlatId,
                 flatName = r?.Flat?.FlatName,
                 a.AttemptNumber,
                 a.StepOrder,

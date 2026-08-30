@@ -468,6 +468,7 @@ public class PortalFlatController : ControllerBase
             {
                 d.Id,
                 flatEditRequestId = d.FlatEditRequestId,
+                flatId = r?.FlatId,
                 flatName = r?.Flat?.FlatName,
                 d.ApprovalAttemptNumber,
                 decision = d.Decision,
