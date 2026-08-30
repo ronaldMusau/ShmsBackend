@@ -329,8 +329,8 @@ public class PortalAuthController : ControllerBase
                 UserId = userId,
                 IsPortalUser = true,
                 Endpoint = dto.Endpoint,
-                P256dh = dto.P256dh,
-                Auth = dto.Auth,
+                P256dh = dto.Keys.P256dh,
+                Auth = dto.Keys.Auth,
                 CreatedAt = DateTime.UtcNow
             });
             await _context.SaveChangesAsync();
