@@ -589,6 +589,50 @@ public class ComplaintController : ControllerBase
         return Ok(new { success = true, complaints = data });
     }
 
+    // GET /api/complaint/my-approval-history
+    [HttpGet("my-approval-history")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetMyApprovalHistory()
+    {
+        var adminId = GetUserId();
+
+        var actions = await _context.ComplaintApprovalActions
+            .Where(a => a.ApproverId == adminId && (a.Decision == "Approved" || a.Decision == "Rejected"))
+            .OrderByDescending(a => a.ActionedAt)
+            .ToListAsync();
+
+        var complaintIds = actions.Select(a => a.ComplaintId).Distinct().ToList();
+        var complaints = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Where(c => complaintIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c);
+
+        var tenantIds = complaints.Values.Select(c => c.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var data = actions.Select(a =>
+        {
+            complaints.TryGetValue(a.ComplaintId, out var c);
+            return new
+            {
+                a.Id,
+                complaintId = a.ComplaintId,
+                ticketNumber = c?.TicketNumber,
+                complaintTypeName = c?.ComplaintType?.Name,
+                tenantName = c != null && tenants.TryGetValue(c.TenantId, out var tn) ? tn : null,
+                a.AttemptNumber,
+                a.StepOrder,
+                decision = a.Decision,
+                notes = a.Notes,
+                actionedAt = a.ActionedAt
+            };
+        }).ToList();
+
+        return Ok(new { success = true, history = data });
+    }
+
     // GET /api/complaint/{id}/messages
     [HttpGet("{id}/messages")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]

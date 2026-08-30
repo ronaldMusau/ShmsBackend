@@ -34,6 +34,8 @@ public class ShmsDbContext : DbContext
     public DbSet<HouseImage> HouseImages { get; set; }
     public DbSet<PendingRentChange> PendingRentChanges { get; set; }
     public DbSet<FlatEditRequest> FlatEditRequests { get; set; }
+    public DbSet<FlatEditApprovalAction> FlatEditApprovalActions { get; set; }
+    public DbSet<FlatEditLandlordDecision> FlatEditLandlordDecisions { get; set; }
 
     // Agent–Flat assignments
     public DbSet<AgentFlat> AgentFlats { get; set; }
@@ -299,6 +301,26 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.Flat)
                   .WithMany()
                   .HasForeignKey(e => e.FlatId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── FlatEditApprovalAction Configuration ────────────────────────────
+        modelBuilder.Entity<FlatEditApprovalAction>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.FlatEditRequest)
+                  .WithMany()
+                  .HasForeignKey(e => e.FlatEditRequestId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── FlatEditLandlordDecision Configuration ──────────────────────────
+        modelBuilder.Entity<FlatEditLandlordDecision>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasOne(e => e.FlatEditRequest)
+                  .WithMany()
+                  .HasForeignKey(e => e.FlatEditRequestId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
 

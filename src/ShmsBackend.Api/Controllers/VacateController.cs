@@ -874,6 +874,59 @@ public class VacateController : ControllerBase
         return Ok(new { success = true, data });
     }
 
+    // GET /api/vacate/my-approval-history
+    [HttpGet("my-approval-history")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetMyVacateApprovalHistory()
+    {
+        var adminId = GetCallerId();
+
+        var actions = await _context.VacateApprovalActions
+            .Where(a => a.ApproverId == adminId && (a.Decision == "Approved" || a.Decision == "Rejected"))
+            .OrderByDescending(a => a.ActionedAt)
+            .ToListAsync();
+
+        var requestIds = actions.Select(a => a.VacateRequestId).Distinct().ToList();
+        var requests = await _context.VacateRequests
+            .Where(v => requestIds.Contains(v.Id))
+            .ToDictionaryAsync(v => v.Id, v => v);
+
+        var houseIds = requests.Values.Select(v => v.HouseId).Distinct().ToList();
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var flatIds = requests.Values.Select(v => v.FlatId).Distinct().ToList();
+        var flats = await _context.Flats
+            .Where(f => flatIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id, f => f.FlatName);
+
+        var tenantIds = requests.Values.Select(v => v.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var data = actions.Select(a =>
+        {
+            requests.TryGetValue(a.VacateRequestId, out var v);
+            return new
+            {
+                a.Id,
+                vacateRequestId = a.VacateRequestId,
+                houseNumber = v != null ? houses.GetValueOrDefault(v.HouseId, "-") : "-",
+                flatName = v != null ? flats.GetValueOrDefault(v.FlatId, "-") : "-",
+                tenantName = v != null ? tenants.GetValueOrDefault(v.TenantId, "-") : "-",
+                a.AttemptNumber,
+                a.StepOrder,
+                decision = a.Decision,
+                notes = a.Notes,
+                actionedAt = a.ActionedAt
+            };
+        }).ToList();
+
+        return Ok(new { success = true, data });
+    }
+
     // GET /api/vacate/{id}
     [HttpGet("{id:guid}")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]

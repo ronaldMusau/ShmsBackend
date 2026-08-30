@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ShmsBackend.Data.Context;
 
@@ -11,9 +12,11 @@ using ShmsBackend.Data.Context;
 namespace ShmsBackend.Data.Migrations
 {
     [DbContext(typeof(ShmsDbContext))]
-    partial class ShmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829052708_Baseline_20260829")]
+    partial class Baseline_20260829
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -812,73 +815,6 @@ namespace ShmsBackend.Data.Migrations
                     b.HasIndex("LandlordId");
 
                     b.ToTable("Flats");
-                });
-
-            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.FlatEditApprovalAction", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTime>("ActionedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("ApproverId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("AttemptNumber")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Decision")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("FlatEditRequestId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("StepOrder")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FlatEditRequestId");
-
-                    b.ToTable("FlatEditApprovalActions");
-                });
-
-            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.FlatEditLandlordDecision", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("ApprovalAttemptNumber")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("DecidedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid>("DecidedByLandlordId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Decision")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("FlatEditRequestId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FlatEditRequestId");
-
-                    b.ToTable("FlatEditLandlordDecisions");
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.FlatEditRequest", b =>
@@ -2513,28 +2449,6 @@ namespace ShmsBackend.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Landlord");
-                });
-
-            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.FlatEditApprovalAction", b =>
-                {
-                    b.HasOne("ShmsBackend.Data.Models.Entities.Portal.FlatEditRequest", "FlatEditRequest")
-                        .WithMany()
-                        .HasForeignKey("FlatEditRequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("FlatEditRequest");
-                });
-
-            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.FlatEditLandlordDecision", b =>
-                {
-                    b.HasOne("ShmsBackend.Data.Models.Entities.Portal.FlatEditRequest", "FlatEditRequest")
-                        .WithMany()
-                        .HasForeignKey("FlatEditRequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("FlatEditRequest");
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.FlatEditRequest", b =>

@@ -866,6 +866,82 @@ public class PortalComplaintController : ControllerBase
 
         return Ok(new { success = true, complaints = data });
     }
+
+    // GET /api/portalcomplaint/landlord/my-approval-history
+    [HttpGet("landlord/my-approval-history")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordApprovalHistory()
+    {
+        var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!Guid.TryParse(landlordIdStr, out var landlordId))
+            return Unauthorized();
+
+        var decisions = await _context.ComplaintLandlordDecisions
+            .Where(d => d.DecidedByLandlordId == landlordId)
+            .OrderByDescending(d => d.DecidedAt)
+            .ToListAsync();
+
+        var complaintIds = decisions.Select(d => d.ComplaintId).Distinct().ToList();
+        var complaints = await _context.Complaints
+            .Include(c => c.ComplaintType)
+            .Where(c => complaintIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c);
+
+        var tenantIds = complaints.Values.Select(c => c.TenantId).Distinct().ToList();
+        var tenants = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
+
+        var data = decisions.Select(d =>
+        {
+            complaints.TryGetValue(d.ComplaintId, out var c);
+            return new
+            {
+                d.Id,
+                complaintId = d.ComplaintId,
+                ticketNumber = c?.TicketNumber,
+                complaintTypeName = c?.ComplaintType?.Name,
+                tenantName = c != null && tenants.TryGetValue(c.TenantId, out var tn) ? tn : null,
+                d.ApprovalAttemptNumber,
+                decision = d.Decision,
+                notes = d.Notes,
+                decidedAt = d.DecidedAt
+            };
+        }).ToList();
+
+        return Ok(new { success = true, history = data });
+    }
+
+    // GET /api/portalcomplaint/my-verification-history
+    [HttpGet("my-verification-history")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetMyVerificationHistory()
+    {
+        var tenantId = GetUserId();
+        if (tenantId == Guid.Empty)
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var data = await (
+            from w in _context.ComplaintWorkAttempts
+            join c in _context.Complaints on w.ComplaintId equals c.Id
+            where c.TenantId == tenantId
+                  && (w.TenantVerdict == "Verified" || w.TenantVerdict == "Rejected")
+            orderby w.TenantVerdictAt descending
+            select new
+            {
+                w.Id,
+                complaintId = c.Id,
+                ticketNumber = c.TicketNumber,
+                complaintTypeName = c.ComplaintType.Name,
+                attemptNumber = w.AttemptNumber,
+                verdict = w.TenantVerdict,
+                verdictReason = w.TenantVerdictReason,
+                verdictAt = w.TenantVerdictAt
+            }
+        ).ToListAsync();
+
+        return Ok(new { success = true, history = data });
+    }
 }
 
 public class CreateComplaintDto

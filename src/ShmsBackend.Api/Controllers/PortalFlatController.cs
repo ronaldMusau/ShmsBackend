@@ -353,6 +353,17 @@ public class PortalFlatController : ControllerBase
             }
         }
 
+        _context.FlatEditLandlordDecisions.Add(new FlatEditLandlordDecision
+        {
+            Id = Guid.NewGuid(),
+            FlatEditRequestId = request.Id,
+            ApprovalAttemptNumber = request.ApprovalAttemptNumber,
+            Decision = dto.Approved ? "Approved" : "Rejected",
+            Notes = dto.Notes,
+            DecidedAt = DateTime.UtcNow,
+            DecidedByLandlordId = landlordId
+        });
+
         await _context.SaveChangesAsync();
 
         var requester = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == request.RequestedByUserId);
@@ -430,5 +441,41 @@ public class PortalFlatController : ControllerBase
         });
 
         return Ok(new { success = true, requests = data });
+    }
+
+    // GET /api/portalflats/edit-request/my-approval-history
+    [HttpGet("edit-request/my-approval-history")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordEditApprovalHistory()
+    {
+        var landlordId = GetUserId();
+
+        var decisions = await _context.FlatEditLandlordDecisions
+            .Where(d => d.DecidedByLandlordId == landlordId)
+            .OrderByDescending(d => d.DecidedAt)
+            .ToListAsync();
+
+        var requestIds = decisions.Select(d => d.FlatEditRequestId).Distinct().ToList();
+        var requests = await _context.FlatEditRequests
+            .Include(r => r.Flat)
+            .Where(r => requestIds.Contains(r.Id))
+            .ToDictionaryAsync(r => r.Id, r => r);
+
+        var data = decisions.Select(d =>
+        {
+            requests.TryGetValue(d.FlatEditRequestId, out var r);
+            return new
+            {
+                d.Id,
+                flatEditRequestId = d.FlatEditRequestId,
+                flatName = r?.Flat?.FlatName,
+                d.ApprovalAttemptNumber,
+                decision = d.Decision,
+                notes = d.Notes,
+                decidedAt = d.DecidedAt
+            };
+        }).ToList();
+
+        return Ok(new { success = true, history = data });
     }
 }

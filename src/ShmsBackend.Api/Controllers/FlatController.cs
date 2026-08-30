@@ -235,6 +235,18 @@ public class FlatController : ControllerBase
         if (currentStep == null) return BadRequest(new { success = false, message = "This edit request is not currently awaiting an internal approval step." });
         if (currentStep.ApproverId != adminId) return Forbid();
 
+        _context.FlatEditApprovalActions.Add(new FlatEditApprovalAction
+        {
+            Id = Guid.NewGuid(),
+            FlatEditRequestId = request.Id,
+            AttemptNumber = request.ApprovalAttemptNumber,
+            StepOrder = currentStep.StepOrder,
+            ApproverId = adminId,
+            Decision = dto.Approved ? "Approved" : "Rejected",
+            Notes = dto.Notes,
+            ActionedAt = DateTime.UtcNow
+        });
+
         if (!dto.Approved)
         {
             if (string.IsNullOrWhiteSpace(dto.Notes)) return BadRequest(new { success = false, message = "Rejection notes are required." });
@@ -364,5 +376,42 @@ public class FlatController : ControllerBase
         });
 
         return Ok(new { success = true, requests = data });
+    }
+
+    // GET /api/flats/edit-request/my-approval-history
+    [HttpGet("edit-request/my-approval-history")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetMyEditRequestApprovalHistory()
+    {
+        var adminId = GetUserId();
+
+        var actions = await _context.FlatEditApprovalActions
+            .Where(a => a.ApproverId == adminId && (a.Decision == "Approved" || a.Decision == "Rejected"))
+            .OrderByDescending(a => a.ActionedAt)
+            .ToListAsync();
+
+        var requestIds = actions.Select(a => a.FlatEditRequestId).Distinct().ToList();
+        var requests = await _context.FlatEditRequests
+            .Include(r => r.Flat)
+            .Where(r => requestIds.Contains(r.Id))
+            .ToDictionaryAsync(r => r.Id, r => r);
+
+        var data = actions.Select(a =>
+        {
+            requests.TryGetValue(a.FlatEditRequestId, out var r);
+            return new
+            {
+                a.Id,
+                flatEditRequestId = a.FlatEditRequestId,
+                flatName = r?.Flat?.FlatName,
+                a.AttemptNumber,
+                a.StepOrder,
+                decision = a.Decision,
+                notes = a.Notes,
+                actionedAt = a.ActionedAt
+            };
+        }).ToList();
+
+        return Ok(new { success = true, history = data });
     }
 }
