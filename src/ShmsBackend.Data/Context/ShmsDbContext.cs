@@ -49,6 +49,7 @@ public class ShmsDbContext : DbContext
     // Notifications
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<NotificationPreference> NotificationPreferences { get; set; }
+    public DbSet<PushSubscription> PushSubscriptions { get; set; }
 
     // Terms & Conditions
     public DbSet<TermsAndConditions> TermsAndConditions { get; set; }
@@ -362,21 +363,41 @@ public class ShmsDbContext : DbContext
             entity.HasIndex(e => new { e.UserId, e.IsPortalUser }).IsUnique();
             entity.Property(e => e.MasterEmailEnabled).HasDefaultValue(true);
             entity.Property(e => e.MasterInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.MasterPushEnabled).HasDefaultValue(true);
             entity.Property(e => e.RentEmailEnabled).HasDefaultValue(true);
             entity.Property(e => e.RentInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.RentPushEnabled).HasDefaultValue(true);
             entity.Property(e => e.ComplaintsEmailEnabled).HasDefaultValue(true);
             entity.Property(e => e.ComplaintsInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.ComplaintsPushEnabled).HasDefaultValue(true);
             entity.Property(e => e.ApprovalsEmailEnabled).HasDefaultValue(true);
             entity.Property(e => e.ApprovalsInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.ApprovalsPushEnabled).HasDefaultValue(true);
             entity.Property(e => e.PropertiesEmailEnabled).HasDefaultValue(true);
             entity.Property(e => e.PropertiesInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.PropertiesPushEnabled).HasDefaultValue(true);
             entity.Property(e => e.AccountEmailEnabled).HasDefaultValue(true);
             entity.Property(e => e.AccountInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.AccountPushEnabled).HasDefaultValue(true);
             entity.Property(e => e.TeamActivityEmailEnabled).HasDefaultValue(true);
             entity.Property(e => e.TeamActivityInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.TeamActivityPushEnabled).HasDefaultValue(true);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.ToTable("NotificationPreferences");
+        });
+
+        // ── PushSubscription Configuration ──────────────────────────────────
+        modelBuilder.Entity<PushSubscription>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Endpoint).IsRequired();
+            entity.Property(e => e.P256dh).IsRequired();
+            entity.Property(e => e.Auth).IsRequired();
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            // No unique constraint / index on UserId — a user may have many subscriptions
+            // (one per device / browser).
+            entity.ToTable("PushSubscriptions");
         });
 
         // ── TermsAndConditions Configuration ────────────────────────────────

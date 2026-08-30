@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Hubs;
 using ShmsBackend.Data.Context;
@@ -16,15 +19,18 @@ public class NotificationService : INotificationService
     private readonly ShmsDbContext _context;
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ILogger<NotificationService> _logger;
+    private readonly IConfiguration _configuration;
 
     public NotificationService(
         ShmsDbContext context,
         IHubContext<NotificationHub> hubContext,
-        ILogger<NotificationService> logger)
+        ILogger<NotificationService> logger,
+        IConfiguration configuration)
     {
         _context = context;
         _hubContext = hubContext;
         _logger = logger;
+        _configuration = configuration;
     }
 
     public async Task SendToRoleAsync(NotificationAudience audience, string message, string category = "general",
@@ -38,32 +44,55 @@ public class NotificationService : INotificationService
             return;
         }
 
+        var isPortalUser = IsPortalAudience(audience);
+        var group = ResolvePreferenceGroup(category, entityType, isPortalUser);
         var parsedEntityId = string.IsNullOrEmpty(entityId) ? (Guid?)null : Guid.Parse(entityId);
 
-        var notifications = userIds.Select(userId => new Notification
-        {
-            Id = Guid.NewGuid(),
-            Audience = NotificationAudience.SpecificUser,
-            TargetUserId = userId,
-            Message = message,
-            Category = category,
-            EntityType = entityType,
-            EntityId = parsedEntityId,
-            IsRead = false,
-            CreatedAt = DateTime.UtcNow
-        }).ToList();
+        // Preferences are per-user even for a role broadcast — evaluate each recipient individually.
+        var createdNotifications = new List<Notification>();
+        var pushRecipients = new List<string>();
 
-        _context.Notifications.AddRange(notifications);
-        await _context.SaveChangesAsync();
-
-        var payload = new { message, category, entityType, entityId = parsedEntityId, createdAt = DateTime.UtcNow };
         foreach (var userId in userIds)
         {
-            await _hubContext.Clients.Group($"user_{userId}").SendAsync("ReceiveNotification", payload);
+            if (await ShouldDeliverAsync(userId, isPortalUser, group, "InApp"))
+            {
+                createdNotifications.Add(new Notification
+                {
+                    Id = Guid.NewGuid(),
+                    Audience = NotificationAudience.SpecificUser,
+                    TargetUserId = userId,
+                    Message = message,
+                    Category = category,
+                    EntityType = entityType,
+                    EntityId = parsedEntityId,
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            if (await ShouldDeliverAsync(userId, isPortalUser, group, "Push"))
+                pushRecipients.Add(userId);
         }
 
-        _logger.LogInformation("Notification sent to {Count} users of role {Audience}: {Message}",
-            userIds.Count, audience, message);
+        if (createdNotifications.Count > 0)
+        {
+            _context.Notifications.AddRange(createdNotifications);
+            await _context.SaveChangesAsync();
+
+            var payload = new { message, category, entityType, entityId = parsedEntityId, createdAt = DateTime.UtcNow };
+            foreach (var notification in createdNotifications)
+            {
+                await _hubContext.Clients.Group($"user_{notification.TargetUserId}").SendAsync("ReceiveNotification", payload);
+            }
+        }
+
+        foreach (var userId in pushRecipients)
+        {
+            await SendWebPushAsync(userId, isPortalUser, message);
+        }
+
+        _logger.LogInformation("Notification sent to {Count}/{Total} users of role {Audience}: {Message}",
+            createdNotifications.Count, userIds.Count, audience, message);
     }
 
     public async Task SendToRolesAsync(IEnumerable<NotificationAudience> audiences, string message, string category = "general",
@@ -78,36 +107,158 @@ public class NotificationService : INotificationService
     public async Task SendToUserAsync(string userId, string message, string category = "general",
         string? entityType = null, string? entityId = null)
     {
-        var parsedEntityId = string.IsNullOrEmpty(entityId) ? (Guid?)null : Guid.Parse(entityId);
+        var isPortalUser = Guid.TryParse(userId, out var uid)
+            && await _context.PortalUsers.AsNoTracking().AnyAsync(u => u.Id == uid);
 
-        var notification = new Notification
+        var group = ResolvePreferenceGroup(category, entityType, isPortalUser);
+
+        var deliverInApp = await ShouldDeliverAsync(userId, isPortalUser, group, "InApp");
+        var deliverPush = await ShouldDeliverAsync(userId, isPortalUser, group, "Push");
+
+        // Both channels muted for this category — nothing to do.
+        if (!deliverInApp && !deliverPush)
+            return;
+
+        if (deliverInApp)
         {
-            Id = Guid.NewGuid(),
-            Audience = NotificationAudience.SpecificUser,
-            TargetUserId = userId,
-            Message = message,
-            Category = category,
-            EntityType = entityType,
-            EntityId = parsedEntityId,
-            IsRead = false,
-            CreatedAt = DateTime.UtcNow
-        };
+            var parsedEntityId = string.IsNullOrEmpty(entityId) ? (Guid?)null : Guid.Parse(entityId);
 
-        _context.Notifications.Add(notification);
-        await _context.SaveChangesAsync();
+            var notification = new Notification
+            {
+                Id = Guid.NewGuid(),
+                Audience = NotificationAudience.SpecificUser,
+                TargetUserId = userId,
+                Message = message,
+                Category = category,
+                EntityType = entityType,
+                EntityId = parsedEntityId,
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            };
 
-        await _hubContext.Clients.Group($"user_{userId}").SendAsync("ReceiveNotification", new
-        {
-            id = notification.Id,
-            message = notification.Message,
-            category = notification.Category,
-            entityType = notification.EntityType,
-            entityId = notification.EntityId,
-            isRead = false,
-            createdAt = notification.CreatedAt
-        });
+            _context.Notifications.Add(notification);
+            await _context.SaveChangesAsync();
+
+            await _hubContext.Clients.Group($"user_{userId}").SendAsync("ReceiveNotification", new
+            {
+                id = notification.Id,
+                message = notification.Message,
+                category = notification.Category,
+                entityType = notification.EntityType,
+                entityId = notification.EntityId,
+                isRead = false,
+                createdAt = notification.CreatedAt
+            });
+        }
+
+        if (deliverPush)
+            await SendWebPushAsync(userId, isPortalUser, message);
 
         _logger.LogInformation("Notification sent to user {UserId}: {Message}", userId, message);
+    }
+
+    // ── Push / preference enforcement ────────────────────────────────────────
+
+    private static bool IsPortalAudience(NotificationAudience audience) => audience switch
+    {
+        NotificationAudience.Landlord or NotificationAudience.Agent
+            or NotificationAudience.Tenant or NotificationAudience.Explorer => true,
+        _ => false
+    };
+
+    // Maps a notification's (category, entityType) to a NotificationPreference group name.
+    private string ResolvePreferenceGroup(string category, string? entityType, bool isPortalUser)
+    {
+        if (entityType == "Complaint")
+            return "Complaints";
+
+        if (entityType is "FlatEdit" or "Flat" or "Vacate")
+            return "Properties";
+
+        // No entity reference — fall back to the category.
+        return category switch
+        {
+            "payment" => "Rent",
+            "security" => "Account",
+            "user" => isPortalUser ? "Account" : "TeamActivity",
+            _ => "Account"
+        };
+    }
+
+    // Returns whether a given channel ("InApp" / "Push" / "Email") is enabled for this user
+    // and group. No preference row => opt-out model default of all-true (matches GetOrCreateAsync).
+    private async Task<bool> ShouldDeliverAsync(string userId, bool isPortalUser, string group, string channel)
+    {
+        if (!Guid.TryParse(userId, out var uid))
+            return true;
+
+        var pref = await _context.NotificationPreferences.AsNoTracking()
+            .FirstOrDefaultAsync(p => p.UserId == uid && p.IsPortalUser == isPortalUser);
+
+        if (pref == null)
+            return true;
+
+        bool Flag(string name) =>
+            (bool?)typeof(NotificationPreference).GetProperty($"{name}{channel}Enabled")?.GetValue(pref) ?? true;
+
+        return Flag("Master") && Flag(group);
+    }
+
+    private async Task SendWebPushAsync(string userId, bool isPortalUser, string message)
+    {
+        if (!Guid.TryParse(userId, out var uid))
+            return;
+
+        var publicKey = _configuration["WebPush:VapidPublicKey"];
+        var privateKey = _configuration["WebPush:VapidPrivateKey"];
+        var subject = _configuration["WebPush:VapidSubject"];
+
+        if (string.IsNullOrEmpty(publicKey) || string.IsNullOrEmpty(privateKey) || string.IsNullOrEmpty(subject))
+        {
+            _logger.LogWarning("WebPush VAPID configuration missing; skipping web push for user {UserId}", userId);
+            return;
+        }
+
+        var subscriptions = await _context.PushSubscriptions
+            .Where(s => s.UserId == uid && s.IsPortalUser == isPortalUser)
+            .ToListAsync();
+
+        if (subscriptions.Count == 0)
+            return;
+
+        var vapidDetails = new WebPush.VapidDetails(subject, publicKey, privateKey);
+        using var client = new WebPush.WebPushClient();
+        var payload = JsonSerializer.Serialize(new { title = "Romah Estates", body = message });
+
+        var stale = new List<PushSubscription>();
+
+        foreach (var sub in subscriptions)
+        {
+            try
+            {
+                var target = new WebPush.PushSubscription(sub.Endpoint, sub.P256dh, sub.Auth);
+                await client.SendNotificationAsync(target, payload, vapidDetails);
+            }
+            catch (WebPush.WebPushException ex)
+                when (ex.StatusCode == HttpStatusCode.NotFound || ex.StatusCode == HttpStatusCode.Gone)
+            {
+                _logger.LogInformation(
+                    "Push subscription {SubscriptionId} for user {UserId} is gone ({Status}); removing it.",
+                    sub.Id, userId, (int)ex.StatusCode);
+                stale.Add(sub);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to deliver web push to subscription {SubscriptionId} for user {UserId}", sub.Id, userId);
+            }
+        }
+
+        if (stale.Count > 0)
+        {
+            _context.PushSubscriptions.RemoveRange(stale);
+            await _context.SaveChangesAsync();
+        }
     }
 
     public async Task<IEnumerable<Notification>> GetForUserAsync(string userId, NotificationAudience? userRole)

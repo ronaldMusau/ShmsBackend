@@ -307,6 +307,59 @@ public class PortalAuthController : ControllerBase
         return Ok(new { success = true, message = "Notification preferences updated." });
     }
 
+    [HttpPost("push-subscription")]
+    [Authorize]
+    public async Task<IActionResult> SavePushSubscription([FromBody] PushSubscriptionDto dto)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var exists = await _context.PushSubscriptions
+            .AnyAsync(s => s.UserId == userId && s.IsPortalUser && s.Endpoint == dto.Endpoint);
+
+        if (!exists)
+        {
+            _context.PushSubscriptions.Add(new PushSubscription
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                IsPortalUser = true,
+                Endpoint = dto.Endpoint,
+                P256dh = dto.P256dh,
+                Auth = dto.Auth,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true });
+    }
+
+    [HttpPost("push-unsubscribe")]
+    [Authorize]
+    public async Task<IActionResult> RemovePushSubscription([FromBody] PushSubscriptionDto dto)
+    {
+        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userIdStr) || !Guid.TryParse(userIdStr, out var userId))
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        var rows = await _context.PushSubscriptions
+            .Where(s => s.UserId == userId && s.IsPortalUser && s.Endpoint == dto.Endpoint)
+            .ToListAsync();
+
+        if (rows.Count > 0)
+        {
+            _context.PushSubscriptions.RemoveRange(rows);
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true });
+    }
+
     /// <summary>
     /// Returns the current terms &amp; conditions for the authenticated user's role,
     /// plus whether this user has accepted the current version.

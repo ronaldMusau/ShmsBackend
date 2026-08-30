@@ -1,9 +1,12 @@
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Repositories.Interfaces;
 
 namespace ShmsBackend.Api.Controllers;
@@ -16,17 +19,20 @@ public class AuthController : ControllerBase
     private readonly ILogger<AuthController> _logger;
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationPreferenceService _notificationPreferenceService;
+    private readonly ShmsDbContext _context;
 
     public AuthController(
         IAuthService authService,
         ILogger<AuthController> logger,
         IUnitOfWork unitOfWork,
-        INotificationPreferenceService notificationPreferenceService)
+        INotificationPreferenceService notificationPreferenceService,
+        ShmsDbContext context)
     {
         _authService = authService;
         _logger = logger;
         _unitOfWork = unitOfWork;
         _notificationPreferenceService = notificationPreferenceService;
+        _context = context;
     }
 
     [HttpPost("login")]
@@ -207,5 +213,58 @@ public class AuthController : ControllerBase
 
         await _notificationPreferenceService.UpdateAsync(adminId, isPortalUser: false, dto);
         return Ok(new { success = true, message = "Notification preferences updated." });
+    }
+
+    [HttpPost("push-subscription")]
+    [Authorize]
+    public async Task<IActionResult> SavePushSubscription([FromBody] PushSubscriptionDto dto)
+    {
+        var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(adminIdClaim, out var adminId))
+            return Unauthorized();
+
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var exists = await _context.PushSubscriptions
+            .AnyAsync(s => s.UserId == adminId && !s.IsPortalUser && s.Endpoint == dto.Endpoint);
+
+        if (!exists)
+        {
+            _context.PushSubscriptions.Add(new PushSubscription
+            {
+                Id = Guid.NewGuid(),
+                UserId = adminId,
+                IsPortalUser = false,
+                Endpoint = dto.Endpoint,
+                P256dh = dto.P256dh,
+                Auth = dto.Auth,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true });
+    }
+
+    [HttpPost("push-unsubscribe")]
+    [Authorize]
+    public async Task<IActionResult> RemovePushSubscription([FromBody] PushSubscriptionDto dto)
+    {
+        var adminIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(adminIdClaim, out var adminId))
+            return Unauthorized();
+
+        var rows = await _context.PushSubscriptions
+            .Where(s => s.UserId == adminId && !s.IsPortalUser && s.Endpoint == dto.Endpoint)
+            .ToListAsync();
+
+        if (rows.Count > 0)
+        {
+            _context.PushSubscriptions.RemoveRange(rows);
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new { success = true });
     }
 }

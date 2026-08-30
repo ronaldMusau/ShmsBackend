@@ -21,30 +21,37 @@ public class NotificationPreference
     // Master kill switches for each channel
     public bool MasterEmailEnabled { get; set; } = true;
     public bool MasterInAppEnabled { get; set; } = true;
+    public bool MasterPushEnabled { get; set; } = true;
 
     // Rent / Payments
     public bool RentEmailEnabled { get; set; } = true;
     public bool RentInAppEnabled { get; set; } = true;
+    public bool RentPushEnabled { get; set; } = true;
 
     // Complaints
     public bool ComplaintsEmailEnabled { get; set; } = true;
     public bool ComplaintsInAppEnabled { get; set; } = true;
+    public bool ComplaintsPushEnabled { get; set; } = true;
 
     // Approvals
     public bool ApprovalsEmailEnabled { get; set; } = true;
     public bool ApprovalsInAppEnabled { get; set; } = true;
+    public bool ApprovalsPushEnabled { get; set; } = true;
 
     // Properties (Flats / Houses)
     public bool PropertiesEmailEnabled { get; set; } = true;
     public bool PropertiesInAppEnabled { get; set; } = true;
+    public bool PropertiesPushEnabled { get; set; } = true;
 
     // Account (verification, password, account status)
     public bool AccountEmailEnabled { get; set; } = true;
     public bool AccountInAppEnabled { get; set; } = true;
+    public bool AccountPushEnabled { get; set; } = true;
 
     // Team activity (new-user / occupancy FYI feed for management)
     public bool TeamActivityEmailEnabled { get; set; } = true;
     public bool TeamActivityInAppEnabled { get; set; } = true;
+    public bool TeamActivityPushEnabled { get; set; } = true;
 
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }

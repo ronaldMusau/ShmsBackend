@@ -45,18 +45,25 @@ public class NotificationPreferenceService : INotificationPreferenceService
 
         pref.MasterEmailEnabled = dto.MasterEmailEnabled;
         pref.MasterInAppEnabled = dto.MasterInAppEnabled;
+        pref.MasterPushEnabled = dto.MasterPushEnabled;
         pref.RentEmailEnabled = dto.RentEmailEnabled;
         pref.RentInAppEnabled = dto.RentInAppEnabled;
+        pref.RentPushEnabled = dto.RentPushEnabled;
         pref.ComplaintsEmailEnabled = dto.ComplaintsEmailEnabled;
         pref.ComplaintsInAppEnabled = dto.ComplaintsInAppEnabled;
+        pref.ComplaintsPushEnabled = dto.ComplaintsPushEnabled;
         pref.ApprovalsEmailEnabled = dto.ApprovalsEmailEnabled;
         pref.ApprovalsInAppEnabled = dto.ApprovalsInAppEnabled;
+        pref.ApprovalsPushEnabled = dto.ApprovalsPushEnabled;
         pref.PropertiesEmailEnabled = dto.PropertiesEmailEnabled;
         pref.PropertiesInAppEnabled = dto.PropertiesInAppEnabled;
+        pref.PropertiesPushEnabled = dto.PropertiesPushEnabled;
         pref.AccountEmailEnabled = dto.AccountEmailEnabled;
         pref.AccountInAppEnabled = dto.AccountInAppEnabled;
+        pref.AccountPushEnabled = dto.AccountPushEnabled;
         pref.TeamActivityEmailEnabled = dto.TeamActivityEmailEnabled;
         pref.TeamActivityInAppEnabled = dto.TeamActivityInAppEnabled;
+        pref.TeamActivityPushEnabled = dto.TeamActivityPushEnabled;
         pref.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
