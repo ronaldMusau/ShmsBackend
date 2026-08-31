@@ -21,6 +21,7 @@ public class AuthController : ControllerBase
     private readonly INotificationPreferenceService _notificationPreferenceService;
     private readonly ShmsDbContext _context;
     private readonly IWeeklyPasswordService _weeklyPasswordService;
+    private readonly IWeeklyClientPasswordService _weeklyClientPasswordService;
 
     public AuthController(
         IAuthService authService,
@@ -28,7 +29,8 @@ public class AuthController : ControllerBase
         IUnitOfWork unitOfWork,
         INotificationPreferenceService notificationPreferenceService,
         ShmsDbContext context,
-        IWeeklyPasswordService weeklyPasswordService)
+        IWeeklyPasswordService weeklyPasswordService,
+        IWeeklyClientPasswordService weeklyClientPasswordService)
     {
         _authService = authService;
         _logger = logger;
@@ -36,6 +38,7 @@ public class AuthController : ControllerBase
         _notificationPreferenceService = notificationPreferenceService;
         _context = context;
         _weeklyPasswordService = weeklyPasswordService;
+        _weeklyClientPasswordService = weeklyClientPasswordService;
     }
 
     [HttpPost("login")]
@@ -311,5 +314,31 @@ public class AuthController : ControllerBase
     {
         await _weeklyPasswordService.GenerateAndRotateAsync();
         return Ok(new { success = true, message = "New password generated and emailed to all enabled staff." });
+    }
+
+    // ── Weekly client-portal support password — subscriber management ───────
+
+    [HttpPost("weekly-client-password/subscribe/{adminId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> SubscribeToWeeklyClientPassword(Guid adminId)
+    {
+        await _weeklyClientPasswordService.SetSubscriptionAsync(adminId, true);
+        return Ok(new { success = true, message = "Subscribed to the weekly client portal support password." });
+    }
+
+    [HttpPost("weekly-client-password/unsubscribe/{adminId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> UnsubscribeFromWeeklyClientPassword(Guid adminId)
+    {
+        await _weeklyClientPasswordService.SetSubscriptionAsync(adminId, false);
+        return Ok(new { success = true, message = "Unsubscribed from the weekly client portal support password." });
+    }
+
+    [HttpPost("weekly-client-password/rotate-now")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> RotateWeeklyClientPasswordNow()
+    {
+        await _weeklyClientPasswordService.GenerateAndRotateAsync();
+        return Ok(new { success = true, message = "New client portal support password generated and emailed to all enabled staff." });
     }
 }

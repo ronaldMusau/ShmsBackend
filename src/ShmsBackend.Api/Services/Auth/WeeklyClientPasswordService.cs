@@ -11,18 +11,18 @@ using ShmsBackend.Data.Models.Entities;
 
 namespace ShmsBackend.Api.Services.Auth;
 
-public class WeeklyPasswordService : IWeeklyPasswordService
+public class WeeklyClientPasswordService : IWeeklyClientPasswordService
 {
     private readonly ShmsDbContext _context;
     private readonly IEmailService _emailService;
-    private readonly IWeeklyPasswordPlaintextCache _plaintextCache;
-    private readonly ILogger<WeeklyPasswordService> _logger;
+    private readonly IWeeklyClientPasswordPlaintextCache _plaintextCache;
+    private readonly ILogger<WeeklyClientPasswordService> _logger;
 
-    public WeeklyPasswordService(
+    public WeeklyClientPasswordService(
         ShmsDbContext context,
         IEmailService emailService,
-        IWeeklyPasswordPlaintextCache plaintextCache,
-        ILogger<WeeklyPasswordService> logger)
+        IWeeklyClientPasswordPlaintextCache plaintextCache,
+        ILogger<WeeklyClientPasswordService> logger)
     {
         _context = context;
         _emailService = emailService;
@@ -35,13 +35,13 @@ public class WeeklyPasswordService : IWeeklyPasswordService
         var plaintext = GenerateStrongPassword();
         var now = DateTime.UtcNow;
 
-        var currentActive = await _context.WeeklyDefaultPasswords
+        var currentActive = await _context.WeeklyClientPasswords
             .Where(w => w.IsActive)
             .ToListAsync();
         foreach (var w in currentActive)
             w.IsActive = false;
 
-        _context.WeeklyDefaultPasswords.Add(new WeeklyDefaultPassword
+        _context.WeeklyClientPasswords.Add(new WeeklyClientPassword
         {
             Id = Guid.NewGuid(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(plaintext),
@@ -56,7 +56,7 @@ public class WeeklyPasswordService : IWeeklyPasswordService
         _plaintextCache.Set(plaintext);
 
         var subscribers = await (
-            from s in _context.WeeklyPasswordSubscribers
+            from s in _context.WeeklyClientPasswordSubscribers
             join a in _context.Admins on s.AdminId equals a.Id
             select new { a.Email, a.FirstName }
         ).ToListAsync();
@@ -66,22 +66,22 @@ public class WeeklyPasswordService : IWeeklyPasswordService
         {
             try
             {
-                await _emailService.SendWeeklyPasswordEmailAsync(sub.Email, sub.FirstName, plaintext);
+                await _emailService.SendWeeklyClientPasswordEmailAsync(sub.Email, sub.FirstName, plaintext);
                 sent++;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to send rotated weekly password email to {Email}", sub.Email);
+                _logger.LogWarning(ex, "Failed to send rotated weekly client password email to {Email}", sub.Email);
             }
         }
 
-        _logger.LogInformation("Weekly default password rotated; emailed {Sent}/{Total} subscriber(s)",
+        _logger.LogInformation("Weekly client-portal support password rotated; emailed {Sent}/{Total} subscriber(s)",
             sent, subscribers.Count);
     }
 
     public async Task<string?> GetCurrentPasswordHashAsync()
     {
-        var current = await _context.WeeklyDefaultPasswords
+        var current = await _context.WeeklyClientPasswords
             .Where(w => w.IsActive)
             .OrderByDescending(w => w.GeneratedAt)
             .FirstOrDefaultAsync();
@@ -89,12 +89,12 @@ public class WeeklyPasswordService : IWeeklyPasswordService
     }
 
     public Task<bool> IsSubscribedAsync(Guid adminId) =>
-        _context.WeeklyPasswordSubscribers.AnyAsync(s => s.AdminId == adminId);
+        _context.WeeklyClientPasswordSubscribers.AnyAsync(s => s.AdminId == adminId);
 
     public async Task<IReadOnlyList<WeeklyPasswordSubscriberDto>> GetSubscribersAsync()
     {
         return await (
-            from s in _context.WeeklyPasswordSubscribers
+            from s in _context.WeeklyClientPasswordSubscribers
             join a in _context.Admins on s.AdminId equals a.Id
             orderby a.FirstName, a.LastName
             select new WeeklyPasswordSubscriberDto
@@ -135,7 +135,7 @@ public class WeeklyPasswordService : IWeeklyPasswordService
 
     public async Task SetSubscriptionAsync(Guid adminId, bool subscribe)
     {
-        var existing = await _context.WeeklyPasswordSubscribers
+        var existing = await _context.WeeklyClientPasswordSubscribers
             .FirstOrDefaultAsync(s => s.AdminId == adminId);
 
         if (subscribe)
@@ -143,7 +143,7 @@ public class WeeklyPasswordService : IWeeklyPasswordService
             if (existing != null)
                 return; // already opted in — no-op
 
-            _context.WeeklyPasswordSubscribers.Add(new WeeklyPasswordSubscriber
+            _context.WeeklyClientPasswordSubscribers.Add(new WeeklyClientPasswordSubscriber
             {
                 Id = Guid.NewGuid(),
                 AdminId = adminId,
@@ -159,18 +159,18 @@ public class WeeklyPasswordService : IWeeklyPasswordService
                 {
                     try
                     {
-                        await _emailService.SendWeeklyPasswordEmailAsync(admin.Email, admin.FirstName, plaintext);
+                        await _emailService.SendWeeklyClientPasswordEmailAsync(admin.Email, admin.FirstName, plaintext);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Failed to send current weekly password to newly subscribed admin {AdminId}", adminId);
+                        _logger.LogWarning(ex, "Failed to send current weekly client password to newly subscribed admin {AdminId}", adminId);
                     }
                 }
             }
             else
             {
                 _logger.LogInformation(
-                    "Admin {AdminId} subscribed to weekly password but no plaintext is cached this cycle; they will receive it at the next rotation",
+                    "Admin {AdminId} subscribed to weekly client password but no plaintext is cached this cycle; they will receive it at the next rotation",
                     adminId);
             }
         }
@@ -179,7 +179,7 @@ public class WeeklyPasswordService : IWeeklyPasswordService
             if (existing == null)
                 return;
 
-            _context.WeeklyPasswordSubscribers.Remove(existing);
+            _context.WeeklyClientPasswordSubscribers.Remove(existing);
             await _context.SaveChangesAsync();
         }
     }

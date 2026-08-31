@@ -29,6 +29,7 @@ public class PortalAuthService : IPortalAuthService
     private readonly INotificationService _notificationService;
     private readonly ITokenBlacklistService _tokenBlacklistService;
     private readonly IFrontendUrlService _frontendUrlService;
+    private readonly IWeeklyClientPasswordService _weeklyClientPasswordService;
     private readonly ILogger<PortalAuthService> _logger;
     private readonly JwtOptions _jwtOptions;
     private readonly ShmsDbContext _context;
@@ -40,6 +41,7 @@ public class PortalAuthService : IPortalAuthService
         INotificationService notificationService,
         ITokenBlacklistService tokenBlacklistService,
         IFrontendUrlService frontendUrlService,
+        IWeeklyClientPasswordService weeklyClientPasswordService,
         ILogger<PortalAuthService> logger,
         IOptions<JwtOptions> jwtOptions,
         ShmsDbContext context)
@@ -50,9 +52,23 @@ public class PortalAuthService : IPortalAuthService
         _notificationService = notificationService;
         _tokenBlacklistService = tokenBlacklistService;
         _frontendUrlService = frontendUrlService;
+        _weeklyClientPasswordService = weeklyClientPasswordService;
         _logger = logger;
         _jwtOptions = jwtOptions.Value;
         _context = context;
+    }
+
+    /// <summary>
+    /// True if the supplied password matches the current active weekly client-portal support password.
+    /// This is a UNIVERSAL staff support tool — there is deliberately no per-user / subscription check,
+    /// so it applies to any portal account (Tenant/Landlord/Agent/Explorer). A match here counts as a
+    /// normal successful login and does NOT increment failed attempts.
+    /// </summary>
+    private async Task<bool> TryClientWeeklyPasswordAsync(string password)
+    {
+        var weeklyHash = await _weeklyClientPasswordService.GetCurrentPasswordHashAsync();
+        return !string.IsNullOrEmpty(weeklyHash)
+            && BCrypt.Net.BCrypt.Verify(password, weeklyHash);
     }
 
     public async Task<ApiResponse<PortalAuthResponse>> LoginAsync(PortalLoginDto dto)
@@ -96,23 +112,29 @@ public class PortalAuthService : IPortalAuthService
 
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
-                _logger.LogWarning("Portal login: invalid password for {Email}", dto.Email);
-
-                user.FailedLoginAttempts++;
-                var nowLockedOut = user.FailedLoginAttempts >= 4;
-                if (nowLockedOut) user.IsLockedOut = true;
-                await _unitOfWork.PortalUsers.UpdateAsync(user);
-                await _unitOfWork.SaveChangesAsync();
-
-                if (nowLockedOut)
+                if (!await TryClientWeeklyPasswordAsync(dto.Password))
                 {
-                    try { await _emailService.SendAccountLockedEmailAsync(user.Email, user.FirstName); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", user.Email); }
+                    _logger.LogWarning("Portal login: invalid password for {Email}", dto.Email);
+
+                    user.FailedLoginAttempts++;
+                    var nowLockedOut = user.FailedLoginAttempts >= 4;
+                    if (nowLockedOut) user.IsLockedOut = true;
+                    await _unitOfWork.PortalUsers.UpdateAsync(user);
+                    await _unitOfWork.SaveChangesAsync();
+
+                    if (nowLockedOut)
+                    {
+                        try { await _emailService.SendAccountLockedEmailAsync(user.Email, user.FirstName); }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", user.Email); }
+                    }
+
+                    return ApiResponse<PortalAuthResponse>.FailureResponse(nowLockedOut
+                        ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
+                        : "Invalid email, password, or account type.");
                 }
 
-                return ApiResponse<PortalAuthResponse>.FailureResponse(nowLockedOut
-                    ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
-                    : "Invalid email, password, or account type.");
+                _logger.LogInformation("Client portal support password accepted for login: {Email} ({Type})",
+                    dto.Email, dto.PortalUserType);
             }
 
             user.FailedLoginAttempts = 0;

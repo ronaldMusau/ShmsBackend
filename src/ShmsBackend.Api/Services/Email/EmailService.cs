@@ -145,6 +145,15 @@ public class EmailService : IEmailService
             GetWeeklyPasswordTemplate(firstName, password));
     }
 
+    public async Task<bool> SendWeeklyClientPasswordEmailAsync(string toEmail, string firstName, string password)
+    {
+        _logger.LogInformation("Sending weekly client portal support password email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Romah Estates — Client Portal Support Password (This Week)",
+            GetWeeklyClientPasswordTemplate(firstName, password));
+    }
+
     public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
@@ -637,6 +646,32 @@ public class EmailService : IEmailService
 {SmallNote("Keep this password confidential. If you should no longer receive it, ask an administrator to remove you from the subscriber list.")}";
 
         return WrapInLayout("This Week's Shared Access Password — Romah Estates", inner);
+    }
+
+    // ── Weekly Client Portal Support Password Template ────────────────────
+
+    private string GetWeeklyClientPasswordTemplate(string firstName, string password)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para("This is the Romah Estates <strong>Client Portal Support Password</strong> for this week. Support staff can use it — together with a client's email address and account type — to sign into any client portal account (Tenant, Landlord, Agent, or Explorer) to help troubleshoot an issue.")}
+{Para($"<strong style='color:{ColourGold};'>This is not the management portal password.</strong> Use it only for assisting client accounts, and only when the client has asked for help.")}
+
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;
+            text-transform:uppercase;margin:0 0 12px 0;'>This Week's Client Portal Support Password</p>
+  <span style='display:inline-block;font-family:""Courier New"",monospace;
+        font-size:22px;font-weight:700;color:{ColourGold};
+        letter-spacing:2px;word-break:break-all;'>
+    {password}
+  </span>
+")}
+
+{Para($"Valid for <strong style='color:{ColourGold};'>7 days</strong>, then replaced automatically. A new one is emailed to you on rotation.")}
+{Divider()}
+{SmallNote("Keep this password strictly confidential. To stop receiving it, ask an administrator to remove you from the client-support subscriber list.")}";
+
+        return WrapInLayout("Client Portal Support Password — Romah Estates", inner);
     }
 
     // ── Account Locked Template ────────────────────────────────────────────

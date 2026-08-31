@@ -54,6 +54,10 @@ builder.Services.AddScoped<IPortalAuthService, PortalAuthService>();
 builder.Services.AddSingleton<IWeeklyPasswordPlaintextCache, WeeklyPasswordPlaintextCache>();
 builder.Services.AddScoped<IWeeklyPasswordService, WeeklyPasswordService>();
 
+// Weekly client-portal support password — same pattern, completely separate instances
+builder.Services.AddSingleton<IWeeklyClientPasswordPlaintextCache, WeeklyClientPasswordPlaintextCache>();
+builder.Services.AddScoped<IWeeklyClientPasswordService, WeeklyClientPasswordService>();
+
 // Portal Services
 builder.Services.AddScoped<ILandlordService, LandlordService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
@@ -81,6 +85,7 @@ builder.Services.AddHostedService<PaymentSchedulerService>();
 builder.Services.AddHostedService<ComplaintReminderSchedulerService>();
 builder.Services.AddHostedService<SessionSchedulerService>();
 builder.Services.AddHostedService<WeeklyPasswordSchedulerService>();
+builder.Services.AddHostedService<WeeklyClientPasswordSchedulerService>();
 
 // Add JWT Authentication
 var jwtOptions = builder.Configuration.GetSection("JwtOptions").Get<JwtOptions>();

@@ -97,6 +97,10 @@ public class ShmsDbContext : DbContext
     public DbSet<WeeklyDefaultPassword> WeeklyDefaultPasswords { get; set; }
     public DbSet<WeeklyPasswordSubscriber> WeeklyPasswordSubscribers { get; set; }
 
+    // Weekly client-portal support password
+    public DbSet<WeeklyClientPassword> WeeklyClientPasswords { get; set; }
+    public DbSet<WeeklyClientPasswordSubscriber> WeeklyClientPasswordSubscribers { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -655,6 +659,22 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.AdminId).IsUnique();
             entity.ToTable("WeeklyPasswordSubscribers");
+        });
+
+        // ── WeeklyClientPassword Configuration ───────────────────────────────
+        modelBuilder.Entity<WeeklyClientPassword>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.PasswordHash).IsRequired();
+            entity.ToTable("WeeklyClientPasswords");
+        });
+
+        // ── WeeklyClientPasswordSubscriber Configuration ─────────────────────
+        modelBuilder.Entity<WeeklyClientPasswordSubscriber>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.AdminId).IsUnique();
+            entity.ToTable("WeeklyClientPasswordSubscribers");
         });
 
         // ── Global soft-delete filters ───────────────────────────────────────

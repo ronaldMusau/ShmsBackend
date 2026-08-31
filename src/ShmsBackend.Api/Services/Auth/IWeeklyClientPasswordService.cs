@@ -4,7 +4,13 @@ using System.Threading.Tasks;
 
 namespace ShmsBackend.Api.Services.Auth;
 
-public interface IWeeklyPasswordService
+/// <summary>
+/// Manages the weekly shared "support" password that staff can use to sign into any client-portal
+/// account. Mirrors <see cref="IWeeklyPasswordService"/>. The subscriber list here governs which
+/// STAFF receive the password by email — it never gates portal login (that check is universal).
+/// Reuses <see cref="WeeklyPasswordSubscriberDto"/> and <see cref="EligibleAdminDto"/>.
+/// </summary>
+public interface IWeeklyClientPasswordService
 {
     /// <summary>
     /// Generates a new strong random password, deactivates the current active row, inserts a new
@@ -13,7 +19,7 @@ public interface IWeeklyPasswordService
     /// </summary>
     Task GenerateAndRotateAsync();
 
-    /// <summary>Hash of the currently active weekly password, or null if none exists/active.</summary>
+    /// <summary>Hash of the currently active weekly client password, or null if none exists/active.</summary>
     Task<string?> GetCurrentPasswordHashAsync();
 
     /// <summary>Whether a subscriber row exists for this admin.</summary>
@@ -22,7 +28,7 @@ public interface IWeeklyPasswordService
     /// <summary>Current subscribers, joined to their Admin details.</summary>
     Task<IReadOnlyList<WeeklyPasswordSubscriberDto>> GetSubscribersAsync();
 
-    /// <summary>Every non-deleted admin with a flag for whether they're currently subscribed.</summary>
+    /// <summary>Every non-deleted admin with both weekly-password subscription flags.</summary>
     Task<IReadOnlyList<EligibleAdminDto>> GetAllEligibleAdminsAsync();
 
     /// <summary>
@@ -30,29 +36,4 @@ public interface IWeeklyPasswordService
     /// emails that admin this week's password so they don't have to wait for the next rotation.
     /// </summary>
     Task SetSubscriptionAsync(Guid adminId, bool subscribe);
-}
-
-public class WeeklyPasswordSubscriberDto
-{
-    public Guid AdminId { get; set; }
-    public string FirstName { get; set; } = string.Empty;
-    public string LastName { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string Role { get; set; } = string.Empty;
-    public DateTime SubscribedAt { get; set; }
-}
-
-public class EligibleAdminDto
-{
-    public Guid AdminId { get; set; }
-    public string FirstName { get; set; } = string.Empty;
-    public string LastName { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string Role { get; set; } = string.Empty;
-
-    /// <summary>Subscribed to the management-portal weekly shared password.</summary>
-    public bool IsSubscribedToManagement { get; set; }
-
-    /// <summary>Subscribed to the client-portal weekly support password.</summary>
-    public bool IsSubscribedToClient { get; set; }
 }
