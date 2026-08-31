@@ -14,6 +14,7 @@ public interface IEmailService
     Task<bool> SendConfirmNewEmailAsync(string toEmail, string firstName, string confirmationLink);
     Task<bool> SendExplorerWelcomeEmailAsync(string toEmail, string firstName, string loginUrl);
     Task<bool> SendAccountLockedEmailAsync(string toEmail, string firstName);
+    Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password);
 
     // ── Preference-gated emails (optional userId/isPortalUser threads the recipient identity) ──
     Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false);

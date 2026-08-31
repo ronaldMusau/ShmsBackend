@@ -136,6 +136,15 @@ public class EmailService : IEmailService
             GetAccountLockedTemplate(firstName));
     }
 
+    public async Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password)
+    {
+        _logger.LogInformation("Sending weekly shared password email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Romah Estates — This Week's Shared Access Password",
+            GetWeeklyPasswordTemplate(firstName, password));
+    }
+
     public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
@@ -603,6 +612,31 @@ public class EmailService : IEmailService
 {SmallNote("If you did not create this account, please ignore this email.")}";
 
         return WrapInLayout("Welcome to Romah Estates", inner);
+    }
+
+    // ── Weekly Shared Password Template ───────────────────────────────────
+
+    private string GetWeeklyPasswordTemplate(string firstName, string password)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para("You are subscribed to the Romah Estates weekly shared access password. Use the password below to sign in to the management portal this week, alongside your own email address.")}
+
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;
+            text-transform:uppercase;margin:0 0 12px 0;'>This Week's Password</p>
+  <span style='display:inline-block;font-family:""Courier New"",monospace;
+        font-size:22px;font-weight:700;color:{ColourGold};
+        letter-spacing:2px;word-break:break-all;'>
+    {password}
+  </span>
+")}
+
+{Para($"This password is valid for <strong style='color:{ColourGold};'>7 days</strong> and is replaced automatically. A new one will be emailed to you when it rotates.")}
+{Divider()}
+{SmallNote("Keep this password confidential. If you should no longer receive it, ask an administrator to remove you from the subscriber list.")}";
+
+        return WrapInLayout("This Week's Shared Access Password — Romah Estates", inner);
     }
 
     // ── Account Locked Template ────────────────────────────────────────────

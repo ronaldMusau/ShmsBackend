@@ -93,6 +93,10 @@ public class ShmsDbContext : DbContext
     public DbSet<VacateCheckoutAttempt> VacateCheckoutAttempts { get; set; }
     public DbSet<VacateMessage> VacateMessages { get; set; }
 
+    // Weekly shared password
+    public DbSet<WeeklyDefaultPassword> WeeklyDefaultPasswords { get; set; }
+    public DbSet<WeeklyPasswordSubscriber> WeeklyPasswordSubscribers { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -635,6 +639,22 @@ public class ShmsDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(e => e.SessionId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── WeeklyDefaultPassword Configuration ──────────────────────────────
+        modelBuilder.Entity<WeeklyDefaultPassword>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.PasswordHash).IsRequired();
+            entity.ToTable("WeeklyDefaultPasswords");
+        });
+
+        // ── WeeklyPasswordSubscriber Configuration ───────────────────────────
+        modelBuilder.Entity<WeeklyPasswordSubscriber>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.AdminId).IsUnique();
+            entity.ToTable("WeeklyPasswordSubscribers");
         });
 
         // ── Global soft-delete filters ───────────────────────────────────────

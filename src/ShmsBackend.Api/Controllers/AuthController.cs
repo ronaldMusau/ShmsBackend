@@ -20,19 +20,22 @@ public class AuthController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationPreferenceService _notificationPreferenceService;
     private readonly ShmsDbContext _context;
+    private readonly IWeeklyPasswordService _weeklyPasswordService;
 
     public AuthController(
         IAuthService authService,
         ILogger<AuthController> logger,
         IUnitOfWork unitOfWork,
         INotificationPreferenceService notificationPreferenceService,
-        ShmsDbContext context)
+        ShmsDbContext context,
+        IWeeklyPasswordService weeklyPasswordService)
     {
         _authService = authService;
         _logger = logger;
         _unitOfWork = unitOfWork;
         _notificationPreferenceService = notificationPreferenceService;
         _context = context;
+        _weeklyPasswordService = weeklyPasswordService;
     }
 
     [HttpPost("login")]
@@ -266,5 +269,39 @@ public class AuthController : ControllerBase
         }
 
         return Ok(new { success = true });
+    }
+
+    // ── Weekly shared password — subscriber management ──────────────────────
+
+    [HttpGet("weekly-password/eligible")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> GetWeeklyPasswordEligibleAdmins()
+    {
+        var data = await _weeklyPasswordService.GetAllEligibleAdminsAsync();
+        return Ok(new { success = true, data });
+    }
+
+    [HttpGet("weekly-password/subscribers")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> GetWeeklyPasswordSubscribers()
+    {
+        var data = await _weeklyPasswordService.GetSubscribersAsync();
+        return Ok(new { success = true, data });
+    }
+
+    [HttpPost("weekly-password/subscribe/{adminId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> SubscribeToWeeklyPassword(Guid adminId)
+    {
+        await _weeklyPasswordService.SetSubscriptionAsync(adminId, true);
+        return Ok(new { success = true, message = "Subscribed to the weekly shared password." });
+    }
+
+    [HttpPost("weekly-password/unsubscribe/{adminId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> UnsubscribeFromWeeklyPassword(Guid adminId)
+    {
+        await _weeklyPasswordService.SetSubscriptionAsync(adminId, false);
+        return Ok(new { success = true, message = "Unsubscribed from the weekly shared password." });
     }
 }

@@ -50,6 +50,10 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPortalAuthService, PortalAuthService>();
 
+// Weekly shared password — singleton in-memory plaintext cache + scoped service + hourly rotation scheduler
+builder.Services.AddSingleton<IWeeklyPasswordPlaintextCache, WeeklyPasswordPlaintextCache>();
+builder.Services.AddScoped<IWeeklyPasswordService, WeeklyPasswordService>();
+
 // Portal Services
 builder.Services.AddScoped<ILandlordService, LandlordService>();
 builder.Services.AddScoped<IAgentService, AgentService>();
@@ -76,6 +80,7 @@ builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddHostedService<PaymentSchedulerService>();
 builder.Services.AddHostedService<ComplaintReminderSchedulerService>();
 builder.Services.AddHostedService<SessionSchedulerService>();
+builder.Services.AddHostedService<WeeklyPasswordSchedulerService>();
 
 // Add JWT Authentication
 var jwtOptions = builder.Configuration.GetSection("JwtOptions").Get<JwtOptions>();

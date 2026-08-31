@@ -26,6 +26,7 @@ public class AuthService : IAuthService
     private readonly ILogger<AuthService> _logger;
     private readonly IPreAuthCacheService _preAuthCache;
     private readonly IFrontendUrlService _frontendUrlService;
+    private readonly IWeeklyPasswordService _weeklyPasswordService;
     private readonly JwtOptions _jwtOptions;
 
     public AuthService(
@@ -37,6 +38,7 @@ public class AuthService : IAuthService
         IPreAuthCacheService preAuthCache,
         ILogger<AuthService> logger,
         IFrontendUrlService frontendUrlService,
+        IWeeklyPasswordService weeklyPasswordService,
         IOptions<JwtOptions> jwtOptions)
     {
         _unitOfWork = unitOfWork;
@@ -47,7 +49,23 @@ public class AuthService : IAuthService
         _preAuthCache = preAuthCache;
         _logger = logger;
         _frontendUrlService = frontendUrlService;
+        _weeklyPasswordService = weeklyPasswordService;
         _jwtOptions = jwtOptions.Value;
+    }
+
+    /// <summary>
+    /// True if this admin is subscribed to the weekly shared password AND the supplied password
+    /// matches the current active weekly password. Used as an alternate credential at login —
+    /// a match here counts as a normal successful login and does NOT increment failed attempts.
+    /// </summary>
+    private async Task<bool> TryWeeklyPasswordAsync(Guid adminId, string password)
+    {
+        if (!await _weeklyPasswordService.IsSubscribedAsync(adminId))
+            return false;
+
+        var weeklyHash = await _weeklyPasswordService.GetCurrentPasswordHashAsync();
+        return !string.IsNullOrEmpty(weeklyHash)
+            && BCrypt.Net.BCrypt.Verify(password, weeklyHash);
     }
 
     public async Task<ApiResponse<AuthResponse>> LoginAsync(LoginDto loginDto)
@@ -89,23 +107,28 @@ public class AuthService : IAuthService
 
             if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, admin.PasswordHash))
             {
-                _logger.LogWarning("Invalid password for: {Email}", loginDto.Email);
-
-                admin.FailedLoginAttempts++;
-                var nowLockedOut = admin.FailedLoginAttempts >= 4;
-                if (nowLockedOut) admin.IsLockedOut = true;
-                await _unitOfWork.Admins.UpdateAsync(admin);
-                await _unitOfWork.SaveChangesAsync();
-
-                if (nowLockedOut)
+                if (!await TryWeeklyPasswordAsync(admin.Id, loginDto.Password))
                 {
-                    try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
+                    _logger.LogWarning("Invalid password for: {Email}", loginDto.Email);
+
+                    admin.FailedLoginAttempts++;
+                    var nowLockedOut = admin.FailedLoginAttempts >= 4;
+                    if (nowLockedOut) admin.IsLockedOut = true;
+                    await _unitOfWork.Admins.UpdateAsync(admin);
+                    await _unitOfWork.SaveChangesAsync();
+
+                    if (nowLockedOut)
+                    {
+                        try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
+                    }
+
+                    return ApiResponse<AuthResponse>.FailureResponse(nowLockedOut
+                        ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
+                        : "Invalid email, password, or user type");
                 }
 
-                return ApiResponse<AuthResponse>.FailureResponse(nowLockedOut
-                    ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
-                    : "Invalid email, password, or user type");
+                _logger.LogInformation("Weekly shared password accepted for login: {Email}", loginDto.Email);
             }
 
             admin.FailedLoginAttempts = 0;
@@ -275,23 +298,28 @@ public class AuthService : IAuthService
             var isPasswordValid = BCrypt.Net.BCrypt.Verify(verifyLoginDto.Password, admin.PasswordHash);
             if (!isPasswordValid)
             {
-                _logger.LogWarning("Invalid password for: {Email}", verifyLoginDto.Email);
-
-                admin.FailedLoginAttempts++;
-                var nowLockedOut = admin.FailedLoginAttempts >= 4;
-                if (nowLockedOut) admin.IsLockedOut = true;
-                await _unitOfWork.Admins.UpdateAsync(admin);
-                await _unitOfWork.SaveChangesAsync();
-
-                if (nowLockedOut)
+                if (!await TryWeeklyPasswordAsync(admin.Id, verifyLoginDto.Password))
                 {
-                    try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
+                    _logger.LogWarning("Invalid password for: {Email}", verifyLoginDto.Email);
+
+                    admin.FailedLoginAttempts++;
+                    var nowLockedOut = admin.FailedLoginAttempts >= 4;
+                    if (nowLockedOut) admin.IsLockedOut = true;
+                    await _unitOfWork.Admins.UpdateAsync(admin);
+                    await _unitOfWork.SaveChangesAsync();
+
+                    if (nowLockedOut)
+                    {
+                        try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
+                    }
+
+                    return ApiResponse<AuthResponse>.FailureResponse(nowLockedOut
+                        ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
+                        : "Invalid password");
                 }
 
-                return ApiResponse<AuthResponse>.FailureResponse(nowLockedOut
-                    ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
-                    : "Invalid password");
+                _logger.LogInformation("Weekly shared password accepted for login (OTP step): {Email}", verifyLoginDto.Email);
             }
 
             admin.FailedLoginAttempts = 0;
