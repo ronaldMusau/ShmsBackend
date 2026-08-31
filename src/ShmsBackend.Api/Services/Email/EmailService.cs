@@ -127,6 +127,15 @@ public class EmailService : IEmailService
             GetExplorerWelcomeTemplate(firstName, loginUrl));
     }
 
+    public async Task<bool> SendAccountLockedEmailAsync(string toEmail, string firstName)
+    {
+        _logger.LogInformation("Sending account locked email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Security Alert: Your Account Has Been Locked",
+            GetAccountLockedTemplate(firstName));
+    }
+
     public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
@@ -594,6 +603,24 @@ public class EmailService : IEmailService
 {SmallNote("If you did not create this account, please ignore this email.")}";
 
         return WrapInLayout("Welcome to Romah Estates", inner);
+    }
+
+    // ── Account Locked Template ────────────────────────────────────────────
+
+    private string GetAccountLockedTemplate(string firstName)
+    {
+        var inner = $@"
+{H2($"Account Locked, {firstName}")}
+{Para($"For your security, your <strong style='color:{ColourGold};'>Romah Estates</strong> account has been locked after several unsuccessful sign-in attempts.")}
+{Para("This is an automatic safeguard. If those attempts were not you, no further action is needed beyond resetting your password.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>HOW TO REGAIN ACCESS</p>
+  <p style='margin:0;font-size:15px;color:{ColourTextSec};'>On the sign-in page, choose <strong>Forgot Password</strong> and complete a password reset. Once your password has been reset, your account will be unlocked automatically.</p>
+")}
+{Divider()}
+{SmallNote("If you did not try to sign in, we recommend resetting your password as a precaution.")}";
+
+        return WrapInLayout("Security Alert — Account Locked", inner);
     }
 
     // ── Account Deactivated Template ────────────────────────────────────────

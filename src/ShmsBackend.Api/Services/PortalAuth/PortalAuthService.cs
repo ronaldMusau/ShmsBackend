@@ -1,4 +1,5 @@
 using System;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using BCrypt.Net;
 using Microsoft.EntityFrameworkCore;
@@ -69,6 +70,13 @@ public class PortalAuthService : IPortalAuthService
                     "Invalid email, password, or account type.");
             }
 
+            if (user.IsLockedOut)
+            {
+                _logger.LogWarning("Portal login attempt for locked-out account: {Email}", dto.Email);
+                return ApiResponse<PortalAuthResponse>.FailureResponse(
+                    "This account is locked due to too many failed login attempts. Please reset your password to regain access.");
+            }
+
             if (user.IsDeleted)
                 return ApiResponse<PortalAuthResponse>.FailureResponse("This account no longer exists.");
 
@@ -89,9 +97,25 @@ public class PortalAuthService : IPortalAuthService
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
                 _logger.LogWarning("Portal login: invalid password for {Email}", dto.Email);
-                return ApiResponse<PortalAuthResponse>.FailureResponse(
-                    "Invalid email, password, or account type.");
+
+                user.FailedLoginAttempts++;
+                var nowLockedOut = user.FailedLoginAttempts >= 4;
+                if (nowLockedOut) user.IsLockedOut = true;
+                await _unitOfWork.PortalUsers.UpdateAsync(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                if (nowLockedOut)
+                {
+                    try { await _emailService.SendAccountLockedEmailAsync(user.Email, user.FirstName); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", user.Email); }
+                }
+
+                return ApiResponse<PortalAuthResponse>.FailureResponse(nowLockedOut
+                    ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
+                    : "Invalid email, password, or account type.");
             }
+
+            user.FailedLoginAttempts = 0;
 
             var accessToken = _tokenService.GeneratePortalAccessToken(
                 user.Id, user.Email, user.PortalUserType);
@@ -113,7 +137,7 @@ public class PortalAuthService : IPortalAuthService
                 FirstName = user.FirstName,
                 LastName = user.LastName,
                 Role = user.PortalUserType.ToString(),
-                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.PortalAccessTokenExpirationMinutes)
             }, "Login successful");
         }
         catch (Exception ex)
@@ -223,6 +247,12 @@ public class PortalAuthService : IPortalAuthService
                 return ApiResponse<PortalAuthResponse>.FailureResponse("Invalid refresh token.");
             }
 
+            if (!user.IsActive || user.IsDeleted || user.IsLockedOut)
+            {
+                _logger.LogWarning("Portal refresh token used for inactive/locked/deleted account: {Email}", user.Email);
+                return ApiResponse<PortalAuthResponse>.FailureResponse("Account is no longer active.");
+            }
+
             if (user.RefreshTokenExpiryTime == null || user.RefreshTokenExpiryTime < DateTime.UtcNow)
             {
                 _logger.LogWarning("Portal refresh: expired refresh token for {Email}", user.Email);
@@ -250,7 +280,7 @@ public class PortalAuthService : IPortalAuthService
                 FirstName = user.FirstName,
                 LastName = user.LastName,
                 Role = user.PortalUserType.ToString(),
-                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.PortalAccessTokenExpirationMinutes)
             }, "Token refreshed successfully");
         }
         catch (Exception ex)
@@ -295,10 +325,11 @@ public class PortalAuthService : IPortalAuthService
                 return ApiResponse<string>.SuccessResponse(genericMessage, "Password reset requested");
             }
 
-            // 6-digit OTP, single use, 15-minute expiry
-            var otp = new Random().Next(100000, 999999).ToString();
-            user.PasswordResetToken = otp;
+            // 6-digit OTP, single use, 15-minute expiry — stored hashed, never in plaintext
+            var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+            user.PasswordResetToken = BCrypt.Net.BCrypt.HashPassword(otp);
             user.PasswordResetTokenExpiry = DateTime.UtcNow.AddMinutes(15);
+            user.PasswordResetAttempts = 0;
             await _unitOfWork.PortalUsers.UpdateAsync(user);
             await _unitOfWork.SaveChangesAsync();
 
@@ -333,17 +364,38 @@ public class PortalAuthService : IPortalAuthService
             if (user == null)
                 return ApiResponse<string>.FailureResponse("Invalid request.");
 
-            if (string.IsNullOrEmpty(user.PasswordResetToken) || user.PasswordResetToken != dto.Otp)
+            if (string.IsNullOrEmpty(user.PasswordResetToken))
                 return ApiResponse<string>.FailureResponse("Invalid OTP code.");
 
             if (user.PasswordResetTokenExpiry == null || user.PasswordResetTokenExpiry < DateTime.UtcNow)
                 return ApiResponse<string>.FailureResponse(
                     "OTP code has expired. Please request a new one.");
 
-            // Hash with cost 12, clear OTP (single use)
+            if (!BCrypt.Net.BCrypt.Verify(dto.Otp, user.PasswordResetToken))
+            {
+                user.PasswordResetAttempts++;
+                if (user.PasswordResetAttempts >= 5)
+                {
+                    user.PasswordResetToken = null;
+                    user.PasswordResetTokenExpiry = null;
+                    user.PasswordResetAttempts = 0;
+                    await _unitOfWork.PortalUsers.UpdateAsync(user);
+                    await _unitOfWork.SaveChangesAsync();
+                    return ApiResponse<string>.FailureResponse(
+                        "Too many incorrect attempts. Please request a new OTP code.");
+                }
+                await _unitOfWork.PortalUsers.UpdateAsync(user);
+                await _unitOfWork.SaveChangesAsync();
+                return ApiResponse<string>.FailureResponse("Invalid OTP code.");
+            }
+
+            // Hash with cost 12, clear OTP (single use), restore access for a locked-out account
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword, 12);
             user.PasswordResetToken = null;
             user.PasswordResetTokenExpiry = null;
+            user.PasswordResetAttempts = 0;
+            user.FailedLoginAttempts = 0;
+            user.IsLockedOut = false;
             user.UpdatedAt = DateTime.UtcNow;
 
             await _unitOfWork.PortalUsers.UpdateAsync(user);

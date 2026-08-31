@@ -37,7 +37,7 @@ public class TokenService : ITokenService
 
         _logger.LogInformation("Generated admin access token for {Email} as {UserType}", email, userType);
 
-        return BuildToken(claims);
+        return BuildToken(claims, _jwtOptions.AdminAccessTokenExpirationMinutes);
     }
 
     public string GeneratePortalAccessToken(Guid userId, string email, PortalUserType portalUserType)
@@ -53,7 +53,7 @@ public class TokenService : ITokenService
 
         _logger.LogInformation("Generated portal access token for {Email} as {PortalUserType}", email, portalUserType);
 
-        return BuildToken(claims);
+        return BuildToken(claims, _jwtOptions.PortalAccessTokenExpirationMinutes);
     }
 
     public string GenerateRefreshToken()
@@ -103,7 +103,7 @@ public class TokenService : ITokenService
         return Task.FromResult(!string.IsNullOrEmpty(refreshToken));
     }
 
-    private string BuildToken(List<Claim> claims)
+    private string BuildToken(List<Claim> claims, int expiresMinutes)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -112,7 +112,7 @@ public class TokenService : ITokenService
             issuer: _jwtOptions.Issuer,
             audience: _jwtOptions.Audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes),
+            expires: DateTime.UtcNow.AddMinutes(expiresMinutes),
             signingCredentials: credentials
         );
 

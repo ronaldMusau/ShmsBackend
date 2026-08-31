@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Caching.Distributed;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace ShmsBackend.Api.Services.OTP;
@@ -17,9 +18,8 @@ public class OtpService : IOtpService
 
     public async Task<string> GenerateOtpAsync(string key)
     {
-        // Generate 6-digit OTP
-        var random = new Random();
-        var otp = random.Next(100000, 999999).ToString();
+        // Generate 6-digit OTP (cryptographically secure)
+        var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
 
         var otpData = new
         {

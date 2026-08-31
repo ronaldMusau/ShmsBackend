@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using BCrypt.Net;
 using Microsoft.Extensions.Logging;
@@ -63,6 +64,13 @@ public class AuthService : IAuthService
                 return ApiResponse<AuthResponse>.FailureResponse("Invalid email, password, or user type");
             }
 
+            if (admin.IsLockedOut)
+            {
+                _logger.LogWarning("Login attempt for locked-out account: {Email}", loginDto.Email);
+                return ApiResponse<AuthResponse>.FailureResponse(
+                    "This account is locked due to too many failed login attempts. Please reset your password to regain access.");
+            }
+
             if (admin.IsDeleted)
                 return ApiResponse<AuthResponse>.FailureResponse("This account no longer exists.");
 
@@ -82,8 +90,25 @@ public class AuthService : IAuthService
             if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, admin.PasswordHash))
             {
                 _logger.LogWarning("Invalid password for: {Email}", loginDto.Email);
-                return ApiResponse<AuthResponse>.FailureResponse("Invalid email, password, or user type");
+
+                admin.FailedLoginAttempts++;
+                var nowLockedOut = admin.FailedLoginAttempts >= 4;
+                if (nowLockedOut) admin.IsLockedOut = true;
+                await _unitOfWork.Admins.UpdateAsync(admin);
+                await _unitOfWork.SaveChangesAsync();
+
+                if (nowLockedOut)
+                {
+                    try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
+                }
+
+                return ApiResponse<AuthResponse>.FailureResponse(nowLockedOut
+                    ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
+                    : "Invalid email, password, or user type");
             }
+
+            admin.FailedLoginAttempts = 0;
 
             var accessToken = _tokenService.GenerateAccessToken(admin.Id, admin.Email, admin.UserType);
             var refreshToken = _tokenService.GenerateRefreshToken();
@@ -102,7 +127,7 @@ public class AuthService : IAuthService
                 FirstName = admin.FirstName,
                 LastName = admin.LastName,
                 UserType = admin.UserType,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AdminAccessTokenExpirationMinutes)
             };
 
             _logger.LogInformation("User logged in successfully: {Email} as {UserType}",
@@ -239,13 +264,37 @@ public class AuthService : IAuthService
                 return ApiResponse<AuthResponse>.FailureResponse("User not found");
             }
 
+            if (admin.IsLockedOut)
+            {
+                _logger.LogWarning("OTP-verify attempt for locked-out account: {Email}", verifyLoginDto.Email);
+                return ApiResponse<AuthResponse>.FailureResponse(
+                    "This account is locked due to too many failed login attempts. Please reset your password to regain access.");
+            }
+
             // Verify password
             var isPasswordValid = BCrypt.Net.BCrypt.Verify(verifyLoginDto.Password, admin.PasswordHash);
             if (!isPasswordValid)
             {
                 _logger.LogWarning("Invalid password for: {Email}", verifyLoginDto.Email);
-                return ApiResponse<AuthResponse>.FailureResponse("Invalid password");
+
+                admin.FailedLoginAttempts++;
+                var nowLockedOut = admin.FailedLoginAttempts >= 4;
+                if (nowLockedOut) admin.IsLockedOut = true;
+                await _unitOfWork.Admins.UpdateAsync(admin);
+                await _unitOfWork.SaveChangesAsync();
+
+                if (nowLockedOut)
+                {
+                    try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
+                }
+
+                return ApiResponse<AuthResponse>.FailureResponse(nowLockedOut
+                    ? "This account is locked due to too many failed login attempts. Please reset your password to regain access."
+                    : "Invalid password");
             }
+
+            admin.FailedLoginAttempts = 0;
 
             // Generate tokens
             var accessToken = _tokenService.GenerateAccessToken(
@@ -270,11 +319,11 @@ public class AuthService : IAuthService
                 FirstName = admin.FirstName,
                 LastName = admin.LastName,
                 UserType = admin.UserType,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AdminAccessTokenExpirationMinutes)
             };
 
             _logger.LogInformation("User logged in successfully: {Email} as {UserType}. Token expires in {ExpirationMinutes} minutes",
-                admin.Email, admin.UserType, _jwtOptions.AccessTokenExpirationMinutes);
+                admin.Email, admin.UserType, _jwtOptions.AdminAccessTokenExpirationMinutes);
 
             return ApiResponse<AuthResponse>.SuccessResponse(authResponse, "Login successful");
         }
@@ -300,6 +349,12 @@ public class AuthService : IAuthService
                 return ApiResponse<AuthResponse>.FailureResponse("Invalid refresh token");
             }
 
+            if (!admin.IsActive || admin.IsDeleted || admin.IsLockedOut)
+            {
+                _logger.LogWarning("Refresh token used for inactive/locked/deleted account: {Email}", admin.Email);
+                return ApiResponse<AuthResponse>.FailureResponse("Account is no longer active.");
+            }
+
             if (admin.RefreshTokenExpiryTime < DateTime.UtcNow)
             {
                 _logger.LogWarning("Expired refresh token for user: {Email}", admin.Email);
@@ -323,11 +378,11 @@ public class AuthService : IAuthService
                 FirstName = admin.FirstName,
                 LastName = admin.LastName,
                 UserType = admin.UserType,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AccessTokenExpirationMinutes)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AdminAccessTokenExpirationMinutes)
             };
 
             _logger.LogInformation("Token refreshed successfully for user: {Email}. New token expires in {ExpirationMinutes} minutes",
-                admin.Email, _jwtOptions.AccessTokenExpirationMinutes);
+                admin.Email, _jwtOptions.AdminAccessTokenExpirationMinutes);
 
             return ApiResponse<AuthResponse>.SuccessResponse(authResponse, "Token refreshed successfully");
         }
@@ -361,18 +416,19 @@ public class AuthService : IAuthService
         {
             var admin = await _unitOfWork.Admins.GetByEmailAndTypeAsync(requestPasswordResetDto.Email, requestPasswordResetDto.UserType);
 
-            if (admin == null)
+            if (admin == null || !admin.IsActive)
             {
-                _logger.LogWarning("Password reset requested for non-existent email: {Email}",
+                _logger.LogWarning("Password reset requested for non-existent/inactive email: {Email}",
                     requestPasswordResetDto.Email);
                 return ApiResponse<string>.SuccessResponse(
                     "If an account exists with this email, a password reset link has been sent",
                     "Password reset email sent");
             }
 
-            var otp = new Random().Next(100000, 999999).ToString();
-            admin.PasswordResetToken = otp;
+            var otp = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+            admin.PasswordResetToken = BCrypt.Net.BCrypt.HashPassword(otp);
             admin.PasswordResetTokenExpiry = DateTime.UtcNow.AddMinutes(15);
+            admin.PasswordResetAttempts = 0;
             await _unitOfWork.Admins.UpdateAsync(admin);
             await _unitOfWork.SaveChangesAsync();
 
@@ -399,15 +455,36 @@ public class AuthService : IAuthService
             if (admin == null)
                 return ApiResponse<string>.FailureResponse("Invalid request.");
 
-            if (admin.PasswordResetToken == null || admin.PasswordResetToken != dto.Otp)
+            if (string.IsNullOrEmpty(admin.PasswordResetToken))
                 return ApiResponse<string>.FailureResponse("Invalid OTP code.");
 
             if (admin.PasswordResetTokenExpiry == null || admin.PasswordResetTokenExpiry < DateTime.UtcNow)
                 return ApiResponse<string>.FailureResponse("OTP code has expired. Please request a new one.");
 
+            if (!BCrypt.Net.BCrypt.Verify(dto.Otp, admin.PasswordResetToken))
+            {
+                admin.PasswordResetAttempts++;
+                if (admin.PasswordResetAttempts >= 5)
+                {
+                    admin.PasswordResetToken = null;
+                    admin.PasswordResetTokenExpiry = null;
+                    admin.PasswordResetAttempts = 0;
+                    await _unitOfWork.Admins.UpdateAsync(admin);
+                    await _unitOfWork.SaveChangesAsync();
+                    return ApiResponse<string>.FailureResponse(
+                        "Too many incorrect attempts. Please request a new OTP code.");
+                }
+                await _unitOfWork.Admins.UpdateAsync(admin);
+                await _unitOfWork.SaveChangesAsync();
+                return ApiResponse<string>.FailureResponse("Invalid OTP code.");
+            }
+
             admin.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
             admin.PasswordResetToken = null;
             admin.PasswordResetTokenExpiry = null;
+            admin.PasswordResetAttempts = 0;
+            admin.FailedLoginAttempts = 0;
+            admin.IsLockedOut = false;
             admin.UpdatedAt = DateTime.UtcNow;
 
             await _unitOfWork.Admins.UpdateAsync(admin);

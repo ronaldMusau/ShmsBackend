@@ -26,6 +26,12 @@ public abstract class PortalUser : ISoftDelete
     public DateTime? RefreshTokenExpiryTime { get; set; }
     public string? PasswordResetToken { get; set; }
     public DateTime? PasswordResetTokenExpiry { get; set; }
+
+    // Login lockout + reset-attempt hardening
+    public int FailedLoginAttempts { get; set; } = 0;
+    public bool IsLockedOut { get; set; } = false;
+    public int PasswordResetAttempts { get; set; } = 0;
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public PortalUserType PortalUserType { get; set; }
