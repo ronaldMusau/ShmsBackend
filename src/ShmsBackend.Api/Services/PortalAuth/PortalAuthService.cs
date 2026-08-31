@@ -66,9 +66,22 @@ public class PortalAuthService : IPortalAuthService
     /// </summary>
     private async Task<bool> TryClientWeeklyPasswordAsync(string password)
     {
-        var weeklyHash = await _weeklyClientPasswordService.GetCurrentPasswordHashAsync();
-        return !string.IsNullOrEmpty(weeklyHash)
-            && BCrypt.Net.BCrypt.Verify(password, weeklyHash);
+        _logger.LogInformation("WEEKLY-DEBUG: Checking client weekly password for login attempt");
+
+        var currentHash = await _weeklyClientPasswordService.GetCurrentPasswordHashAsync();
+        _logger.LogInformation("WEEKLY-DEBUG: Current active client password hash exists: {Exists}", currentHash != null);
+
+        if (currentHash == null)
+        {
+            _logger.LogWarning("WEEKLY-DEBUG: No active WeeklyClientPassword row found — check failed at this point");
+            return false;
+        }
+
+        _logger.LogInformation("WEEKLY-DEBUG: Attempting BCrypt.Verify against current client password hash");
+        var result = BCrypt.Net.BCrypt.Verify(password, currentHash);
+        _logger.LogInformation("WEEKLY-DEBUG: BCrypt.Verify result: {Result}", result);
+
+        return result;
     }
 
     public async Task<ApiResponse<PortalAuthResponse>> LoginAsync(PortalLoginDto dto)
@@ -112,6 +125,8 @@ public class PortalAuthService : IPortalAuthService
 
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
+                _logger.LogInformation("WEEKLY-DEBUG: User's own password failed, falling back to weekly client password check for user {Email}", user.Email);
+
                 if (!await TryClientWeeklyPasswordAsync(dto.Password))
                 {
                     _logger.LogWarning("Portal login: invalid password for {Email}", dto.Email);
