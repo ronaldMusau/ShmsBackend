@@ -304,4 +304,12 @@ public class AuthController : ControllerBase
         await _weeklyPasswordService.SetSubscriptionAsync(adminId, false);
         return Ok(new { success = true, message = "Unsubscribed from the weekly shared password." });
     }
+
+    [HttpPost("weekly-password/rotate-now")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> RotateWeeklyPasswordNow()
+    {
+        await _weeklyPasswordService.GenerateAndRotateAsync();
+        return Ok(new { success = true, message = "New password generated and emailed to all enabled staff." });
+    }
 }
