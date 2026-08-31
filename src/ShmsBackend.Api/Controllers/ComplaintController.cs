@@ -213,7 +213,7 @@ public class ComplaintController : ControllerBase
             {
                 var tenant2 = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
                 if (tenant2 != null)
-                    await _emailService.SendComplaintClosedEmailAsync(tenant2.Email, tenant2.FirstName, complaint.TicketNumber, dto.ResolutionNotes);
+                    await _emailService.SendComplaintClosedEmailAsync(tenant2.Email, tenant2.FirstName, complaint.TicketNumber, dto.ResolutionNotes, tenant2.Id.ToString(), true);
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send complaint closure email"); }
 
@@ -388,7 +388,7 @@ public class ComplaintController : ControllerBase
         });
         await _context.SaveChangesAsync();
 
-        try { await _emailService.SendComplaintEscalatedAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber); }
+        try { await _emailService.SendComplaintEscalatedAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber, agent.Id.ToString(), true); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to send agent escalation email"); }
         try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Complaint {complaint.TicketNumber} has been escalated to you.", "property", "Complaint", complaint.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of escalation"); }
@@ -447,7 +447,7 @@ public class ComplaintController : ControllerBase
         var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
         if (tenant != null)
         {
-            try { await _emailService.SendComplaintClosedEmailAsync(tenant.Email, tenant.FirstName, complaint.TicketNumber, dto.ClosingComment); }
+            try { await _emailService.SendComplaintClosedEmailAsync(tenant.Email, tenant.FirstName, complaint.TicketNumber, dto.ClosingComment, tenant.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send final close email"); }
             try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), $"Your complaint {complaint.TicketNumber} has been closed: {dto.ClosingComment}", "property", "Complaint", complaint.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of final close"); }
@@ -502,14 +502,14 @@ public class ComplaintController : ControllerBase
 
             try
             {
-                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
                 var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
                 foreach (var mgr in managementUsers)
                 {
-                    try { await _emailService.SendComplaintRejectedManagementEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, dto.Notes); }
+                    try { await _emailService.SendComplaintRejectedManagementEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, dto.Notes, mgr.Id.ToString(), false); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email to {Email}", mgr.Email); }
                 }
             }
@@ -533,7 +533,7 @@ public class ComplaintController : ControllerBase
             var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
             if (nextApprover != null)
             {
-                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, complaint.TicketNumber, nextStep.StepOrder); }
+                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, complaint.TicketNumber, nextStep.StepOrder, nextApprover.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email"); }
             }
 
@@ -558,7 +558,7 @@ public class ComplaintController : ControllerBase
                 var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == complaint.LandlordId);
                 if (landlord != null)
                 {
-                    try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, complaint.TicketNumber); }
+                    try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, complaint.TicketNumber, landlord.Id.ToString(), true); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord approval-needed email"); }
                 }
                 return Ok(new { success = true, message = "Approved. Internal sequence complete — sent to landlord for final approval." });

@@ -175,7 +175,7 @@ public class FlatService
         try
         {
             await _emailService.SendFlatCreatedLandlordEmailAsync(
-                landlord.Email, landlord.FirstName, flat.FlatName, houses.Count);
+                landlord.Email, landlord.FirstName, flat.FlatName, houses.Count, landlord.Id.ToString(), true);
         }
         catch (Exception ex)
         {
@@ -189,7 +189,7 @@ public class FlatService
                 var agent = await _context.Agents.FindAsync(dto.AgentId.Value);
                 if (agent != null)
                 {
-                    await _emailService.SendFlatAssignedAgentEmailAsync(agent.Email, agent.FirstName, flat.FlatName);
+                    await _emailService.SendFlatAssignedAgentEmailAsync(agent.Email, agent.FirstName, flat.FlatName, agent.Id.ToString(), true);
                     await _notificationService.SendToUserAsync(
                         agent.Id.ToString(),
                         $"A new flat '{flat.FlatName}' has been added for you to manage.",

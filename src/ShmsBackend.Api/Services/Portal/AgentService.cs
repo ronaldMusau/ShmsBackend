@@ -283,7 +283,7 @@ public class AgentService : IAgentService
 
             try
             {
-                await _emailService.SendAccountDeactivatedEmailAsync(agent.Email, agent.FirstName);
+                await _emailService.SendAccountDeactivatedEmailAsync(agent.Email, agent.FirstName, agent.Id.ToString(), true);
             }
             catch (Exception ex)
             {
@@ -294,7 +294,7 @@ public class AgentService : IAgentService
         {
             try
             {
-                await _emailService.SendAccountReactivatedEmailAsync(agent.Email, agent.FirstName);
+                await _emailService.SendAccountReactivatedEmailAsync(agent.Email, agent.FirstName, agent.Id.ToString(), true);
             }
             catch (Exception ex)
             {

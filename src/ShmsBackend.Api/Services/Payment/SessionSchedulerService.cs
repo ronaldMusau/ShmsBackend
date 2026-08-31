@@ -77,7 +77,7 @@ public class SessionSchedulerService : BackgroundService
 
             if (explorer != null)
             {
-                try { await emailService.SendSessionFeedbackPromptEmailAsync(explorer.Email, explorer.FirstName, houseNumber, session.ScheduledAt); }
+                try { await emailService.SendSessionFeedbackPromptEmailAsync(explorer.Email, explorer.FirstName, houseNumber, session.ScheduledAt, explorer.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send feedback prompt email to explorer {ExplorerId}", explorer.Id); }
 
                 try { await notificationService.SendToUserAsync(explorer.Id.ToString(), $"Did your viewing session for house {houseNumber} take place? Please close the session or reschedule.", "property"); }

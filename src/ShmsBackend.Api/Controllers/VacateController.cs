@@ -149,7 +149,7 @@ public class VacateController : ControllerBase
 
         if (arrears > 0)
         {
-            try { await _emailService.SendVacateArrearsBlockEmailAsync(tenant.Email, tenant.FirstName, arrears); }
+            try { await _emailService.SendVacateArrearsBlockEmailAsync(tenant.Email, tenant.FirstName, arrears, tenant.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send arrears block email"); }
 
             try { await _notificationService.SendToUserAsync(dto.TenantId.ToString(), $"You have KES {arrears:N2} in arrears. Please clear this before your vacate request can proceed.", "property", "Vacate"); }
@@ -238,7 +238,7 @@ public class VacateController : ControllerBase
         var agent = agentAssignment.Agent;
         var houseNumber = tenant.House.HouseNumber;
 
-        try { await _emailService.SendVacateAssignedAgentEmailAsync(agent.Email, agent.FirstName, houseNumber); }
+        try { await _emailService.SendVacateAssignedAgentEmailAsync(agent.Email, agent.FirstName, houseNumber, agent.Id.ToString(), true); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate inspection email to agent {AgentId}", agent.Id); }
 
         try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"You have a new vacate inspection assigned for house {houseNumber}.", "property", "Vacate", vacateRequest.Id.ToString()); }
@@ -320,7 +320,7 @@ public class VacateController : ControllerBase
 
             if (tenant != null)
             {
-                try { await _emailService.SendVacateSettlementReversedEmailAsync(tenant.Email, tenant.FirstName, houseNumber); }
+                try { await _emailService.SendVacateSettlementReversedEmailAsync(tenant.Email, tenant.FirstName, houseNumber, tenant.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send settlement reversal email to tenant"); }
 
                 try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), "Your vacate request was cancelled and any forfeited amounts have been restored to your account.", "property", "Vacate", vacateRequest.Id.ToString()); }
@@ -404,7 +404,7 @@ public class VacateController : ControllerBase
             var agent = await _context.Agents.FindAsync(vacateRequest.AssignedAgentId.Value);
             if (agent != null)
             {
-                try { await _emailService.SendVacateCancelledAgentEmailAsync(agent.Email, agent.FirstName, houseNumber); }
+                try { await _emailService.SendVacateCancelledAgentEmailAsync(agent.Email, agent.FirstName, houseNumber, agent.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate cancelled email to agent {AgentId}", agent.Id); }
 
                 try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Vacate request for house {houseNumber} has been cancelled.", "property", "Vacate", vacateRequest.Id.ToString()); }
@@ -1184,14 +1184,14 @@ public class VacateController : ControllerBase
 
         try
         {
-            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
             var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
             foreach (var mgr in managementUsers)
             {
-                try { await _emailService.SendVacateAppealManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber); }
+                try { await _emailService.SendVacateAppealManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send appeal email to {Email}", mgr.Email); }
             }
         }
@@ -1375,14 +1375,14 @@ public class VacateController : ControllerBase
 
             try
             {
-                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
                 var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
                 foreach (var mgr in managementUsers)
                 {
-                    try { await _emailService.SendVacateRejectedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, dto.Notes); }
+                    try { await _emailService.SendVacateRejectedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, dto.Notes, mgr.Id.ToString(), false); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email to {Email}", mgr.Email); }
                 }
             }
@@ -1407,7 +1407,7 @@ public class VacateController : ControllerBase
             var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
             if (nextApprover != null)
             {
-                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"Vacate — {houseNumber}", nextStep.StepOrder); }
+                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"Vacate — {houseNumber}", nextStep.StepOrder, nextApprover.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email to next vacate approver"); }
             }
 
@@ -1475,7 +1475,7 @@ public class VacateController : ControllerBase
         var firstApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == firstStep.ApproverId);
         if (firstApprover != null)
         {
-            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"Vacate — {houseNumber}", firstStep.StepOrder); }
+            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"Vacate — {houseNumber}", firstStep.StepOrder, firstApprover.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email to first vacate approver on resubmission"); }
         }
 
@@ -1526,7 +1526,7 @@ public class VacateController : ControllerBase
                 try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"Your vacate request for house {houseNumber} has been approved. Settlement is ready for review.", "property", "Vacate", vacateRequest.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate approval"); }
 
-                try { await _emailService.SendVacateApprovedTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber); }
+                try { await _emailService.SendVacateApprovedTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber, tenant.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate approved email to tenant"); }
             }
 
@@ -1554,7 +1554,7 @@ public class VacateController : ControllerBase
                 try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), $"Your vacate request for house {houseNumber} has been closed. See final remarks in your portal.", "property", "Vacate", vacateRequest.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate final rejection"); }
 
-                try { await _emailService.SendVacateFinalRejectionTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber, dto.Remarks); }
+                try { await _emailService.SendVacateFinalRejectionTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber, dto.Remarks, tenant.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate final rejection email to tenant"); }
             }
 
@@ -1788,7 +1788,7 @@ public class VacateController : ControllerBase
             try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Management has processed your vacate refund for house {houseNumber}. Please check your portal for details.", "property", "Vacate", settlement.VacateRequestId.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate refund payment"); }
 
-            try { await _emailService.SendVacateRefundPaidTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber); }
+            try { await _emailService.SendVacateRefundPaidTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber, tenant.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate refund paid email to tenant"); }
         }
 

@@ -133,12 +133,12 @@ public class ExplorerController : ControllerBase
             if (!string.IsNullOrEmpty(explorer.RefreshToken))
                 await _tokenBlacklistService.BlacklistTokenAsync(explorer.RefreshToken, TimeSpan.FromDays(30));
 
-            try { await _emailService.SendAccountDeactivatedEmailAsync(explorer.Email, explorer.FirstName); }
+            try { await _emailService.SendAccountDeactivatedEmailAsync(explorer.Email, explorer.FirstName, explorer.Id.ToString(), true); }
             catch { /* log but don't fail */ }
         }
         else
         {
-            try { await _emailService.SendAccountReactivatedEmailAsync(explorer.Email, explorer.FirstName); }
+            try { await _emailService.SendAccountReactivatedEmailAsync(explorer.Email, explorer.FirstName, explorer.Id.ToString(), true); }
             catch { /* log but don't fail */ }
         }
 

@@ -202,7 +202,7 @@ public class FlatController : ControllerBase
         {
             try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit has been submitted for your flat \"{flat.FlatName}\" and sent for approval.", "property", "FlatEdit", flat.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of flat edit submission"); }
-            try { await _emailService.SendFlatEditSubmittedEmailAsync(landlord.Email, landlord.FirstName, flat.FlatName); }
+            try { await _emailService.SendFlatEditSubmittedEmailAsync(landlord.Email, landlord.FirstName, flat.FlatName, landlord.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit submission email"); }
         }
 
@@ -211,7 +211,7 @@ public class FlatController : ControllerBase
         {
             try { await _notificationService.SendToUserAsync(firstApprover.Id.ToString(), $"A flat edit for \"{flat.FlatName}\" requires your approval.", "property", "FlatEdit", flat.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify first approver of flat edit"); }
-            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"FLAT-{flat.FlatName}", firstStep.StepOrder); }
+            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"FLAT-{flat.FlatName}", firstStep.StepOrder, firstApprover.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit approval-step email"); }
         }
 
@@ -263,7 +263,7 @@ public class FlatController : ControllerBase
             {
                 try { await _notificationService.SendToUserAsync(requester.Id.ToString(), $"Your flat edit for \"{request.Flat!.FlatName}\" was rejected and needs revision.", "property", "FlatEdit", request.FlatId.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify requester of flat edit rejection"); }
-                try { await _emailService.SendApprovalRejectedEmailAsync(requester.Email, requester.FirstName, $"FLAT-{request.Flat!.FlatName}", dto.Notes!); }
+                try { await _emailService.SendApprovalRejectedEmailAsync(requester.Email, requester.FirstName, $"FLAT-{request.Flat!.FlatName}", dto.Notes!, requester.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit rejection email"); }
             }
             return Ok(new { success = true, message = "Rejected. Sent back to the requester for revision." });
@@ -281,7 +281,7 @@ public class FlatController : ControllerBase
             {
                 try { await _notificationService.SendToUserAsync(nextApprover.Id.ToString(), $"A flat edit for \"{request.Flat!.FlatName}\" requires your approval.", "property", "FlatEdit", request.FlatId.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver of flat edit"); }
-                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"FLAT-{request.Flat!.FlatName}", nextStep.StepOrder); }
+                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"FLAT-{request.Flat!.FlatName}", nextStep.StepOrder, nextApprover.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit approval-step email"); }
             }
             return Ok(new { success = true, message = "Approved. Advanced to the next approval step." });
@@ -298,7 +298,7 @@ public class FlatController : ControllerBase
             {
                 try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit to your flat \"{editFlat.FlatName}\" requires your final approval.", "property", "FlatEdit", editFlat.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of pending flat edit approval"); }
-                try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, $"FLAT-{editFlat.FlatName}"); }
+                try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, $"FLAT-{editFlat.FlatName}", landlord.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord flat edit approval-needed email"); }
             }
             return Ok(new { success = true, message = "Approved. Internal sequence complete — sent to landlord for final approval." });

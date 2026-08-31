@@ -1,9 +1,10 @@
-﻿using ShmsBackend.Api.Models.DTOs.Email;
+using ShmsBackend.Api.Models.DTOs.Email;
 
 namespace ShmsBackend.Api.Services.Email;
 
 public interface IEmailService
 {
+    // ── Always-on transactional / security emails (never preference-gated) ──
     Task<bool> SendOtpEmailAsync(EmailTemplateDto emailData);
     Task<bool> SendWelcomeEmailAsync(string toEmail, string firstName, string temporaryPassword);
     Task<bool> SendPasswordResetEmailAsync(string toEmail, string firstName, string resetLink);
@@ -12,43 +13,45 @@ public interface IEmailService
     Task<bool> SendPortalVerifyWithPasswordEmailAsync(string toEmail, string firstName, string verificationLink, string temporaryPassword);
     Task<bool> SendConfirmNewEmailAsync(string toEmail, string firstName, string confirmationLink);
     Task<bool> SendExplorerWelcomeEmailAsync(string toEmail, string firstName, string loginUrl);
-    Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName);
-    Task<bool> SendAccountReactivatedEmailAsync(string toEmail, string firstName);
-    Task<bool> SendPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt);
-    Task<bool> SendItemizedPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt);
-    Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName);
-    Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName);
-    Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear);
-    Task<bool> SendFlatCreatedLandlordEmailAsync(string toEmail, string firstName, string flatName, int houseCount);
-    Task<bool> SendFlatAssignedAgentEmailAsync(string toEmail, string firstName, string flatName);
-    Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName);
-    Task SendComplaintManagementAlertEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName);
-    Task SendComplaintClosedEmailAsync(string toEmail, string firstName, string ticketNumber, string resolutionNotes);
-    Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber);
-    Task SendApprovalStepEmailAsync(string toEmail, string firstName, string ticketNumber, int stepOrder);
-    Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason);
-    Task SendLandlordApprovalNeededEmailAsync(string toEmail, string firstName, string ticketNumber);
-    Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount);
-    Task SendFlatEditSubmittedEmailAsync(string toEmail, string firstName, string flatName);
-    Task SendDeductionCreatedEmailAsync(string toEmail, string firstName, string ticketNumber, decimal amount, string? description);
-    Task SendComplaintOverdueManagementEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen);
-    Task SendComplaintOverdueAgentEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen);
-    Task SendComplaintOverdueLandlordEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen);
-    Task SendVacateAssignedAgentEmailAsync(string toEmail, string firstName, string houseNumber);
-    Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber);
-    Task SendVacateArrearsBlockEmailAsync(string toEmail, string firstName, decimal arrearsAmount);
-    Task SendVacateSettlementReversedEmailAsync(string toEmail, string firstName, string houseNumber);
-    Task SendVacateApprovedTenantEmailAsync(string toEmail, string firstName, string houseNumber);
-    Task SendComplaintRejectedManagementEmailAsync(string toEmail, string firstName, string ticketNumber, string? rejectionNotes);
-    Task SendVacateRejectedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? rejectionNotes);
-    Task SendVacateFinalRejectionTenantEmailAsync(string toEmail, string firstName, string houseNumber, string remarks);
-    Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber);
-    Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber);
-    Task SendVacateRefundPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber);
-    Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt);
-    Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt);
-    Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName);
-    Task SendSessionReassignedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt);
-    Task SendSessionFeedbackPromptEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt);
-    Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate);
+
+    // ── Preference-gated emails (optional userId/isPortalUser threads the recipient identity) ──
+    Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendAccountReactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendItemizedPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendFlatCreatedLandlordEmailAsync(string toEmail, string firstName, string flatName, int houseCount, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendFlatAssignedAgentEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintManagementAlertEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintClosedEmailAsync(string toEmail, string firstName, string ticketNumber, string resolutionNotes, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false);
+    Task SendApprovalStepEmailAsync(string toEmail, string firstName, string ticketNumber, int stepOrder, string? userId = null, bool isPortalUser = false);
+    Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason, string? userId = null, bool isPortalUser = false);
+    Task SendLandlordApprovalNeededEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false);
+    Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount, string? userId = null, bool isPortalUser = false);
+    Task SendFlatEditSubmittedEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false);
+    Task SendDeductionCreatedEmailAsync(string toEmail, string firstName, string ticketNumber, decimal amount, string? description, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintOverdueManagementEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintOverdueAgentEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintOverdueLandlordEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false);
+    Task SendVacateAssignedAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
+    Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
+    Task SendVacateArrearsBlockEmailAsync(string toEmail, string firstName, decimal arrearsAmount, string? userId = null, bool isPortalUser = false);
+    Task SendVacateSettlementReversedEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
+    Task SendVacateApprovedTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintRejectedManagementEmailAsync(string toEmail, string firstName, string ticketNumber, string? rejectionNotes, string? userId = null, bool isPortalUser = false);
+    Task SendVacateRejectedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? rejectionNotes, string? userId = null, bool isPortalUser = false);
+    Task SendVacateFinalRejectionTenantEmailAsync(string toEmail, string firstName, string houseNumber, string remarks, string? userId = null, bool isPortalUser = false);
+    Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
+    Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
+    Task SendVacateRefundPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
+    Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt, string? userId = null, bool isPortalUser = false);
+    Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt, string? userId = null, bool isPortalUser = false);
+    Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string? userId = null, bool isPortalUser = false);
+    Task SendSessionReassignedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt, string? userId = null, bool isPortalUser = false);
+    Task SendSessionFeedbackPromptEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt, string? userId = null, bool isPortalUser = false);
+    Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false);
 }

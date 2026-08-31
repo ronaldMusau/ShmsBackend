@@ -224,7 +224,7 @@ public class PaymentService : IPaymentService
                         try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Your vacate settlement payment for house {vacateHouseNumber} has been received.", "property"); }
                         catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate settlement payment"); }
 
-                        try { await _emailService.SendVacateSettlementPaidTenantEmailAsync(vacateTenant.Email, vacateTenant.FirstName, vacateHouseNumber); }
+                        try { await _emailService.SendVacateSettlementPaidTenantEmailAsync(vacateTenant.Email, vacateTenant.FirstName, vacateHouseNumber, vacateTenant.Id.ToString(), true); }
                         catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate settlement paid email to tenant"); }
                     }
 
@@ -461,7 +461,8 @@ public class PaymentService : IPaymentService
                             itemizedBreakdown,
                             payment.House!.HouseNumber,
                             payment.House.Flat?.FlatName ?? "",
-                            DateTime.UtcNow);
+                            DateTime.UtcNow,
+                            payment.Tenant.Id.ToString(), true);
                     else
                         await _emailService.SendPaymentReceiptEmailAsync(
                             payment.Tenant.Email,
@@ -470,7 +471,8 @@ public class PaymentService : IPaymentService
                             details.Amount.Value,
                             payment.House!.HouseNumber,
                             payment.House.Flat?.FlatName ?? "",
-                            DateTime.UtcNow);
+                            DateTime.UtcNow,
+                            payment.Tenant.Id.ToString(), true);
                 }
                 catch (Exception ex)
                 {
@@ -927,7 +929,8 @@ public class PaymentService : IPaymentService
                         breakdown,
                         totalArrears,
                         house?.HouseNumber ?? "",
-                        house?.Flat?.FlatName ?? "");
+                        house?.Flat?.FlatName ?? "",
+                        tenant.Id.ToString(), true);
                 }
                 catch (Exception ex)
                 {

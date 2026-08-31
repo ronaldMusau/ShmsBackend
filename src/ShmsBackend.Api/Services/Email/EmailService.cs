@@ -2,6 +2,8 @@
 using ShmsBackend.Api.Configuration;
 using ShmsBackend.Api.Models.DTOs.Email;
 using ShmsBackend.Api.Services.Common;
+using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Models.Entities;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -14,6 +16,7 @@ public class EmailService : IEmailService
     private readonly ResendEmailOptions _emailOptions;
     private readonly ILogger<EmailService> _logger;
     private readonly IFrontendUrlService _frontendUrlService;
+    private readonly INotificationPreferenceService _notificationPreferenceService;
 
     // ── Gold theme colours (mirrors gold-theme.css variables) ──
     private const string ColourBg = "#080808";
@@ -33,11 +36,13 @@ public class EmailService : IEmailService
         IOptions<ResendEmailOptions> emailOptions,
         ILogger<EmailService> logger,
         IHttpClientFactory httpClientFactory,
-        IFrontendUrlService frontendUrlService)
+        IFrontendUrlService frontendUrlService,
+        INotificationPreferenceService notificationPreferenceService)
     {
         _emailOptions = emailOptions.Value;
         _logger = logger;
         _frontendUrlService = frontendUrlService;
+        _notificationPreferenceService = notificationPreferenceService;
 
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://api.resend.com");
@@ -122,8 +127,9 @@ public class EmailService : IEmailService
             GetExplorerWelcomeTemplate(firstName, loginUrl));
     }
 
-    public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName)
+    public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
         _logger.LogInformation("Sending account deactivation email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -131,8 +137,9 @@ public class EmailService : IEmailService
             GetAccountDeactivatedTemplate(firstName));
     }
 
-    public async Task<bool> SendAccountReactivatedEmailAsync(string toEmail, string firstName)
+    public async Task<bool> SendAccountReactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
         _logger.LogInformation("Sending account reactivation email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -140,144 +147,186 @@ public class EmailService : IEmailService
             GetAccountReactivatedTemplate(firstName));
     }
 
-    public async Task<bool> SendPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt)
+    public async Task<bool> SendPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
         _logger.LogInformation("Sending payment receipt email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Receipt — Romah Estates",
             GetPaymentReceiptTemplate(firstName, mpesaReceiptNumber, amount, houseNumber, flatName, paidAt));
     }
 
-    public async Task<bool> SendItemizedPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt)
+    public async Task<bool> SendItemizedPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
         _logger.LogInformation("Sending itemized payment receipt email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Receipt — Romah Estates",
             GetItemizedPaymentReceiptTemplate(firstName, mpesaReceiptNumber, totalAmount, breakdown, houseNumber, flatName, paidAt));
     }
 
-    public async Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName)
+    public async Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
         _logger.LogInformation("Sending payment reminder email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Reminder — Romah Estates",
             GetPaymentReminderTemplate(firstName, amountDue, dueDate, houseNumber, flatName));
     }
 
-    public async Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName)
+    public async Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
         _logger.LogInformation("Sending payment overdue email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Overdue — Romah Estates",
             GetPaymentOverdueTemplate(firstName, breakdown, totalArrears, houseNumber, flatName));
     }
 
-    public async Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear)
+    public async Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
         _logger.LogInformation("Sending rent change notice to: {Email}", toEmail);
         return await SendEmail(toEmail, "Upcoming Rent Change — Romah Estates",
             GetRentChangeNoticeTemplate(firstName, houseNumber, newRentFee, effectiveMonth, effectiveYear));
     }
 
-    public async Task<bool> SendFlatCreatedLandlordEmailAsync(string toEmail, string firstName, string flatName, int houseCount)
+    public async Task<bool> SendFlatCreatedLandlordEmailAsync(string toEmail, string firstName, string flatName, int houseCount, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return false;
         _logger.LogInformation("Sending flat created email to landlord: {Email}", toEmail);
         return await SendEmail(toEmail, $"Your flat '{flatName}' has been created — Romah Estates",
             GetFlatCreatedLandlordTemplate(firstName, flatName, houseCount));
     }
 
-    public async Task<bool> SendFlatAssignedAgentEmailAsync(string toEmail, string firstName, string flatName)
+    public async Task<bool> SendFlatAssignedAgentEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return false;
         _logger.LogInformation("Sending flat assigned email to agent: {Email}", toEmail);
         return await SendEmail(toEmail, "New flat assigned to you — Romah Estates",
             GetFlatAssignedAgentTemplate(firstName, flatName));
     }
 
-    public async Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName)
+    public async Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
         _logger.LogInformation("Sending complaint confirmation email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Received — {ticketNumber}",
             GetComplaintConfirmationTemplate(firstName, ticketNumber, complaintTypeName));
     }
 
-    public async Task SendComplaintManagementAlertEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName)
+    public async Task SendComplaintManagementAlertEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
         _logger.LogInformation("Sending complaint management alert email to: {Email}", toEmail);
         await SendEmail(toEmail, $"New Complaint Raised — {ticketNumber}",
             GetComplaintManagementAlertTemplate(firstName, ticketNumber, complaintTypeName, tenantName, houseNumber, flatName));
     }
 
-    public async Task SendComplaintClosedEmailAsync(string toEmail, string firstName, string ticketNumber, string resolutionNotes)
+    public async Task SendComplaintClosedEmailAsync(string toEmail, string firstName, string ticketNumber, string resolutionNotes, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
         _logger.LogInformation("Sending complaint closed email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Resolved — {ticketNumber}",
             GetComplaintClosedTemplate(firstName, ticketNumber, resolutionNotes));
     }
 
-    public async Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber)
+    public async Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
         _logger.LogInformation("Sending complaint escalation email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Escalated to You — {ticketNumber}",
             GetComplaintEscalatedAgentTemplate(firstName, ticketNumber));
     }
 
-    public async Task SendApprovalStepEmailAsync(string toEmail, string firstName, string ticketNumber, int stepOrder)
+    public async Task SendApprovalStepEmailAsync(string toEmail, string firstName, string ticketNumber, int stepOrder, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
         _logger.LogInformation("Sending approval-step email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Approval Needed — {ticketNumber}",
             GetApprovalStepTemplate(firstName, ticketNumber, stepOrder));
     }
 
-    public async Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason)
+    public async Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
         _logger.LogInformation("Sending approval-rejected email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Sent Back for Revision — {ticketNumber}",
             GetApprovalRejectedTemplate(firstName, ticketNumber, rejectionReason));
     }
 
-    public async Task SendLandlordApprovalNeededEmailAsync(string toEmail, string firstName, string ticketNumber)
+    public async Task SendLandlordApprovalNeededEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
         _logger.LogInformation("Sending landlord approval-needed email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Your Approval Needed — {ticketNumber}",
             GetLandlordApprovalNeededTemplate(firstName, ticketNumber));
     }
 
-    public async Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount)
+    public async Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
         _logger.LogInformation("Sending landlord-decision email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Landlord {decision} Complaint {ticketNumber}",
             GetLandlordDecisionTemplate(firstName, ticketNumber, decision, notes, amount));
     }
 
-    public async Task SendFlatEditSubmittedEmailAsync(string toEmail, string firstName, string flatName)
+    public async Task SendFlatEditSubmittedEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
         _logger.LogInformation("Sending flat edit submitted email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Flat Edit Submitted — {flatName}",
             GetFlatEditSubmittedTemplate(firstName, flatName));
     }
 
-    public async Task SendDeductionCreatedEmailAsync(string toEmail, string firstName, string ticketNumber, decimal amount, string? description)
+    public async Task SendDeductionCreatedEmailAsync(string toEmail, string firstName, string ticketNumber, decimal amount, string? description, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return;
         _logger.LogInformation("Sending deduction created email to landlord: {Email}", toEmail);
         await SendEmail(toEmail, $"Deduction Created — {ticketNumber}",
             GetDeductionCreatedTemplate(firstName, ticketNumber, amount, description));
     }
 
-    public async Task SendComplaintOverdueManagementEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen)
+    public async Task SendComplaintOverdueManagementEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
         _logger.LogInformation("Sending overdue complaint reminder email to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Overdue Complaint — {ticketNumber}",
             GetComplaintOverdueManagementTemplate(firstName, ticketNumber, daysOpen));
     }
 
-    public async Task SendComplaintOverdueAgentEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen)
+    public async Task SendComplaintOverdueAgentEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
         _logger.LogInformation("Sending overdue complaint reminder email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Overdue Complaint — Action Required — {ticketNumber}",
             GetComplaintOverdueAgentTemplate(firstName, ticketNumber, daysOpen));
     }
 
-    public async Task SendComplaintOverdueLandlordEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen)
+    public async Task SendComplaintOverdueLandlordEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
         _logger.LogInformation("Sending overdue complaint reminder email to landlord: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Awaiting Your Decision — {ticketNumber}",
             GetComplaintOverdueLandlordTemplate(firstName, ticketNumber, daysOpen));
+    }
+
+    // ── Preference gating ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Whether an email in <paramref name="group"/> should be sent to this user.
+    /// If <paramref name="userId"/> is null/empty (identity not threaded through), always returns true —
+    /// we never silently block an email whose recipient wasn't resolved. Otherwise loads the user's
+    /// NotificationPreference (all-true when none exists, matching GetOrCreateAsync) and returns
+    /// MasterEmailEnabled AND {group}EmailEnabled.
+    /// </summary>
+    private async Task<bool> ShouldSendEmailAsync(string? userId, bool isPortalUser, string group)
+    {
+        if (string.IsNullOrEmpty(userId) || !Guid.TryParse(userId, out var uid))
+            return true;
+
+        var pref = await _notificationPreferenceService.GetOrCreateAsync(uid, isPortalUser);
+
+        bool Flag(string name) =>
+            (bool?)typeof(NotificationPreference).GetProperty($"{name}EmailEnabled")?.GetValue(pref) ?? true;
+
+        return Flag("Master") && Flag(group);
     }
 
     // ── Shared HTTP helper ───────────────────────────────────────────────────
@@ -1027,8 +1076,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Complaint Awaiting Your Decision — {ticketNumber}", inner);
     }
 
-    public async Task SendVacateAssignedAgentEmailAsync(string toEmail, string firstName, string houseNumber)
+    public async Task SendVacateAssignedAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending vacate inspection assigned email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Inspection Assigned — {houseNumber}",
             GetVacateAssignedAgentTemplate(firstName, houseNumber));
@@ -1052,8 +1102,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Inspection Assigned — {houseNumber}", inner);
     }
 
-    public async Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber)
+    public async Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending vacate inspection cancelled email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Inspection Cancelled — {houseNumber}",
             GetVacateCancelledAgentTemplate(firstName, houseNumber));
@@ -1077,8 +1128,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Inspection Cancelled — {houseNumber}", inner);
     }
 
-    public async Task SendVacateArrearsBlockEmailAsync(string toEmail, string firstName, decimal arrearsAmount)
+    public async Task SendVacateArrearsBlockEmailAsync(string toEmail, string firstName, decimal arrearsAmount, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending vacate arrears block email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, "Vacate Request Blocked — Outstanding Arrears",
             GetVacateArrearsBlockTemplate(firstName, arrearsAmount));
@@ -1102,8 +1154,9 @@ public class EmailService : IEmailService
         return WrapInLayout("Vacate Request Blocked — Outstanding Arrears", inner);
     }
 
-    public async Task SendVacateSettlementReversedEmailAsync(string toEmail, string firstName, string houseNumber)
+    public async Task SendVacateSettlementReversedEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending vacate settlement reversed email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Settlement Reversed — {houseNumber}",
             GetVacateSettlementReversedTemplate(firstName, houseNumber));
@@ -1127,8 +1180,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Settlement Reversed — {houseNumber}", inner);
     }
 
-    public async Task SendVacateApprovedTenantEmailAsync(string toEmail, string firstName, string houseNumber)
+    public async Task SendVacateApprovedTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending vacate approved email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Request Approved — {houseNumber}",
             GetVacateApprovedTenantTemplate(firstName, houseNumber));
@@ -1152,8 +1206,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Request Approved — {houseNumber}", inner);
     }
 
-    public async Task SendComplaintRejectedManagementEmailAsync(string toEmail, string firstName, string ticketNumber, string? rejectionNotes)
+    public async Task SendComplaintRejectedManagementEmailAsync(string toEmail, string firstName, string ticketNumber, string? rejectionNotes, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
         _logger.LogInformation("Sending complaint rejection management email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Rejected — {ticketNumber}",
             GetComplaintRejectedManagementTemplate(firstName, ticketNumber, rejectionNotes));
@@ -1178,8 +1233,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Complaint Rejected — {ticketNumber}", inner);
     }
 
-    public async Task SendVacateRejectedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? rejectionNotes)
+    public async Task SendVacateRejectedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? rejectionNotes, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
         _logger.LogInformation("Sending vacate rejection management email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Request Rejected — {houseNumber}",
             GetVacateRejectedManagementTemplate(firstName, houseNumber, rejectionNotes));
@@ -1204,15 +1260,17 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Request Rejected — {houseNumber}", inner);
     }
 
-    public async Task SendVacateFinalRejectionTenantEmailAsync(string toEmail, string firstName, string houseNumber, string remarks)
+    public async Task SendVacateFinalRejectionTenantEmailAsync(string toEmail, string firstName, string houseNumber, string remarks, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending vacate final rejection email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Request Closed — {houseNumber}",
             GetVacateFinalRejectionTenantTemplate(firstName, houseNumber, remarks));
     }
 
-    public async Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber)
+    public async Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
         _logger.LogInformation("Sending vacate appeal alert email to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Settlement Appeal — {houseNumber}",
             GetVacateAppealManagementTemplate(firstName, houseNumber));
@@ -1236,8 +1294,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Settlement Appeal — {houseNumber}", inner);
     }
 
-    public async Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber)
+    public async Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending vacate settlement paid email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Settlement Payment Received — {houseNumber}",
             GetVacateSettlementPaidTenantTemplate(firstName, houseNumber));
@@ -1261,8 +1320,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Settlement Payment Received — {houseNumber}", inner);
     }
 
-    public async Task SendVacateRefundPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber)
+    public async Task SendVacateRefundPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending vacate refund paid email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Refund Processed — {houseNumber}",
             GetVacateRefundPaidTenantTemplate(firstName, houseNumber));
@@ -1305,8 +1365,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Request Closed — {houseNumber}", inner);
     }
 
-    public async Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt)
+    public async Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending viewing session request email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Viewing Session Requested — {houseNumber}",
             GetSessionRequestAgentTemplate(firstName, houseNumber, scheduledAt));
@@ -1334,8 +1395,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Viewing Session Requested — {houseNumber}", inner);
     }
 
-    public async Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt)
+    public async Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending session confirmed email to explorer: {Email}", toEmail);
         await SendEmail(toEmail, $"Viewing Session Confirmed — {houseNumber}",
             GetSessionConfirmedExplorerTemplate(firstName, houseNumber, agentName, agentPhone, scheduledAt));
@@ -1366,8 +1428,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Viewing Session Confirmed — {houseNumber}", inner);
     }
 
-    public async Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName)
+    public async Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending session declined alert to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Viewing Session Declined — {houseNumber}",
             GetSessionDeclinedManagementTemplate(firstName, houseNumber, agentName));
@@ -1393,8 +1456,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Viewing Session Declined — {houseNumber}", inner);
     }
 
-    public async Task SendSessionReassignedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt)
+    public async Task SendSessionReassignedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending session reassigned email to explorer: {Email}", toEmail);
         await SendEmail(toEmail, $"Viewing Session Reassigned — {houseNumber}",
             GetSessionReassignedExplorerTemplate(firstName, houseNumber, agentName, agentPhone, scheduledAt));
@@ -1425,8 +1489,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"Viewing Session Reassigned — {houseNumber}", inner);
     }
 
-    public async Task SendSessionFeedbackPromptEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt)
+    public async Task SendSessionFeedbackPromptEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending session feedback prompt email to explorer: {Email}", toEmail);
         await SendEmail(toEmail, $"How Was Your Viewing? — {houseNumber}",
             GetSessionFeedbackPromptTemplate(firstName, houseNumber, scheduledAt));
@@ -1454,8 +1519,9 @@ public class EmailService : IEmailService
         return WrapInLayout($"How Was Your Viewing? — {houseNumber}", inner);
     }
 
-    public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate)
+    public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false)
     {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         _logger.LogInformation("Sending session capacity alert to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Agent Capacity Alert — {scheduledDate}",
             GetSessionCapacityAlertTemplate(firstName, agentName, scheduledDate));

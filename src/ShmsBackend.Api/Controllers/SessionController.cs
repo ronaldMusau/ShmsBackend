@@ -105,14 +105,14 @@ public class SessionController : ControllerBase
 
             try
             {
-                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-                var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+                var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
                 var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
                 foreach (var mgr in managementUsers)
                 {
-                    try { await _emailService.SendSessionCapacityAlertEmailAsync(mgr.Email, mgr.FirstName, agentName, scheduledDate); }
+                    try { await _emailService.SendSessionCapacityAlertEmailAsync(mgr.Email, mgr.FirstName, agentName, scheduledDate, mgr.Id.ToString(), false); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send capacity alert email to {Email}", mgr.Email); }
                 }
             }
@@ -122,7 +122,7 @@ public class SessionController : ControllerBase
         var agent = agentFlat.Agent;
         var houseNumber = house.HouseNumber;
 
-        try { await _emailService.SendSessionRequestAgentEmailAsync(agent.Email, agent.FirstName, houseNumber, dto.ScheduledAt); }
+        try { await _emailService.SendSessionRequestAgentEmailAsync(agent.Email, agent.FirstName, houseNumber, dto.ScheduledAt, agent.Id.ToString(), true); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to send session request email to agent {AgentId}", agent.Id); }
 
         try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"A viewing session has been requested for house {houseNumber} and needs your acceptance.", "property"); }
@@ -162,7 +162,7 @@ public class SessionController : ControllerBase
 
         if (explorer != null)
         {
-            try { await _emailService.SendSessionConfirmedExplorerEmailAsync(explorer.Email, explorer.FirstName, houseNumber, agentName, agentPhone, session.ScheduledAt); }
+            try { await _emailService.SendSessionConfirmedExplorerEmailAsync(explorer.Email, explorer.FirstName, houseNumber, agentName, agentPhone, session.ScheduledAt, explorer.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send session confirmed email to explorer {ExplorerId}", explorer.Id); }
 
             try { await _notificationService.SendToUserAsync(explorer.Id.ToString(), $"Your viewing session for house {houseNumber} has been confirmed by the agent.", "property"); }
@@ -211,14 +211,14 @@ public class SessionController : ControllerBase
 
         try
         {
-            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
             var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
             foreach (var mgr in managementUsers)
             {
-                try { await _emailService.SendSessionDeclinedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, agentName); }
+                try { await _emailService.SendSessionDeclinedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, agentName, mgr.Id.ToString(), false); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send session declined email to {Email}", mgr.Email); }
             }
         }
@@ -269,7 +269,7 @@ public class SessionController : ControllerBase
 
         if (newAgent != null)
         {
-            try { await _emailService.SendSessionRequestAgentEmailAsync(newAgent.Email, newAgent.FirstName, houseNumber, session.ScheduledAt); }
+            try { await _emailService.SendSessionRequestAgentEmailAsync(newAgent.Email, newAgent.FirstName, houseNumber, session.ScheduledAt, newAgent.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send session request email to reassigned agent {AgentId}", newAgent.Id); }
 
             try { await _notificationService.SendToUserAsync(newAgent.Id.ToString(), $"A viewing session for house {houseNumber} has been assigned to you and needs your acceptance.", "property"); }
@@ -281,7 +281,7 @@ public class SessionController : ControllerBase
             var agentName = newAgent != null ? $"{newAgent.FirstName} {newAgent.LastName}".Trim() : "";
             var agentPhone = newAgent?.PhoneNumber ?? "";
 
-            try { await _emailService.SendSessionReassignedExplorerEmailAsync(explorer.Email, explorer.FirstName, houseNumber, agentName, agentPhone, session.ScheduledAt); }
+            try { await _emailService.SendSessionReassignedExplorerEmailAsync(explorer.Email, explorer.FirstName, houseNumber, agentName, agentPhone, session.ScheduledAt, explorer.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send session reassigned email to explorer {ExplorerId}", explorer.Id); }
 
             try { await _notificationService.SendToUserAsync(explorer.Id.ToString(), $"Your viewing session for house {houseNumber} has been reassigned to a new agent and is pending their acceptance.", "property"); }
@@ -327,7 +327,7 @@ public class SessionController : ControllerBase
 
         if (agent != null)
         {
-            try { await _emailService.SendSessionRequestAgentEmailAsync(agent.Email, agent.FirstName, houseNumber, dto.NewScheduledAt); }
+            try { await _emailService.SendSessionRequestAgentEmailAsync(agent.Email, agent.FirstName, houseNumber, dto.NewScheduledAt, agent.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send reschedule email to agent {AgentId}", agent.Id); }
 
             try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"The viewing session for house {houseNumber} has been rescheduled and needs your acceptance for the new time.", "property"); }

@@ -231,7 +231,7 @@ public class LandlordService : ILandlordService
 
             try
             {
-                await _emailService.SendAccountDeactivatedEmailAsync(landlord.Email, landlord.FirstName);
+                await _emailService.SendAccountDeactivatedEmailAsync(landlord.Email, landlord.FirstName, landlord.Id.ToString(), true);
             }
             catch (Exception ex)
             {
@@ -242,7 +242,7 @@ public class LandlordService : ILandlordService
         {
             try
             {
-                await _emailService.SendAccountReactivatedEmailAsync(landlord.Email, landlord.FirstName);
+                await _emailService.SendAccountReactivatedEmailAsync(landlord.Email, landlord.FirstName, landlord.Id.ToString(), true);
             }
             catch (Exception ex)
             {

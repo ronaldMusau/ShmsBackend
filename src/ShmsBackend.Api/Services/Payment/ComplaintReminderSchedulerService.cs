@@ -79,10 +79,10 @@ public class ComplaintReminderSchedulerService : BackgroundService
         }
 
         // Fetch management users once before the loop
-        var superAdmins = await context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-        var adminUsers = await context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-        var managers = await context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-        var secretaries = await context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+        var superAdmins = await context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+        var adminUsers = await context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+        var managers = await context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+        var secretaries = await context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
         var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
 
         foreach (var complaint in complaints)
@@ -101,7 +101,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
 
             foreach (var mgr in managementUsers)
             {
-                try { await emailService.SendComplaintOverdueManagementEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, daysOpen); }
+                try { await emailService.SendComplaintOverdueManagementEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, daysOpen, mgr.Id.ToString(), false); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send overdue complaint email to {Email}", mgr.Email); }
             }
 
@@ -111,7 +111,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
                 var agent = await context.Agents.FirstOrDefaultAsync(a => a.Id == complaint.EscalatedToAgentId.Value);
                 if (agent != null)
                 {
-                    try { await emailService.SendComplaintOverdueAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber, daysOpen); }
+                    try { await emailService.SendComplaintOverdueAgentEmailAsync(agent.Email, agent.FirstName, complaint.TicketNumber, daysOpen, agent.Id.ToString(), true); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send overdue complaint email to agent {Email}", agent.Email); }
                 }
                 try { await notificationService.SendToUserAsync(complaint.EscalatedToAgentId.Value.ToString(), $"Complaint {complaint.TicketNumber} has been open for {daysOpen} days. Please complete your work.", "property", "Complaint", complaint.Id.ToString()); }
@@ -124,7 +124,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
                 var landlord = await context.Landlords.FirstOrDefaultAsync(l => l.Id == complaint.LandlordId);
                 if (landlord != null)
                 {
-                    try { await emailService.SendComplaintOverdueLandlordEmailAsync(landlord.Email, landlord.FirstName, complaint.TicketNumber, daysOpen); }
+                    try { await emailService.SendComplaintOverdueLandlordEmailAsync(landlord.Email, landlord.FirstName, complaint.TicketNumber, daysOpen, landlord.Id.ToString(), true); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send overdue complaint email to landlord {Email}", landlord.Email); }
                 }
                 try { await notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"Complaint {complaint.TicketNumber} has been awaiting your decision for {daysOpen} days.", "property", "Complaint", complaint.Id.ToString()); }

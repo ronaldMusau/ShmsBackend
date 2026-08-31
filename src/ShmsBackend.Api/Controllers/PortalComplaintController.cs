@@ -93,7 +93,7 @@ public class PortalComplaintController : ControllerBase
         // Tenant confirmation
         try
         {
-            await _emailService.SendComplaintConfirmationEmailAsync(tenant.Email, tenant.FirstName, complaint.TicketNumber, complaintType.Name);
+            await _emailService.SendComplaintConfirmationEmailAsync(tenant.Email, tenant.FirstName, complaint.TicketNumber, complaintType.Name, tenant.Id.ToString(), true);
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to send tenant complaint confirmation email"); }
 
@@ -106,10 +106,10 @@ public class PortalComplaintController : ControllerBase
         // Management alert
         try
         {
-            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
             var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
 
             foreach (var mgr in managementUsers)
@@ -118,7 +118,7 @@ public class PortalComplaintController : ControllerBase
                 {
                     await _emailService.SendComplaintManagementAlertEmailAsync(
                         mgr.Email, mgr.FirstName, complaint.TicketNumber, complaintType.Name,
-                        $"{tenant.FirstName} {tenant.LastName}", tenant.House.HouseNumber, tenant.House.Flat.FlatName);
+                        $"{tenant.FirstName} {tenant.LastName}", tenant.House.HouseNumber, tenant.House.Flat.FlatName, mgr.Id.ToString(), false);
                 }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send management complaint email to {Email}", mgr.Email); }
             }
@@ -730,7 +730,7 @@ public class PortalComplaintController : ControllerBase
             try
             {
                 if (landlordForEmail != null)
-                    await _emailService.SendDeductionCreatedEmailAsync(landlordForEmail.Email, landlordForEmail.FirstName, complaint.TicketNumber, complaint.BillableAmount.Value, complaint.BillableExplanation);
+                    await _emailService.SendDeductionCreatedEmailAsync(landlordForEmail.Email, landlordForEmail.FirstName, complaint.TicketNumber, complaint.BillableAmount.Value, complaint.BillableExplanation, landlordForEmail.Id.ToString(), true);
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send deduction email to landlord"); }
             try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"A deduction of KES {complaint.BillableAmount.Value:N2} has been created on complaint {complaint.TicketNumber}.", "property", "Complaint", complaint.Id.ToString()); }
@@ -755,15 +755,15 @@ public class PortalComplaintController : ControllerBase
 
         try
         {
-            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var adminUsers = await _context.AdminUsers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var managers = await _context.Managers.Select(u => new { u.Email, u.FirstName }).ToListAsync();
-            var secretaries = await _context.Secretaries.Select(u => new { u.Email, u.FirstName }).ToListAsync();
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
             var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
 
             foreach (var mgr in managementUsers)
             {
-                try { await _emailService.SendLandlordDecisionEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, complaint.LandlordDecision!, complaint.LandlordDecisionNotes, complaint.BillableAmount); }
+                try { await _emailService.SendLandlordDecisionEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, complaint.LandlordDecision!, complaint.LandlordDecisionNotes, complaint.BillableAmount, mgr.Id.ToString(), false); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord-decision email to {Email}", mgr.Email); }
             }
         }

@@ -188,7 +188,8 @@ public class PaymentSchedulerService : BackgroundService
                         payment.Balance,
                         payment.DueDate,
                         payment.House?.HouseNumber ?? "",
-                        payment.House?.Flat?.FlatName ?? "");
+                        payment.House?.Flat?.FlatName ?? "",
+                        payment.Tenant.Id.ToString(), true);
                 }
             }
             catch (Exception ex)

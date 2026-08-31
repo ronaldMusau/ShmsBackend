@@ -381,7 +381,7 @@ public class TenantService : ITenantService
 
             try
             {
-                await _emailService.SendAccountDeactivatedEmailAsync(tenant.Email, tenant.FirstName);
+                await _emailService.SendAccountDeactivatedEmailAsync(tenant.Email, tenant.FirstName, tenant.Id.ToString(), true);
             }
             catch (Exception ex)
             {
@@ -392,7 +392,7 @@ public class TenantService : ITenantService
         {
             try
             {
-                await _emailService.SendAccountReactivatedEmailAsync(tenant.Email, tenant.FirstName);
+                await _emailService.SendAccountReactivatedEmailAsync(tenant.Email, tenant.FirstName, tenant.Id.ToString(), true);
             }
             catch (Exception ex)
             {
