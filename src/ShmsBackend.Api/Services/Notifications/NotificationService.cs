@@ -189,6 +189,8 @@ public class NotificationService : INotificationService
     // and group. No preference row => opt-out model default of all-true (matches GetOrCreateAsync).
     private async Task<bool> ShouldDeliverAsync(string userId, bool isPortalUser, string group, string channel)
     {
+        _logger.LogInformation("PUSH-DEBUG: Checking delivery for user {UserId}, group {Group}, channel {Channel}", userId, group, channel);
+
         if (!Guid.TryParse(userId, out var uid))
             return true;
 
@@ -223,6 +225,8 @@ public class NotificationService : INotificationService
             .Where(s => s.UserId == uid && s.IsPortalUser == isPortalUser)
             .ToListAsync();
 
+        _logger.LogInformation("PUSH-DEBUG: Found {Count} push subscription(s) for user {UserId} (isPortalUser={IsPortalUser})", subscriptions.Count, userId, isPortalUser);
+
         if (subscriptions.Count == 0)
             return;
 
@@ -236,8 +240,10 @@ public class NotificationService : INotificationService
         {
             try
             {
+                _logger.LogInformation("PUSH-DEBUG: Attempting to send push to subscription {SubId}, endpoint starting {EndpointPrefix}", sub.Id, sub.Endpoint.Substring(0, Math.Min(50, sub.Endpoint.Length)));
                 var target = new WebPush.PushSubscription(sub.Endpoint, sub.P256dh, sub.Auth);
                 await client.SendNotificationAsync(target, payload, vapidDetails);
+                _logger.LogInformation("PUSH-DEBUG: Successfully sent push to subscription {SubId}", sub.Id);
             }
             catch (WebPush.WebPushException ex)
                 when (ex.StatusCode == HttpStatusCode.NotFound || ex.StatusCode == HttpStatusCode.Gone)
