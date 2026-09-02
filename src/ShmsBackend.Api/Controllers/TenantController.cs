@@ -134,7 +134,10 @@ public class TenantController : ControllerBase
     {
         try
         {
+            // IgnoreQueryFilters so a soft-deleted (vacated) tenant's full history is still viewable;
+            // a genuinely non-existent id still falls through to the 404 below.
             var tenant = await _context.Tenants
+                .IgnoreQueryFilters()
                 .Include(t => t.House).ThenInclude(h => h!.Flat)
                 .Include(t => t.House).ThenInclude(h => h!.HouseTypeRef)
                 .FirstOrDefaultAsync(t => t.Id == id);
@@ -271,11 +274,23 @@ public class TenantController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 50)
+        [FromQuery] int pageSize = 50,
+        [FromQuery] string? status = null)
     {
         try
         {
-            var tenants = (await _tenantService.GetAllAsync()).ToList();
+            // status == "vacated" (case-insensitive) → soft-deleted tenants; otherwise the normal filtered list.
+            var isVacated = string.Equals(status, "vacated", StringComparison.OrdinalIgnoreCase);
+
+            var tenants = isVacated
+                ? await _context.Tenants
+                    .IgnoreQueryFilters()
+                    .Include(t => t.House)
+                        .ThenInclude(h => h!.Flat)
+                    .Where(t => t.IsDeleted)
+                    .ToListAsync()
+                : (await _tenantService.GetAllAsync()).ToList();
+
             var total = tenants.Count;
             var pagedTenants = tenants.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
