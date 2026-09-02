@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using ShmsBackend.Api.Configuration;
 using ShmsBackend.Api.Models.DTOs.PortalAuth;
 using ShmsBackend.Api.Models.Responses;
+using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
@@ -30,6 +31,7 @@ public class PortalAuthService : IPortalAuthService
     private readonly ITokenBlacklistService _tokenBlacklistService;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly IWeeklyClientPasswordService _weeklyClientPasswordService;
+    private readonly IAgreementService _agreementService;
     private readonly ILogger<PortalAuthService> _logger;
     private readonly JwtOptions _jwtOptions;
     private readonly ShmsDbContext _context;
@@ -42,6 +44,7 @@ public class PortalAuthService : IPortalAuthService
         ITokenBlacklistService tokenBlacklistService,
         IFrontendUrlService frontendUrlService,
         IWeeklyClientPasswordService weeklyClientPasswordService,
+        IAgreementService agreementService,
         ILogger<PortalAuthService> logger,
         IOptions<JwtOptions> jwtOptions,
         ShmsDbContext context)
@@ -53,6 +56,7 @@ public class PortalAuthService : IPortalAuthService
         _tokenBlacklistService = tokenBlacklistService;
         _frontendUrlService = frontendUrlService;
         _weeklyClientPasswordService = weeklyClientPasswordService;
+        _agreementService = agreementService;
         _logger = logger;
         _jwtOptions = jwtOptions.Value;
         _context = context;
@@ -566,6 +570,14 @@ public class PortalAuthService : IPortalAuthService
             {
                 _logger.LogError(ex, "Failed to update TenantStatus after set-password for {Email}", dto.Email);
                 // Do NOT rethrow — IsActive is already set to true above
+            }
+
+            // Registration completion for Landlord/Agent → send the signable agreement.
+            // (Tenants get theirs on first successful payment, not here.)
+            if (user.PortalUserType == PortalUserType.Landlord || user.PortalUserType == PortalUserType.Agent)
+            {
+                try { await _agreementService.SendAgreementForSigningAsync(user.Id, (int)user.PortalUserType); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send agreement for signing to {Email}", dto.Email); }
             }
 
             _logger.LogInformation("Portal password set: {Email}", dto.Email);

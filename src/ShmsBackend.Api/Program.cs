@@ -5,6 +5,7 @@ using Microsoft.OpenApi.Models;
 using ShmsBackend.Api.Configuration;
 using ShmsBackend.Api.Hubs;
 using ShmsBackend.Api.Middleware;
+using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.OTP;
@@ -75,6 +76,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<INotificationPreferenceService, NotificationPreferenceService>();
+builder.Services.AddScoped<IAgreementService, AgreementService>();
 
 // M-Pesa
 builder.Services.Configure<MpesaConfig>(builder.Configuration.GetSection("Mpesa"));

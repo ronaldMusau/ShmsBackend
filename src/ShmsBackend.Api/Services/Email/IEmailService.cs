@@ -16,10 +16,14 @@ public interface IEmailService
     Task<bool> SendAccountLockedEmailAsync(string toEmail, string firstName);
     Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password);
     Task<bool> SendWeeklyClientPasswordEmailAsync(string toEmail, string firstName, string password);
+    Task<bool> SendAgreementReadyToSignEmailAsync(string toEmail, string firstName, string roleLabel);
 
     // ── Preference-gated emails (optional userId/isPortalUser threads the recipient identity) ──
     Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false);
     Task<bool> SendAccountReactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendAgreementVerifiedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendAgreementRejectedEmailAsync(string toEmail, string firstName, string reason, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendAgreementReminderEmailAsync(string toEmail, string firstName, string roleLabel, string? userId = null, bool isPortalUser = false);
     Task<bool> SendPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false);
     Task<bool> SendItemizedPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false);
     Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);

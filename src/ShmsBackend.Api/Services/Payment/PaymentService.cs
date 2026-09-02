@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
@@ -33,6 +34,7 @@ public class PaymentService : IPaymentService
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly IFrontendUrlService _frontendUrlService;
+    private readonly IAgreementService _agreementService;
     private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
@@ -41,6 +43,7 @@ public class PaymentService : IPaymentService
         IEmailService emailService,
         INotificationService notificationService,
         IFrontendUrlService frontendUrlService,
+        IAgreementService agreementService,
         ILogger<PaymentService> logger)
     {
         _context = context;
@@ -48,6 +51,7 @@ public class PaymentService : IPaymentService
         _emailService = emailService;
         _notificationService = notificationService;
         _frontendUrlService = frontendUrlService;
+        _agreementService = agreementService;
         _logger = logger;
     }
 
@@ -426,6 +430,10 @@ public class PaymentService : IPaymentService
                             }
                         }
                         await _context.SaveChangesAsync();
+
+                        // First successful payment → send the signable agreement.
+                        try { await _agreementService.SendAgreementForSigningAsync(tenant.Id, (int)PortalUserType.Tenant); }
+                        catch (Exception ex) { _logger.LogError(ex, "Failed to send agreement for signing to tenant {TenantId}", tenant.Id); }
                     }
                 }
 

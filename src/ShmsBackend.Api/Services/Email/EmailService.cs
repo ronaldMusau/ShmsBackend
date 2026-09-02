@@ -154,6 +154,45 @@ public class EmailService : IEmailService
             GetWeeklyClientPasswordTemplate(firstName, password));
     }
 
+    public async Task<bool> SendAgreementReadyToSignEmailAsync(string toEmail, string firstName, string roleLabel)
+    {
+        _logger.LogInformation("Sending agreement-ready-to-sign email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Romah Estates — Please Sign Your Agreement",
+            GetAgreementReadyToSignTemplate(firstName, roleLabel));
+    }
+
+    public async Task<bool> SendAgreementVerifiedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
+        _logger.LogInformation("Sending agreement-verified email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Romah Estates — Agreement Verified",
+            GetAgreementVerifiedTemplate(firstName));
+    }
+
+    public async Task<bool> SendAgreementRejectedEmailAsync(string toEmail, string firstName, string reason, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
+        _logger.LogInformation("Sending agreement-rejected email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Romah Estates — Signed Agreement Needs Attention",
+            GetAgreementRejectedTemplate(firstName, reason));
+    }
+
+    public async Task<bool> SendAgreementReminderEmailAsync(string toEmail, string firstName, string roleLabel, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
+        _logger.LogInformation("Sending agreement-reminder email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Romah Estates — Reminder: Sign Your Agreement",
+            GetAgreementReminderTemplate(firstName, roleLabel));
+    }
+
     public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
@@ -672,6 +711,61 @@ public class EmailService : IEmailService
 {SmallNote("Keep this password strictly confidential. To stop receiving it, ask an administrator to remove you from the client-support subscriber list.")}";
 
         return WrapInLayout("Client Portal Support Password — Romah Estates", inner);
+    }
+
+    // ── Agreement Templates ───────────────────────────────────────────────
+
+    private string GetAgreementReadyToSignTemplate(string firstName, string roleLabel)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"As part of your onboarding as a <strong style='color:{ColourGold};'>{roleLabel}</strong> on Romah Estates, you need to sign your agreement document.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>WHAT TO DO</p>
+  <p style='margin:0;font-size:15px;color:{ColourTextSec};'>Log in to your portal, download the agreement, sign it, and upload the signed copy for verification.</p>
+")}
+{Divider()}
+{SmallNote("If you did not expect this email, please contact the Romah Estates management team.")}";
+
+        return WrapInLayout("Please Sign Your Agreement — Romah Estates", inner);
+    }
+
+    private string GetAgreementVerifiedTemplate(string firstName)
+    {
+        var inner = $@"
+{H2($"Agreement Verified, {firstName}")}
+{Para($"Your signed agreement has been reviewed and <strong style='color:{ColourGold};'>verified</strong> by the Romah Estates management team. No further action is needed.")}
+{Divider()}
+{SmallNote("This is an automated notification from Romah Estates.")}";
+
+        return WrapInLayout("Agreement Verified — Romah Estates", inner);
+    }
+
+    private string GetAgreementRejectedTemplate(string firstName, string reason)
+    {
+        var inner = $@"
+{H2($"Action Needed, {firstName}")}
+{Para("Your uploaded signed agreement could not be verified and needs to be re-submitted.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>REASON</p>
+  <p style='margin:0;font-size:15px;color:{ColourTextSec};'>{reason}</p>
+")}
+{Para("Please log in to your portal, re-sign the agreement, and upload the corrected signed copy.")}
+{Divider()}
+{SmallNote("If you have questions, contact the Romah Estates management team.")}";
+
+        return WrapInLayout("Signed Agreement Needs Attention — Romah Estates", inner);
+    }
+
+    private string GetAgreementReminderTemplate(string firstName, string roleLabel)
+    {
+        var inner = $@"
+{H2($"Reminder, {firstName}")}
+{Para($"We still need your signed <strong style='color:{ColourGold};'>{roleLabel}</strong> agreement on file. Please log in to your portal, download the agreement, sign it, and upload the signed copy.")}
+{Divider()}
+{SmallNote("If you have already uploaded it, no action is needed — this reminder may have crossed with your submission.")}";
+
+        return WrapInLayout("Reminder: Sign Your Agreement — Romah Estates", inner);
     }
 
     // ── Account Locked Template ────────────────────────────────────────────

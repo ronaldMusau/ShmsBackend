@@ -175,6 +175,9 @@ public class NotificationService : INotificationService
         if (entityType is "FlatEdit" or "Flat" or "Vacate")
             return "Properties";
 
+        if (entityType == "Agreement")
+            return "Account";
+
         // No entity reference — fall back to the category.
         return category switch
         {

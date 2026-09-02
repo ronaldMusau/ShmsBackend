@@ -101,6 +101,12 @@ public class ShmsDbContext : DbContext
     public DbSet<WeeklyClientPassword> WeeklyClientPasswords { get; set; }
     public DbSet<WeeklyClientPasswordSubscriber> WeeklyClientPasswordSubscribers { get; set; }
 
+    // Agreement documents + ID documents
+    public DbSet<AgreementTemplate> AgreementTemplates { get; set; }
+    public DbSet<AgreementTemplateHistory> AgreementTemplateHistories { get; set; }
+    public DbSet<UserAgreement> UserAgreements { get; set; }
+    public DbSet<UserIdDocument> UserIdDocuments { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -675,6 +681,40 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.AdminId).IsUnique();
             entity.ToTable("WeeklyClientPasswordSubscribers");
+        });
+
+        // ── AgreementTemplate Configuration ─────────────────────────────────
+        modelBuilder.Entity<AgreementTemplate>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FilePath).IsRequired();
+            entity.HasIndex(e => e.Role).IsUnique();
+            entity.ToTable("AgreementTemplates");
+        });
+
+        // ── AgreementTemplateHistory Configuration ──────────────────────────
+        modelBuilder.Entity<AgreementTemplateHistory>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.FilePath).IsRequired();
+            entity.HasIndex(e => new { e.Role, e.Version });
+            entity.ToTable("AgreementTemplateHistories");
+        });
+
+        // ── UserAgreement Configuration ────────────────────────────────────
+        modelBuilder.Entity<UserAgreement>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.PortalUserId).IsUnique();
+            entity.ToTable("UserAgreements");
+        });
+
+        // ── UserIdDocument Configuration ───────────────────────────────────
+        modelBuilder.Entity<UserIdDocument>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.PortalUserId).IsUnique();
+            entity.ToTable("UserIdDocuments");
         });
 
         // ── Global soft-delete filters ───────────────────────────────────────
