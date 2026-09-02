@@ -55,9 +55,22 @@ public class AgreementController : ControllerBase
         => Ok(new { success = true, data = await _agreementService.GetTemplateHistoryAsync(role) });
 
     // GET /api/agreements/all-statuses?role={optional}
+    // role accepts the PortalUserType name the frontend sends ("Landlord", "Agent", "Tenant"),
+    // or the numeric value; omitted/blank = all roles.
     [HttpGet("all-statuses")]
-    public async Task<IActionResult> GetAllStatuses([FromQuery] int? role = null)
-        => Ok(new { success = true, data = await _agreementService.GetAllUserAgreementStatusesAsync(role) });
+    public async Task<IActionResult> GetAllStatuses([FromQuery] string? role = null)
+    {
+        int? roleFilter = null;
+        if (!string.IsNullOrWhiteSpace(role))
+        {
+            if (!Enum.TryParse<PortalUserType>(role, ignoreCase: true, out var parsedRole)
+                || !Enum.IsDefined(typeof(PortalUserType), parsedRole))
+                return BadRequest(new { success = false, message = "Invalid role. Use 'Landlord', 'Agent', or 'Tenant'." });
+            roleFilter = (int)parsedRole;
+        }
+
+        return Ok(new { success = true, data = await _agreementService.GetAllUserAgreementStatusesAsync(roleFilter) });
+    }
 
     // POST /api/agreements/{portalUserId}/verify
     [HttpPost("{portalUserId:guid}/verify")]
