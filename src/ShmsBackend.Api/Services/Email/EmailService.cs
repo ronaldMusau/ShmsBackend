@@ -183,14 +183,17 @@ public class EmailService : IEmailService
             GetAgreementRejectedTemplate(firstName, reason));
     }
 
-    public async Task<bool> SendAgreementReminderEmailAsync(string toEmail, string firstName, string roleLabel, string? userId = null, bool isPortalUser = false)
+    public async Task<bool> SendAgreementReminderEmailAsync(string toEmail, string firstName, string roleLabel, string? userId = null, bool isPortalUser = false, string? attachmentFileName = null, byte[]? attachmentBytes = null)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
         _logger.LogInformation("Sending agreement-reminder email to: {Email}", toEmail);
+        var hasAttachment = attachmentBytes != null && attachmentBytes.Length > 0;
         return await SendEmail(
             toEmail,
             "Romah Estates — Reminder: Sign Your Agreement",
-            GetAgreementReminderTemplate(firstName, roleLabel));
+            GetAgreementReminderTemplate(firstName, roleLabel, hasAttachment),
+            attachmentFileName,
+            attachmentBytes);
     }
 
     public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
@@ -397,17 +400,38 @@ public class EmailService : IEmailService
 
     // ── Shared HTTP helper ───────────────────────────────────────────────────
 
-    private async Task<bool> SendEmail(string toEmail, string subject, string htmlContent)
+    private async Task<bool> SendEmail(
+        string toEmail,
+        string subject,
+        string htmlContent,
+        string? attachmentFileName = null,
+        byte[]? attachmentBytes = null)
     {
         try
         {
-            var emailRequest = new
-            {
-                from = $"{_emailOptions.FromName} <{_emailOptions.FromEmail}>",
-                to = new[] { toEmail },
-                subject,
-                html = htmlContent
-            };
+            object emailRequest = attachmentBytes != null && attachmentBytes.Length > 0
+                ? new
+                {
+                    from = $"{_emailOptions.FromName} <{_emailOptions.FromEmail}>",
+                    to = new[] { toEmail },
+                    subject,
+                    html = htmlContent,
+                    attachments = new[]
+                    {
+                        new
+                        {
+                            filename = attachmentFileName ?? "attachment",
+                            content = Convert.ToBase64String(attachmentBytes)
+                        }
+                    }
+                }
+                : new
+                {
+                    from = $"{_emailOptions.FromName} <{_emailOptions.FromEmail}>",
+                    to = new[] { toEmail },
+                    subject,
+                    html = htmlContent
+                };
 
             var json = JsonSerializer.Serialize(emailRequest);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -757,11 +781,15 @@ public class EmailService : IEmailService
         return WrapInLayout("Signed Agreement Needs Attention — Romah Estates", inner);
     }
 
-    private string GetAgreementReminderTemplate(string firstName, string roleLabel)
+    private string GetAgreementReminderTemplate(string firstName, string roleLabel, bool hasAttachment = false)
     {
+        var attachmentLine = hasAttachment
+            ? Para("Your agreement is attached to this email for your convenience — sign it and upload the signed copy through your portal.")
+            : "";
         var inner = $@"
 {H2($"Reminder, {firstName}")}
 {Para($"We still need your signed <strong style='color:{ColourGold};'>{roleLabel}</strong> agreement on file. Please log in to your portal, download the agreement, sign it, and upload the signed copy.")}
+{attachmentLine}
 {Divider()}
 {SmallNote("If you have already uploaded it, no action is needed — this reminder may have crossed with your submission.")}";
 

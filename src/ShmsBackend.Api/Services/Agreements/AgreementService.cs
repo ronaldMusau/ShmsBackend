@@ -285,7 +285,49 @@ public class AgreementService : IAgreementService
         ua.LastReminderSentAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
-        try { await _emailService.SendAgreementReminderEmailAsync(user.Email, user.FirstName, RoleName((int)user.PortalUserType), user.Id.ToString(), true); }
+        var roleLabel = RoleName((int)user.PortalUserType);
+
+        // Attach the current agreement PDF if we can read it off disk. Never let this block the reminder —
+        // if there's no template or the read fails, the email still goes out without an attachment.
+        string? attachmentFileName = null;
+        byte[]? attachmentBytes = null;
+        try
+        {
+            var template = await _context.AgreementTemplates
+                .FirstOrDefaultAsync(x => x.Role == (int)user.PortalUserType);
+            if (template == null || string.IsNullOrWhiteSpace(template.FilePath))
+            {
+                _logger.LogWarning("No agreement template on file for role {Role}; sending reminder to {Email} without attachment",
+                    (int)user.PortalUserType, user.Email);
+            }
+            else
+            {
+                var diskPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", template.FilePath.TrimStart('/'));
+                if (File.Exists(diskPath))
+                {
+                    attachmentBytes = await File.ReadAllBytesAsync(diskPath);
+                    attachmentFileName = $"{roleLabel}-Agreement.pdf";
+                }
+                else
+                {
+                    _logger.LogWarning("Agreement template file missing on disk ({Path}); sending reminder to {Email} without attachment",
+                        diskPath, user.Email);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load agreement template PDF for reminder to {Email}; sending without attachment", user.Email);
+            attachmentFileName = null;
+            attachmentBytes = null;
+        }
+
+        try
+        {
+            await _emailService.SendAgreementReminderEmailAsync(
+                user.Email, user.FirstName, roleLabel, user.Id.ToString(), true,
+                attachmentFileName, attachmentBytes);
+        }
         catch (Exception ex) { _logger.LogWarning(ex, "Failed to send agreement-reminder email to {Email}", user.Email); }
 
         try
