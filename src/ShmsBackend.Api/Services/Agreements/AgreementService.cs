@@ -196,6 +196,24 @@ public class AgreementService : IAgreementService
 
         await _context.SaveChangesAsync();
         _logger.LogInformation("Signed agreement uploaded by portal user {UserId}", portalUserId);
+
+        // Alert management that a signed copy is now pending verification (gated — Account group).
+        var portalUser = await _context.PortalUsers.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == portalUserId);
+        if (portalUser != null)
+        {
+            try
+            {
+                await _notificationService.SendToRolesAsync(
+                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin },
+                    $"{portalUser.FirstName} {portalUser.LastName} uploaded a signed agreement awaiting your verification.",
+                    "security", "Agreement", portalUserId.ToString());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to notify management of signed agreement upload by {UserId}", portalUserId);
+            }
+        }
     }
 
     public async Task VerifyAgreementAsync(Guid portalUserId, Guid adminId)
