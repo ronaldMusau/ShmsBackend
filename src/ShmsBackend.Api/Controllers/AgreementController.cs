@@ -98,6 +98,58 @@ public class AgreementController : ControllerBase
         await _agreementService.SendReminderAsync(portalUserId, AdminId());
         return Ok(new { success = true, message = "Reminder sent." });
     }
+
+    // ── Authenticated file serving (private folder) ────────────────────────
+
+    private IActionResult InlineFile(AgreementFileResult f)
+    {
+        Response.Headers["Content-Disposition"] = $"inline; filename=\"{f.DownloadName}\"";
+        return File(f.Bytes, f.ContentType);
+    }
+
+    // GET /api/agreements/template/{role}/file — current blank template, inline
+    [HttpGet("template/{role:int}/file")]
+    public async Task<IActionResult> GetTemplateFile(int role)
+    {
+        var f = await _agreementService.GetTemplateFileAsync(role);
+        return f == null
+            ? NotFound(new { success = false, message = "No template file found for this role." })
+            : InlineFile(f);
+    }
+
+    // GET /api/agreements/template/{role}/history/{version}/file — a specific archived version
+    [HttpGet("template/{role:int}/history/{version:int}/file")]
+    public async Task<IActionResult> GetTemplateHistoryFile(int role, int version)
+    {
+        var f = await _agreementService.GetTemplateHistoryFileAsync(role, version);
+        return f == null
+            ? NotFound(new { success = false, message = "No archived template file found for that version." })
+            : InlineFile(f);
+    }
+
+    // GET /api/agreements/{portalUserId}/uploaded-file — that user's uploaded signed copy
+    [HttpGet("{portalUserId:guid}/uploaded-file")]
+    public async Task<IActionResult> GetUploadedFile(Guid portalUserId)
+    {
+        var f = await _agreementService.GetUploadedAgreementFileAsync(portalUserId);
+        return f == null
+            ? NotFound(new { success = false, message = "This user has no uploaded signed agreement." })
+            : InlineFile(f);
+    }
+
+    // GET /api/agreements/{portalUserId}/id-document/{side} — side = "front" | "back"
+    [HttpGet("{portalUserId:guid}/id-document/{side}")]
+    public async Task<IActionResult> GetIdDocumentFile(Guid portalUserId, string side)
+    {
+        if (!string.Equals(side, "front", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(side, "back", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { success = false, message = "Side must be 'front' or 'back'." });
+
+        var f = await _agreementService.GetIdDocumentFileAsync(portalUserId, side);
+        return f == null
+            ? NotFound(new { success = false, message = $"No {side.ToLowerInvariant()} ID image on file for this user." })
+            : InlineFile(f);
+    }
 }
 
 public class RejectAgreementDto

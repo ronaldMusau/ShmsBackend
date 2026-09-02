@@ -84,4 +84,52 @@ public class PortalAgreementController : ControllerBase
         await _agreementService.UploadIdDocumentAsync(uid, front, back);
         return Ok(new { success = true, message = "ID document uploaded." });
     }
+
+    // ── Authenticated file serving — always the CALLER's own files ─────────
+
+    private IActionResult InlineFile(AgreementFileResult f)
+    {
+        Response.Headers["Content-Disposition"] = $"inline; filename=\"{f.DownloadName}\"";
+        return File(f.Bytes, f.ContentType);
+    }
+
+    // GET /api/portalauth/my-agreement/template-file — blank template for the caller's own role
+    [HttpGet("my-agreement/template-file")]
+    public async Task<IActionResult> GetMyAgreementTemplateFile()
+    {
+        var uid = Uid();
+        if (uid == Guid.Empty) return Unauthorized(new { success = false, message = "Invalid token." });
+        var f = await _agreementService.GetMyTemplateFileAsync(uid);
+        return f == null
+            ? NotFound(new { success = false, message = "No agreement template is available for your role yet." })
+            : InlineFile(f);
+    }
+
+    // GET /api/portalauth/my-agreement/uploaded-file — the caller's own uploaded signed copy
+    [HttpGet("my-agreement/uploaded-file")]
+    public async Task<IActionResult> GetMyAgreementUploadedFile()
+    {
+        var uid = Uid();
+        if (uid == Guid.Empty) return Unauthorized(new { success = false, message = "Invalid token." });
+        var f = await _agreementService.GetUploadedAgreementFileAsync(uid);
+        return f == null
+            ? NotFound(new { success = false, message = "You have not uploaded a signed agreement yet." })
+            : InlineFile(f);
+    }
+
+    // GET /api/portalauth/my-id-document/{side}/file — side = "front" | "back", caller's own image
+    [HttpGet("my-id-document/{side}/file")]
+    public async Task<IActionResult> GetMyIdDocumentFile(string side)
+    {
+        var uid = Uid();
+        if (uid == Guid.Empty) return Unauthorized(new { success = false, message = "Invalid token." });
+        if (!string.Equals(side, "front", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(side, "back", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(new { success = false, message = "Side must be 'front' or 'back'." });
+
+        var f = await _agreementService.GetIdDocumentFileAsync(uid, side);
+        return f == null
+            ? NotFound(new { success = false, message = $"No {side.ToLowerInvariant()} ID image on file." })
+            : InlineFile(f);
+    }
 }

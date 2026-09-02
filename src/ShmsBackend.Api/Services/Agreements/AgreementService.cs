@@ -302,7 +302,7 @@ public class AgreementService : IAgreementService
             }
             else
             {
-                var diskPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", template.FilePath.TrimStart('/'));
+                var diskPath = ResolvePrivatePath(template.FilePath);
                 if (File.Exists(diskPath))
                 {
                     attachmentBytes = await File.ReadAllBytesAsync(diskPath);
@@ -476,18 +476,101 @@ public class AgreementService : IAgreementService
         };
     }
 
+    // ── Authenticated file serving ─────────────────────────────────────────
+
+    public async Task<AgreementFileResult?> GetTemplateFileAsync(int role)
+    {
+        var t = await _context.AgreementTemplates.FirstOrDefaultAsync(x => x.Role == role);
+        return t == null ? null : await ReadPrivateFileAsync(t.FilePath, $"{RoleName(role)}-Agreement.pdf");
+    }
+
+    public async Task<AgreementFileResult?> GetTemplateHistoryFileAsync(int role, int version)
+    {
+        var h = await _context.AgreementTemplateHistories
+            .FirstOrDefaultAsync(x => x.Role == role && x.Version == version);
+        return h == null ? null : await ReadPrivateFileAsync(h.FilePath, $"{RoleName(role)}-Agreement-v{version}.pdf");
+    }
+
+    public async Task<AgreementFileResult?> GetUploadedAgreementFileAsync(Guid portalUserId)
+    {
+        var ua = await _context.UserAgreements.FirstOrDefaultAsync(a => a.PortalUserId == portalUserId);
+        return ua == null ? null : await ReadPrivateFileAsync(ua.UploadedFilePath, "Signed-Agreement.pdf");
+    }
+
+    public async Task<AgreementFileResult?> GetIdDocumentFileAsync(Guid portalUserId, string side)
+    {
+        var d = await _context.UserIdDocuments.FirstOrDefaultAsync(x => x.PortalUserId == portalUserId);
+        if (d == null) return null;
+
+        var path = side?.ToLowerInvariant() switch
+        {
+            "front" => d.FrontImagePath,
+            "back" => d.BackImagePath,
+            _ => null
+        };
+        return await ReadPrivateFileAsync(path, $"ID-{side?.ToLowerInvariant() ?? "image"}");
+    }
+
+    public async Task<AgreementFileResult?> GetMyTemplateFileAsync(Guid portalUserId)
+    {
+        var user = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == portalUserId);
+        return user == null ? null : await GetTemplateFileAsync((int)user.PortalUserType);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private static string RoleName(int role) =>
         Enum.IsDefined(typeof(PortalUserType), role) ? ((PortalUserType)role).ToString() : $"Role {role}";
 
+    private static readonly Dictionary<string, string> ContentTypeByExt = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".pdf"] = "application/pdf",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+        [".png"] = "image/png",
+        [".webp"] = "image/webp"
+    };
+
     /// <summary>
-    /// Saves an uploaded file to wwwroot/uploads/{subfolder}/{guid}{ext} and returns the relative
-    /// URL path — same disk convention used for house images and complaint attachments.
+    /// Maps a DB-stored private relative path ("agreements/{guid}.pdf") to a physical file under
+    /// {cwd}/PrivateUploads. Tolerates the legacy "/uploads/..." URL fragment and falls back to the
+    /// old wwwroot/uploads location so pre-move rows still resolve.
+    /// </summary>
+    private static string ResolvePrivatePath(string storedPath)
+    {
+        var rel = storedPath.Replace('\\', '/').TrimStart('/');
+        if (rel.StartsWith("uploads/", StringComparison.OrdinalIgnoreCase))
+            rel = rel["uploads/".Length..];
+
+        var priv = Path.Combine(Directory.GetCurrentDirectory(), "PrivateUploads", rel);
+        if (File.Exists(priv)) return priv;
+
+        var legacy = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", rel);
+        return File.Exists(legacy) ? legacy : priv;
+    }
+
+    private static async Task<AgreementFileResult?> ReadPrivateFileAsync(string? storedPath, string downloadName)
+    {
+        if (string.IsNullOrWhiteSpace(storedPath)) return null;
+
+        var disk = ResolvePrivatePath(storedPath);
+        if (!File.Exists(disk)) return null;
+
+        var bytes = await File.ReadAllBytesAsync(disk);
+        var ext = Path.GetExtension(disk);
+        var contentType = ContentTypeByExt.TryGetValue(ext, out var ct) ? ct : "application/octet-stream";
+        var name = Path.HasExtension(downloadName) ? downloadName : downloadName + ext;
+        return new AgreementFileResult(bytes, contentType, name);
+    }
+
+    /// <summary>
+    /// Saves an uploaded file to {cwd}/PrivateUploads/{subfolder}/{guid}{ext} — a folder OUTSIDE
+    /// wwwroot, so it is never served by UseStaticFiles. Returns a bare private relative path
+    /// ("{subfolder}/{guid}{ext}"), resolved server-side only by authenticated endpoints.
     /// </summary>
     private static async Task<string> SaveFileAsync(IFormFile file, string subfolder)
     {
-        var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", subfolder);
+        var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "PrivateUploads", subfolder);
         Directory.CreateDirectory(saveDir);
 
         var ext = Path.GetExtension(file.FileName);
@@ -499,6 +582,6 @@ public class AgreementService : IAgreementService
             await file.CopyToAsync(stream);
         }
 
-        return $"/uploads/{subfolder}/{fileName}";
+        return $"{subfolder}/{fileName}";
     }
 }

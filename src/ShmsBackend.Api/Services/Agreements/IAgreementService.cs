@@ -29,7 +29,18 @@ public interface IAgreementService
     // ── Portal-side reads ───────────────────────────────────────────────────
     Task<MyAgreementDto> GetMyAgreementAsync(Guid portalUserId);
     Task<MyIdDocumentDto> GetMyIdDocumentAsync(Guid portalUserId);
+
+    // ── Authenticated file serving (private folder, never a public URL) ─────
+    Task<AgreementFileResult?> GetTemplateFileAsync(int role);
+    Task<AgreementFileResult?> GetTemplateHistoryFileAsync(int role, int version);
+    Task<AgreementFileResult?> GetUploadedAgreementFileAsync(Guid portalUserId);
+    Task<AgreementFileResult?> GetIdDocumentFileAsync(Guid portalUserId, string side);
+    /// <summary>Resolves the blank template for the given user's own role.</summary>
+    Task<AgreementFileResult?> GetMyTemplateFileAsync(Guid portalUserId);
 }
+
+/// <summary>A file pulled from private storage, ready to stream inline.</summary>
+public record AgreementFileResult(byte[] Bytes, string ContentType, string DownloadName);
 
 public class AgreementTemplateDto
 {
