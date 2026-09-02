@@ -151,9 +151,12 @@ public class AgentController : ControllerBase
                 : (double?)null;
 
             // ── Assigned flats (clickable) — mirrors GetFlats ──
+            // Exclude stray assignments whose flat has been soft-deleted (global query filter nulls af.Flat),
+            // otherwise the projection of af.Flat.Id crashes the whole endpoint.
             var flats = await _context.AgentFlats
                 .Include(af => af.Flat)
                 .Where(af => af.AgentId == id)
+                .Where(af => af.Flat != null)
                 .Select(af => new
                 {
                     af.Flat.Id,
@@ -392,6 +395,7 @@ public class AgentController : ControllerBase
             .Include(af => af.Flat)
                 .ThenInclude(f => f.Houses)
             .Where(af => af.AgentId == id)
+            .Where(af => af.Flat != null)
             .Select(af => new
             {
                 af.Flat.Id,
