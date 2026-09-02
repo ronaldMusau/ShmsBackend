@@ -237,6 +237,100 @@ public class LandlordController : ControllerBase
         }
     }
 
+    // GET /api/landlord/{id}/payments
+    // Same payments-collected summary as GetDetail, with optional flat / date-range / year filters.
+    [HttpGet("{id:guid}/payments")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetPayments(
+        Guid id,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] int? year = null)
+    {
+        try
+        {
+            var payQuery = _context.Payments.Where(p => p.LandlordId == id && !p.IsDeleted);
+
+            if (flatId.HasValue)
+                payQuery = payQuery.Where(p => p.House != null && p.House.FlatId == flatId.Value);
+            if (fromDate.HasValue)
+                payQuery = payQuery.Where(p => p.CreatedAt >= fromDate.Value);
+            if (toDate.HasValue)
+                payQuery = payQuery.Where(p => p.CreatedAt <= toDate.Value);
+            if (year.HasValue)
+                payQuery = payQuery.Where(p => p.Year == year.Value);
+
+            var totalCollected = await payQuery
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid)
+                .SumAsync(p => p.AmountPaid);
+            var totalPending = await payQuery
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending
+                         || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid)
+                .SumAsync(p => p.Balance);
+            var totalOverdue = await payQuery
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue)
+                .SumAsync(p => p.Balance);
+            var totalPaidCount = await payQuery.CountAsync(p => p.PaymentStatus == PaymentTransactionStatus.Paid);
+            var recentPayments = await payQuery
+                .Include(p => p.House).ThenInclude(h => h!.Flat)
+                .Include(p => p.Tenant)
+                .OrderByDescending(p => p.CreatedAt)
+                .Take(5)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Amount,
+                    p.AmountPaid,
+                    p.Balance,
+                    Status = p.PaymentStatus.ToString(),
+                    p.PaidAt,
+                    p.Month,
+                    p.Year,
+                    p.IsInitialPayment,
+                    HouseNumber = p.House != null ? p.House.HouseNumber : null,
+                    FlatName = p.House != null && p.House.Flat != null ? p.House.Flat.FlatName : null,
+                    TenantName = p.Tenant != null ? p.Tenant.FirstName + " " + p.Tenant.LastName : null
+                })
+                .ToListAsync();
+
+            return Ok(ApiResponse<object>.SuccessResponse(new
+            {
+                TotalCollected = totalCollected,
+                TotalPending = totalPending,
+                TotalOverdue = totalOverdue,
+                TotalPaidCount = totalPaidCount,
+                RecentPayments = recentPayments
+            }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error building landlord payments: {Id}", id);
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while retrieving landlord payments"));
+        }
+    }
+
+    // GET /api/landlord/{id}/payment-years
+    // Distinct years present in this landlord's (non-deleted) payments, plus the current year, sorted descending.
+    [HttpGet("{id:guid}/payment-years")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetPaymentYears(Guid id)
+    {
+        var years = await _context.Payments
+            .Where(p => p.LandlordId == id && !p.IsDeleted)
+            .Select(p => p.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        var currentYear = DateTime.UtcNow.Year;
+        if (!years.Contains(currentYear)) years.Insert(0, currentYear);
+        years = years.OrderByDescending(y => y).ToList();
+
+        return Ok(years);
+    }
+
     [HttpGet]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
     public async Task<IActionResult> GetAll()
