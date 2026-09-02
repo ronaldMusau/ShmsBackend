@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Landlord;
 using ShmsBackend.Api.Models.Responses;
+using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Portal;
@@ -24,19 +25,22 @@ public class LandlordController : ControllerBase
     private readonly ShmsDbContext _context;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly IEmailService _emailService;
+    private readonly IAgreementService _agreementService;
 
     public LandlordController(
         ILandlordService landlordService,
         ILogger<LandlordController> logger,
         ShmsDbContext context,
         IFrontendUrlService frontendUrlService,
-        IEmailService emailService)
+        IEmailService emailService,
+        IAgreementService agreementService)
     {
         _landlordService = landlordService;
         _logger = logger;
         _context = context;
         _frontendUrlService = frontendUrlService;
         _emailService = emailService;
+        _agreementService = agreementService;
     }
 
     [HttpPost]
@@ -106,6 +110,130 @@ public class LandlordController : ControllerBase
             _logger.LogError(ex, "Error getting landlord: {Id}", id);
             return StatusCode(500, ApiResponse<object>.FailureResponse(
                 "An error occurred while retrieving the landlord"));
+        }
+    }
+
+    // GET /api/landlord/{id}/detail
+    // Composite admin view: profile + flats owned + complaints on their properties + payments collected + agreement/ID status.
+    [HttpGet("{id:guid}/detail")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetDetail(Guid id)
+    {
+        try
+        {
+            var landlord = await _landlordService.GetByIdAsync(id);
+            if (landlord == null)
+                return NotFound(ApiResponse<object>.FailureResponse("Landlord not found"));
+
+            // ── Flats owned (clickable) ──
+            var flats = await _context.Flats
+                .Include(f => f.Houses)
+                .Where(f => f.LandlordId == id)
+                .Select(f => new
+                {
+                    f.Id,
+                    f.FlatName,
+                    f.County,
+                    f.Constituency,
+                    f.Ward,
+                    TotalHouses = f.Houses.Count,
+                    OccupiedHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied)
+                })
+                .ToListAsync();
+
+            // ── Complaints on their properties (clickable) ──
+            var complaints = await _context.Complaints
+                .Include(c => c.ComplaintType)
+                .Where(c => c.LandlordId == id)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.TicketNumber,
+                    ComplaintTypeName = c.ComplaintType != null ? c.ComplaintType.Name : null,
+                    c.Status,
+                    c.CreatedAt
+                })
+                .ToListAsync();
+
+            // ── Payments collected summary — mirrors PortalPaymentController.GetLandlordPayments aggregation ──
+            var payQuery = _context.Payments.Where(p => p.LandlordId == id && !p.IsDeleted);
+            var totalCollected = await payQuery
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid)
+                .SumAsync(p => p.AmountPaid);
+            var totalPending = await payQuery
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending
+                         || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid)
+                .SumAsync(p => p.Balance);
+            var totalOverdue = await payQuery
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue)
+                .SumAsync(p => p.Balance);
+            var totalPaidCount = await payQuery.CountAsync(p => p.PaymentStatus == PaymentTransactionStatus.Paid);
+            var recentPayments = await payQuery
+                .Include(p => p.House).ThenInclude(h => h!.Flat)
+                .Include(p => p.Tenant)
+                .OrderByDescending(p => p.CreatedAt)
+                .Take(5)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Amount,
+                    p.AmountPaid,
+                    p.Balance,
+                    Status = p.PaymentStatus.ToString(),
+                    p.PaidAt,
+                    p.Month,
+                    p.Year,
+                    p.IsInitialPayment,
+                    HouseNumber = p.House != null ? p.House.HouseNumber : null,
+                    FlatName = p.House != null && p.House.Flat != null ? p.House.Flat.FlatName : null,
+                    TenantName = p.Tenant != null ? p.Tenant.FirstName + " " + p.Tenant.LastName : null
+                })
+                .ToListAsync();
+
+            // ── Agreement + ID-document status (delegated to IAgreementService) ──
+            var agreement = await _agreementService.GetMyAgreementAsync(id);
+            var idDocument = await _agreementService.GetMyIdDocumentAsync(id);
+
+            return Ok(ApiResponse<object>.SuccessResponse(new
+            {
+                Profile = new
+                {
+                    landlord.Id,
+                    landlord.Email,
+                    landlord.FirstName,
+                    landlord.LastName,
+                    landlord.PhoneNumber,
+                    landlord.NationalId,
+                    landlord.AgencyName,
+                    landlord.County,
+                    landlord.Constituency,
+                    landlord.Ward,
+                    landlord.IsActive,
+                    landlord.IsEmailVerified,
+                    landlord.CreatedAt,
+                    landlord.UpdatedAt,
+                    PortalUserType = landlord.PortalUserType.ToString()
+                },
+                Flats = flats,
+                Complaints = complaints,
+                PaymentsCollected = new
+                {
+                    TotalCollected = totalCollected,
+                    TotalPending = totalPending,
+                    TotalOverdue = totalOverdue,
+                    TotalPaidCount = totalPaidCount,
+                    RecentPayments = recentPayments
+                },
+                Agreement = agreement,
+                IdDocument = idDocument
+            }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error building landlord detail: {Id}", id);
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while retrieving the landlord detail"));
         }
     }
 

@@ -8,8 +8,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
 using ShmsBackend.Api.Models.Responses;
+using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Enums;
@@ -26,19 +28,25 @@ public class TenantController : ControllerBase
     private readonly ShmsDbContext _context;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly IEmailService _emailService;
+    private readonly IPaymentService _paymentService;
+    private readonly IAgreementService _agreementService;
 
     public TenantController(
         ITenantService tenantService,
         ILogger<TenantController> logger,
         ShmsDbContext context,
         IFrontendUrlService frontendUrlService,
-        IEmailService emailService)
+        IEmailService emailService,
+        IPaymentService paymentService,
+        IAgreementService agreementService)
     {
         _tenantService = tenantService;
         _logger = logger;
         _context = context;
         _frontendUrlService = frontendUrlService;
         _emailService = emailService;
+        _paymentService = paymentService;
+        _agreementService = agreementService;
     }
 
     [HttpPost]
@@ -115,6 +123,147 @@ public class TenantController : ControllerBase
             _logger.LogError(ex, "Error getting tenant: {Id}", id);
             return StatusCode(500, ApiResponse<object>.FailureResponse(
                 "An error occurred while retrieving the tenant"));
+        }
+    }
+
+    // GET /api/tenant/{id}/detail
+    // Composite admin view: profile + house/flat + financial standing + complaints raised + agreement/ID status.
+    [HttpGet("{id:guid}/detail")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetDetail(Guid id)
+    {
+        try
+        {
+            var tenant = await _context.Tenants
+                .Include(t => t.House).ThenInclude(h => h!.Flat)
+                .Include(t => t.House).ThenInclude(h => h!.HouseTypeRef)
+                .FirstOrDefaultAsync(t => t.Id == id);
+            if (tenant == null)
+                return NotFound(ApiResponse<object>.FailureResponse("Tenant not found"));
+
+            // ── Financial standing — reuses the portal payment-summary query + filter ──
+            var allPayments = await _paymentService.GetTenantPaymentHistoryAsync(id);
+            var cyclePayments = allPayments
+                .Where(p => p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted)
+                .ToList();
+            var visiblePayments = cyclePayments
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid
+                         || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid
+                         || p.PaymentStatus == PaymentTransactionStatus.Overdue)
+                .ToList();
+            var totalCollected = visiblePayments
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid)
+                .Sum(p => p.AmountPaid);
+            var totalOverdue = visiblePayments
+                .Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue)
+                .Sum(p => p.Balance);
+            var outstandingBalance = cyclePayments
+                .Where(p => p.PaymentStatus != PaymentTransactionStatus.Paid
+                         && p.PaymentStatus != PaymentTransactionStatus.Cancelled)
+                .Sum(p => p.Balance);
+            var recentPayments = visiblePayments
+                .OrderByDescending(p => p.Year).ThenByDescending(p => p.Month)
+                .Take(5)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Amount,
+                    p.AmountPaid,
+                    p.Balance,
+                    Status = p.PaymentStatus.ToString(),
+                    Type = p.PaymentType.ToString(),
+                    p.MpesaReceiptNumber,
+                    p.DueDate,
+                    p.PaidAt,
+                    p.Month,
+                    p.Year,
+                    p.IsInitialPayment,
+                    p.Description
+                })
+                .ToList();
+
+            // ── Complaints raised by this tenant (clickable list) ──
+            var complaints = await _context.Complaints
+                .Include(c => c.ComplaintType)
+                .Where(c => c.TenantId == id)
+                .OrderByDescending(c => c.CreatedAt)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.TicketNumber,
+                    ComplaintTypeName = c.ComplaintType != null ? c.ComplaintType.Name : null,
+                    c.Status,
+                    c.CreatedAt
+                })
+                .ToListAsync();
+
+            // ── Agreement + ID-document status (delegated to IAgreementService) ──
+            var agreement = await _agreementService.GetMyAgreementAsync(id);
+            var idDocument = await _agreementService.GetMyIdDocumentAsync(id);
+
+            var h = tenant.House;
+            return Ok(ApiResponse<object>.SuccessResponse(new
+            {
+                Profile = new
+                {
+                    tenant.Id,
+                    tenant.Email,
+                    tenant.FirstName,
+                    tenant.LastName,
+                    tenant.PhoneNumber,
+                    tenant.DateOfBirth,
+                    tenant.NationalId,
+                    tenant.County,
+                    tenant.Constituency,
+                    tenant.Ward,
+                    tenant.EmergencyContactName,
+                    tenant.EmergencyContactPhone,
+                    tenant.IsActive,
+                    tenant.IsEmailVerified,
+                    tenant.HasCompletedInitialPayment,
+                    tenant.TenancyCycle,
+                    tenant.CreatedAt,
+                    tenant.UpdatedAt,
+                    PortalUserType = tenant.PortalUserType.ToString()
+                },
+                House = h == null ? null : new
+                {
+                    h.Id,
+                    h.HouseNumber,
+                    HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
+                    h.RentFee,
+                    h.DepositFee,
+                    OccupancyStatus = h.OccupancyStatus.ToString(),
+                    PaymentStatus = h.PaymentStatus.ToString(),
+                    h.FlatId,
+                    Flat = h.Flat == null ? null : new
+                    {
+                        h.Flat.Id,
+                        h.Flat.FlatName,
+                        h.Flat.County,
+                        h.Flat.Constituency,
+                        h.Flat.Ward,
+                        h.Flat.LandlordId
+                    }
+                },
+                Financials = new
+                {
+                    CurrentStatus = tenant.TenantStatus.ToString(),
+                    TotalCollected = totalCollected,
+                    TotalOverdue = totalOverdue,
+                    OutstandingBalance = outstandingBalance,
+                    RecentPayments = recentPayments
+                },
+                Complaints = complaints,
+                Agreement = agreement,
+                IdDocument = idDocument
+            }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error building tenant detail: {Id}", id);
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while retrieving the tenant detail"));
         }
     }
 

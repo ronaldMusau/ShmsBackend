@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Agent;
 using ShmsBackend.Api.Models.Responses;
+using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Portal;
@@ -26,19 +27,22 @@ public class AgentController : ControllerBase
     private readonly ShmsDbContext _context;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly IEmailService _emailService;
+    private readonly IAgreementService _agreementService;
 
     public AgentController(
         IAgentService agentService,
         ILogger<AgentController> logger,
         ShmsDbContext context,
         IFrontendUrlService frontendUrlService,
-        IEmailService emailService)
+        IEmailService emailService,
+        IAgreementService agreementService)
     {
         _agentService = agentService;
         _logger = logger;
         _context = context;
         _frontendUrlService = frontendUrlService;
         _emailService = emailService;
+        _agreementService = agreementService;
     }
 
     [HttpPost]
@@ -123,6 +127,132 @@ public class AgentController : ControllerBase
             _logger.LogError(ex, "Error getting agent: {Id}", id);
             return StatusCode(500, ApiResponse<object>.FailureResponse(
                 "An error occurred while retrieving the agent"));
+        }
+    }
+
+    // GET /api/agent/{id}/detail
+    // Composite admin view: profile + rating + assigned flats + escalated complaints + viewing sessions + agreement/ID status.
+    [HttpGet("{id:guid}/detail")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetDetail(Guid id)
+    {
+        try
+        {
+            var agent = await _agentService.GetByIdAsync(id);
+            if (agent == null)
+                return NotFound(ApiResponse<object>.FailureResponse("Agent not found"));
+
+            // ── Rating average + count (same query as GetById) ──
+            var ratedSessions = _context.ListingViewingSessions
+                .Where(s => s.AgentId == id && s.Status == "Closed" && s.AgentRating != null);
+            var ratingCount = await ratedSessions.CountAsync();
+            var averageRating = ratingCount > 0
+                ? await ratedSessions.AverageAsync(s => (double)s.AgentRating!.Value)
+                : (double?)null;
+
+            // ── Assigned flats (clickable) — mirrors GetFlats ──
+            var flats = await _context.AgentFlats
+                .Include(af => af.Flat)
+                .Where(af => af.AgentId == id)
+                .Select(af => new
+                {
+                    af.Flat.Id,
+                    af.Flat.FlatName,
+                    af.Flat.County,
+                    af.Flat.Constituency,
+                    af.Flat.Ward,
+                    af.AssignedAt
+                })
+                .ToListAsync();
+
+            // ── Complaints escalated to this agent (clickable) ──
+            var complaints = await _context.Complaints
+                .Include(c => c.ComplaintType)
+                .Where(c => c.EscalatedToAgentId == id)
+                .OrderByDescending(c => c.EscalatedAt)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.TicketNumber,
+                    ComplaintTypeName = c.ComplaintType != null ? c.ComplaintType.Name : null,
+                    c.Status,
+                    c.CreatedAt,
+                    c.EscalatedAt
+                })
+                .ToListAsync();
+
+            // ── Viewing sessions (clickable) — mirrors SessionController.GetAgentSessions projection ──
+            var totalSessions = await _context.ListingViewingSessions.CountAsync(s => s.AgentId == id);
+            var sessionsRaw = await _context.ListingViewingSessions
+                .Where(s => s.AgentId == id)
+                .OrderByDescending(s => s.CreatedAt)
+                .Take(10)
+                .ToListAsync();
+            var sHouseIds = sessionsRaw.Select(s => s.HouseId).Distinct().ToList();
+            var sExplorerIds = sessionsRaw.Select(s => s.ExplorerId).Distinct().ToList();
+            var sHouses = (await _context.Houses
+                    .Include(hh => hh.Flat)
+                    .Where(hh => sHouseIds.Contains(hh.Id))
+                    .ToListAsync())
+                .ToDictionary(hh => hh.Id);
+            var sExplorers = (await _context.Explorers
+                    .Where(e => sExplorerIds.Contains(e.Id))
+                    .ToListAsync())
+                .ToDictionary(e => e.Id);
+            var sessions = sessionsRaw.Select(s =>
+            {
+                sHouses.TryGetValue(s.HouseId, out var house);
+                sExplorers.TryGetValue(s.ExplorerId, out var explorer);
+                return (object)new
+                {
+                    s.Id,
+                    HouseNumber = house?.HouseNumber,
+                    FlatName = house?.Flat?.FlatName,
+                    ExplorerName = explorer != null ? $"{explorer.FirstName} {explorer.LastName}".Trim() : null,
+                    s.ScheduledAt,
+                    s.Status,
+                    s.AgentRating,
+                    s.ClosedAt
+                };
+            }).ToList();
+
+            // ── Agreement + ID-document status (delegated to IAgreementService) ──
+            var agreement = await _agreementService.GetMyAgreementAsync(id);
+            var idDocument = await _agreementService.GetMyIdDocumentAsync(id);
+
+            return Ok(ApiResponse<object>.SuccessResponse(new
+            {
+                Profile = new
+                {
+                    agent.Id,
+                    agent.Email,
+                    agent.FirstName,
+                    agent.LastName,
+                    agent.PhoneNumber,
+                    agent.AgencyName,
+                    agent.LicenseNumber,
+                    agent.County,
+                    agent.Constituency,
+                    agent.Ward,
+                    agent.IsActive,
+                    agent.IsEmailVerified,
+                    agent.CreatedAt,
+                    agent.UpdatedAt,
+                    PortalUserType = agent.PortalUserType.ToString()
+                },
+                Rating = new { averageRating, ratingCount },
+                AssignedFlats = flats,
+                EscalatedComplaints = complaints,
+                Sessions = new { Total = totalSessions, Recent = sessions },
+                Agreement = agreement,
+                IdDocument = idDocument
+            }));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error building agent detail: {Id}", id);
+            return StatusCode(500, ApiResponse<object>.FailureResponse(
+                "An error occurred while retrieving the agent detail"));
         }
     }
 
