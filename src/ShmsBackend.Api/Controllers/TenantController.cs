@@ -16,6 +16,7 @@ using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Models.Enums;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -127,7 +128,8 @@ public class TenantController : ControllerBase
     }
 
     // GET /api/tenant/{id}/detail
-    // Composite admin view: profile + house/flat + financial standing + complaints raised + agreement/ID status.
+    // Composite admin view: profile + house/flat + financial standing + complaints + agreement/ID status
+    // + vacate summary + computed tenancy period.
     [HttpGet("{id:guid}/detail")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetDetail(Guid id)
@@ -204,6 +206,96 @@ public class TenantController : ControllerBase
             var agreement = await _agreementService.GetMyAgreementAsync(id);
             var idDocument = await _agreementService.GetMyIdDocumentAsync(id);
 
+            // ── Vacate summary — newest request shown; null if the tenant never had one ──
+            var vacateRequests = await _context.VacateRequests
+                .Where(v => v.TenantId == id && !v.IsDeleted)
+                .OrderByDescending(v => v.CreatedAt)
+                .ToListAsync();
+
+            var vr = vacateRequests.FirstOrDefault();
+            object? vacateSummary = null;
+            if (vr != null)
+            {
+                var settlementLines = await _context.VacateSettlements
+                    .Where(s => s.VacateRequestId == vr.Id && !s.IsVoided)
+                    .Select(s => new
+                    {
+                        s.Direction,
+                        s.Amount,
+                        s.Description,
+                        s.PaidAt,
+                        IsPaid = s.PaidAt != null
+                    })
+                    .ToListAsync();
+
+                var forfeitedAdvance = await _context.VacateForfeitedAdvances
+                    .Where(f => f.VacateRequestId == vr.Id && !f.IsVoided)
+                    .Select(f => new
+                    {
+                        f.TotalAdvanceAmount,
+                        f.AmountAppliedToDamages,
+                        f.AmountForfeitedUnused
+                    })
+                    .FirstOrDefaultAsync();
+
+                var inspectionLines = await _context.VacateInspectionLines
+                    .Where(l => l.VacateRequestId == vr.Id)
+                    .OrderBy(l => l.LineOrder)
+                    .Select(l => new { l.Description, l.AssessedAmount })
+                    .ToListAsync();
+
+                vacateSummary = new
+                {
+                    vr.Id,
+                    vr.Status,
+                    VacateDate = new DateTime(vr.VacateYear, vr.VacateMonth, 1),
+                    SubmittedAt = vr.CreatedAt,
+                    vr.ReviewedAt,
+                    vr.SettledAt,
+                    vr.ClosedAt,
+                    vr.FinalRemarks,
+                    vr.NeedsResubmission,
+                    IsCompleted = vr.Status == "Closed" && vr.ClosedAt != null,
+                    TotalRequestCount = vacateRequests.Count,
+                    HasHistory = vacateRequests.Count > 1,
+                    SettlementLines = settlementLines,
+                    ForfeitedAdvance = forfeitedAdvance,
+                    InspectionLines = inspectionLines
+                };
+            }
+
+            // ── Tenancy period — always computed; EndedAt null (ongoing) while the tenant is Active ──
+            var currentCycleHistory = await _context.TenantHouseHistories
+                .Where(th => th.TenantId == id && th.TenancyCycle == tenant.TenancyCycle)
+                .OrderByDescending(th => th.AssignedAt)
+                .FirstOrDefaultAsync();
+
+            var initialPaidAt = cyclePayments
+                .Where(p => p.IsInitialPayment && p.PaidAt.HasValue)
+                .OrderBy(p => p.PaidAt)
+                .Select(p => p.PaidAt)
+                .FirstOrDefault();
+
+            var startedAt = currentCycleHistory?.AssignedAt ?? initialPaidAt ?? tenant.CreatedAt;
+
+            DateTime? endedAt = null;
+            if (tenant.TenantStatus != TenantStatus.Active)
+            {
+                if (vr != null)
+                    endedAt = vr.SettledAt ?? vr.ClosedAt ?? new DateTime(vr.VacateYear, vr.VacateMonth, 1);
+                endedAt ??= currentCycleHistory?.RemovedAt;
+            }
+
+            var durationDays = (int)((endedAt ?? DateTime.UtcNow) - startedAt).TotalDays;
+
+            var tenancyPeriod = new
+            {
+                StartedAt = startedAt,
+                EndedAt = endedAt,
+                IsOngoing = endedAt == null,
+                DurationDays = durationDays
+            };
+
             var h = tenant.House;
             return Ok(ApiResponse<object>.SuccessResponse(new
             {
@@ -263,7 +355,9 @@ public class TenantController : ControllerBase
                 },
                 Complaints = complaints,
                 Agreement = agreement,
-                IdDocument = idDocument
+                IdDocument = idDocument,
+                VacateSummary = vacateSummary,
+                TenancyPeriod = tenancyPeriod
             }));
         }
         catch (Exception ex)
