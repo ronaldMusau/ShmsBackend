@@ -15,6 +15,7 @@ using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.PortalAuth;
 using ShmsBackend.Api.Services.Payment;
+using ShmsBackend.Api.Utilities;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Repositories;
 using ShmsBackend.Data.Repositories.Interfaces;
@@ -179,7 +180,11 @@ builder.Services.AddCors(options =>
 });
 
 // Add Controllers
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new UtcDateTimeConverter());
+    });
 
 // Add SignalR
 builder.Services.AddSignalR();
