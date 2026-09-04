@@ -79,10 +79,18 @@ public class NotificationService : INotificationService
             _context.Notifications.AddRange(createdNotifications);
             await _context.SaveChangesAsync();
 
-            var payload = new { message, category, entityType, entityId = parsedEntityId, createdAt = DateTime.UtcNow };
             foreach (var notification in createdNotifications)
             {
-                await _hubContext.Clients.Group($"user_{notification.TargetUserId}").SendAsync("ReceiveNotification", payload);
+                await _hubContext.Clients.Group($"user_{notification.TargetUserId}").SendAsync("ReceiveNotification", new
+                {
+                    id = notification.Id,
+                    message = notification.Message,
+                    category = notification.Category,
+                    entityType = notification.EntityType,
+                    entityId = notification.EntityId,
+                    isRead = false,
+                    createdAt = notification.CreatedAt
+                });
             }
         }
 
