@@ -28,6 +28,8 @@ public class VacateRequest : ISoftDelete
     public Guid? ReviewedByAdminId { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public DateTime? LastReminderSentAt { get; set; }
+    public string? Reason { get; set; }
+    public string InitiationType { get; set; } = "Voluntary"; // "Voluntary" or "Delinquency"
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public bool IsDeleted { get; set; } = false;

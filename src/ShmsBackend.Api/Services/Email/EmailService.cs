@@ -1564,6 +1564,94 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Refund Processed — {houseNumber}", inner);
     }
 
+    public async Task SendFirstWarningToVacateEmailAsync(string toEmail, string firstName, decimal arrearsAmount, int overdueDays, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        _logger.LogInformation("Sending first arrears warning email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, "Payment Reminder — Outstanding Balance",
+            GetFirstWarningToVacateTemplate(firstName, arrearsAmount, overdueDays));
+    }
+
+    private string GetFirstWarningToVacateTemplate(string firstName, decimal arrearsAmount, int overdueDays)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"This is a reminder from <strong style='color:{ColourGold};'>Romah Estates</strong> that your rent account currently has an outstanding balance that requires your attention.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>OUTSTANDING BALANCE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    KES {arrearsAmount:N2}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 0 0;'>DAYS OVERDUE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:18px;font-weight:700;color:{ColourGold};'>
+    {overdueDays}
+  </span>
+")}
+{Para("Please settle this balance at your earliest convenience through the Romah Estates tenant portal. If you have already made this payment, please disregard this notice.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout("Payment Reminder — Outstanding Balance", inner);
+    }
+
+    public async Task SendFinalWarningToVacateEmailAsync(string toEmail, string firstName, decimal arrearsAmount, int overdueDays, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        _logger.LogInformation("Sending final arrears warning email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, "Final Notice — Immediate Payment Required",
+            GetFinalWarningToVacateTemplate(firstName, arrearsAmount, overdueDays));
+    }
+
+    private string GetFinalWarningToVacateTemplate(string firstName, decimal arrearsAmount, int overdueDays)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"This is a <strong style='color:{ColourGold};'>final notice</strong> from <strong style='color:{ColourGold};'>Romah Estates</strong> regarding the outstanding balance on your rent account. Despite our earlier reminder, this balance remains unpaid.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>OUTSTANDING BALANCE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    KES {arrearsAmount:N2}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:12px 0 0 0;'>DAYS OVERDUE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:18px;font-weight:700;color:{ColourGold};'>
+    {overdueDays}
+  </span>
+")}
+{Para("<strong>Continued non-payment may result in your tenancy being terminated and the unit vacated by management.</strong> Please settle this balance immediately through the Romah Estates tenant portal to avoid further action.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout("Final Notice — Immediate Payment Required", inner);
+    }
+
+    public async Task SendForcedVacateNoticeEmailAsync(string toEmail, string firstName, string houseNumber, string reason, int vacateMonth, int vacateYear, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        _logger.LogInformation("Sending forced vacate notice email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Notice — {houseNumber}",
+            GetForcedVacateNoticeTemplate(firstName, houseNumber, reason, vacateMonth, vacateYear));
+    }
+
+    private string GetForcedVacateNoticeTemplate(string firstName, string houseNumber, string reason, int vacateMonth, int vacateYear)
+    {
+        var vacateDeadline = new DateTime(vacateYear, vacateMonth, 1).ToString("MMMM yyyy");
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Due to continued non-payment of rent, management has initiated the vacate process for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system on your behalf.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para($"<strong>Reason:</strong> {reason}")}
+{Para($"You are required to have vacated the unit by the end of <strong style='color:{ColourGold};'>{vacateDeadline}</strong>. Please log in to the Romah Estates tenant portal to review your settlement details.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Notice — {houseNumber}", inner);
+    }
+
     private string GetVacateFinalRejectionTenantTemplate(string firstName, string houseNumber, string remarks)
     {
         var inner = $@"

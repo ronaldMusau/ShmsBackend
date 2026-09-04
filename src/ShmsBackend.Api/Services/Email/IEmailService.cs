@@ -55,6 +55,9 @@ public interface IEmailService
     Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
     Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
     Task SendVacateRefundPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
+    Task SendFirstWarningToVacateEmailAsync(string toEmail, string firstName, decimal arrearsAmount, int overdueDays, string? userId = null, bool isPortalUser = false);
+    Task SendFinalWarningToVacateEmailAsync(string toEmail, string firstName, decimal arrearsAmount, int overdueDays, string? userId = null, bool isPortalUser = false);
+    Task SendForcedVacateNoticeEmailAsync(string toEmail, string firstName, string houseNumber, string reason, int vacateMonth, int vacateYear, string? userId = null, bool isPortalUser = false);
     Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt, string? userId = null, bool isPortalUser = false);
     Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt, string? userId = null, bool isPortalUser = false);
     Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string? userId = null, bool isPortalUser = false);

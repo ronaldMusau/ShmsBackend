@@ -81,6 +81,9 @@ public class ShmsDbContext : DbContext
     public DbSet<ListingViewingSession> ListingViewingSessions { get; set; }
     public DbSet<SessionMessage> SessionMessages { get; set; }
 
+    // Tenant warnings (delinquency escalation)
+    public DbSet<TenantWarning> TenantWarnings { get; set; }
+
     // Vacate
     public DbSet<VacateRequest> VacateRequests { get; set; }
     public DbSet<VacateInspectionLine> VacateInspectionLines { get; set; }
@@ -580,6 +583,14 @@ public class ShmsDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+        });
+
+        // ── TenantWarning Configuration ──────────────────────────────────────
+        modelBuilder.Entity<TenantWarning>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ArrearsAtTime).HasColumnType("decimal(18,2)");
+            entity.HasIndex(e => e.TenantId);
         });
 
         // ── Vacate Configuration ─────────────────────────────────────────────
