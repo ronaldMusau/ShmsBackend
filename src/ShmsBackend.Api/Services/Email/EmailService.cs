@@ -343,6 +343,14 @@ public class EmailService : IEmailService
             GetLandlordApprovalNeededTemplate(firstName, ticketNumber));
     }
 
+    public async Task SendFlatEditApprovalNeededEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        _logger.LogInformation("Sending flat edit approval-needed email to: {Email}", toEmail);
+        await SendEmail(toEmail, $"Your Approval Needed — {flatName}",
+            GetFlatEditApprovalNeededTemplate(firstName, flatName));
+    }
+
     public async Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
@@ -1228,6 +1236,18 @@ public class EmailService : IEmailService
 {SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
 
         return WrapInLayout($"Your Approval Needed — {ticketNumber}", inner);
+    }
+
+    private string GetFlatEditApprovalNeededTemplate(string firstName, string flatName)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"An edit to your flat <strong style='color:{ColourGold};'>'{flatName}'</strong> has cleared internal review and now requires <strong style='color:{ColourGold};'>your final approval</strong>.")}
+{Para("Please log in to your landlord portal to review the proposed changes and make your final decision.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Your Approval Needed — {flatName}", inner);
     }
 
     private string GetLandlordDecisionTemplate(string firstName, string ticketNumber, string decision, string? notes, decimal? amount)

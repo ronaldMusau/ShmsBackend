@@ -629,6 +629,11 @@ public class HouseController : ControllerBase
                 if (!dto.EffectiveMonth.HasValue || !dto.EffectiveYear.HasValue)
                     return BadRequest(new { success = false, message = $"House {house.HouseNumber} has tenant history — an effective month is required." });
 
+                // Notifications for this branch were removed: occupied-group price changes now go through
+                // the flat-edit approval flow (PortalFlatController.LandlordFinalEditApproval, "ScheduleRentChange"),
+                // which sends the equivalent notice on approval. This endpoint's occupied-house branch is no
+                // longer called by the frontend, so removing the notification here doesn't affect the
+                // still-used immediate branch above (never-occupied houses).
                 _context.PendingRentChanges.Add(new PendingRentChange
                 {
                     Id = Guid.NewGuid(),
@@ -640,20 +645,6 @@ public class HouseController : ControllerBase
                     CreatedByUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)
                 });
                 results.Add(new { houseId, applied = "scheduled" });
-
-                var currentTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.HouseId == houseId && t.IsActive);
-                if (currentTenant != null)
-                {
-                    await _emailService.SendRentChangeNoticeAsync(currentTenant.Email, currentTenant.FirstName,
-                        house.HouseNumber, dto.NewRentFee, dto.EffectiveMonth.Value, dto.EffectiveYear.Value, currentTenant.Id.ToString(), true);
-                    await _notificationService.SendForcedToUserAsync(currentTenant.Id.ToString(),
-                        $"Your rent for House {house.HouseNumber} will change to KES {dto.NewRentFee} starting {dto.EffectiveMonth}/{dto.EffectiveYear}.", "rent_change");
-                }
-                if (house.Flat?.LandlordId != null)
-                {
-                    await _notificationService.SendForcedToUserAsync(house.Flat.LandlordId.ToString(),
-                        $"Rent for House {house.HouseNumber} in {house.Flat.FlatName} will change to KES {dto.NewRentFee} starting {dto.EffectiveMonth}/{dto.EffectiveYear}.", "rent_change");
-                }
             }
         }
         await _context.SaveChangesAsync();

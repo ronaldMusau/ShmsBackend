@@ -32,4 +32,6 @@ public class HouseTypeChangeDto
     public int? Count { get; set; }
     public int? AdditionalCount { get; set; }
     public string? DeleteReason { get; set; }
+    public int? EffectiveMonth { get; set; }
+    public int? EffectiveYear { get; set; }
 }

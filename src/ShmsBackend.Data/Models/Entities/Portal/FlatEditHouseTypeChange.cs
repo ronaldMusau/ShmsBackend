@@ -15,5 +15,7 @@ public class FlatEditHouseTypeChange
     public int? ProposedCount { get; set; } // used by AddLine (total count) and EditGroup (new total count)
     public int? AdditionalCount { get; set; } // used by IncreaseCount only
     public string? DeleteReason { get; set; } // required when ActionType == "Delete", null otherwise
+    public int? ProposedEffectiveMonth { get; set; } // used by ScheduleRentChange only
+    public int? ProposedEffectiveYear { get; set; } // used by ScheduleRentChange only
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

@@ -406,6 +406,48 @@ public class PortalFlatController : ControllerBase
                         case "Delete":
                             await _flatService.DeleteHouseGroupAsync(flat.Id, change.HouseTypeId);
                             break;
+                        case "ScheduleRentChange":
+                            var housesInGroup = await _context.Houses
+                                .Where(h => h.FlatId == flat.Id && h.HouseTypeId == change.HouseTypeId)
+                                .ToListAsync();
+
+                            foreach (var groupHouse in housesInGroup)
+                            {
+                                _context.PendingRentChanges.Add(new PendingRentChange
+                                {
+                                    Id = Guid.NewGuid(),
+                                    HouseId = groupHouse.Id,
+                                    NewRentFee = change.ProposedRentFee!.Value,
+                                    NewDepositFee = change.ProposedDepositFee!.Value,
+                                    EffectiveMonth = change.ProposedEffectiveMonth!.Value,
+                                    EffectiveYear = change.ProposedEffectiveYear!.Value,
+                                    CreatedByUserId = request.RequestedByUserId
+                                });
+                            }
+                            await _context.SaveChangesAsync();
+
+                            foreach (var groupHouse in housesInGroup)
+                            {
+                                try
+                                {
+                                    var groupTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.HouseId == groupHouse.Id && t.IsActive);
+                                    if (groupTenant != null)
+                                    {
+                                        await _emailService.SendRentChangeNoticeAsync(groupTenant.Email, groupTenant.FirstName,
+                                            groupHouse.HouseNumber, change.ProposedRentFee!.Value, change.ProposedEffectiveMonth!.Value, change.ProposedEffectiveYear!.Value, groupTenant.Id.ToString(), true);
+                                        await _notificationService.SendForcedToUserAsync(groupTenant.Id.ToString(),
+                                            $"Your rent for House {groupHouse.HouseNumber} will change to KES {change.ProposedRentFee!.Value} starting {change.ProposedEffectiveMonth}/{change.ProposedEffectiveYear}.", "rent_change");
+                                    }
+                                    await _notificationService.SendForcedToUserAsync(flat.LandlordId.ToString(),
+                                        $"Rent for House {groupHouse.HouseNumber} in {flat.FlatName} will change to KES {change.ProposedRentFee!.Value} starting {change.ProposedEffectiveMonth}/{change.ProposedEffectiveYear}.", "rent_change");
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError(ex, "Failed to send scheduled rent change notification for house {HouseId} on flat edit request {RequestId}", groupHouse.Id, request.Id);
+                                    houseTypeChangeFailures.Add($"ScheduleRentChange notification ({groupHouse.HouseNumber}): {ex.Message}");
+                                }
+                            }
+                            break;
                     }
                 }
                 catch (Exception ex)
@@ -470,9 +512,9 @@ public class PortalFlatController : ControllerBase
             .ToDictionaryAsync(t => t.Id, t => t.Name);
 
         var requesterIds = requests.Select(r => r.RequestedByUserId).Distinct().ToList();
-        var requesters = await _context.PortalUsers
-            .Where(u => requesterIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+        var requesters = await _context.Admins
+            .Where(a => requesterIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, a => $"{a.FirstName} {a.LastName}");
 
         var proposedAgentIds = requests
             .Where(r => r.ProposedAgentId.HasValue)
@@ -505,6 +547,8 @@ public class PortalFlatController : ControllerBase
             r.ProposedWard,
             r.ProposedRentDueDay,
             r.ProposedBillableGracePeriodMonths,
+            r.ProposedVacateNoticeDeadlineDay,
+            r.ProposedSitDeposit,
             r.ProposedGoogleMapsLink,
             r.CreatedAt,
             RequestedByName = requesters.GetValueOrDefault(r.RequestedByUserId, "Unknown"),
@@ -528,7 +572,9 @@ public class PortalFlatController : ControllerBase
                 c.ProposedDepositFee,
                 c.ProposedCount,
                 c.AdditionalCount,
-                c.DeleteReason
+                c.DeleteReason,
+                c.ProposedEffectiveMonth,
+                c.ProposedEffectiveYear
             }).ToList()
         });
 

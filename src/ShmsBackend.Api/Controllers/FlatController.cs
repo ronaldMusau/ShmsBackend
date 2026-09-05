@@ -240,6 +240,11 @@ public class FlatController : ControllerBase
                 .Any(c => c.ActionType == "Delete" && string.IsNullOrWhiteSpace(c.DeleteReason));
             if (missingDeleteReason)
                 return BadRequest(new { success = false, message = "A reason is required for every house type group being deleted." });
+
+            var missingEffectiveDate = dto.HouseTypeChanges
+                .Any(c => c.ActionType == "ScheduleRentChange" && (!c.EffectiveMonth.HasValue || !c.EffectiveYear.HasValue));
+            if (missingEffectiveDate)
+                return BadRequest(new { success = false, message = "An effective month is required for every scheduled price change." });
         }
 
         var adminId = GetUserId();
@@ -283,6 +288,8 @@ public class FlatController : ControllerBase
                     ProposedCount = change.Count,
                     AdditionalCount = change.AdditionalCount,
                     DeleteReason = change.DeleteReason,
+                    ProposedEffectiveMonth = change.EffectiveMonth,
+                    ProposedEffectiveYear = change.EffectiveYear,
                     CreatedAt = DateTime.UtcNow
                 });
             }
@@ -391,7 +398,7 @@ public class FlatController : ControllerBase
             {
                 try { await _notificationService.SendToUserAsync(landlord.Id.ToString(), $"An edit to your flat \"{editFlat.FlatName}\" requires your final approval.", "property", "FlatEdit", editFlat.Id.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of pending flat edit approval"); }
-                try { await _emailService.SendLandlordApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, $"FLAT-{editFlat.FlatName}", landlord.Id.ToString(), true); }
+                try { await _emailService.SendFlatEditApprovalNeededEmailAsync(landlord.Email, landlord.FirstName, editFlat.FlatName, landlord.Id.ToString(), true); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord flat edit approval-needed email"); }
             }
             return Ok(new { success = true, message = "Approved. Internal sequence complete — sent to landlord for final approval." });
@@ -426,9 +433,9 @@ public class FlatController : ControllerBase
             .ToDictionaryAsync(t => t.Id, t => t.Name);
 
         var requesterIds = requests.Select(r => r.RequestedByUserId).Distinct().ToList();
-        var requesters = await _context.PortalUsers
-            .Where(u => requesterIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+        var requesters = await _context.Admins
+            .Where(a => requesterIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, a => $"{a.FirstName} {a.LastName}");
 
         var proposedAgentIds = requests
             .Where(r => r.ProposedAgentId.HasValue)
@@ -487,7 +494,9 @@ public class FlatController : ControllerBase
                 c.ProposedDepositFee,
                 c.ProposedCount,
                 c.AdditionalCount,
-                c.DeleteReason
+                c.DeleteReason,
+                c.ProposedEffectiveMonth,
+                c.ProposedEffectiveYear
             }).ToList()
         });
 

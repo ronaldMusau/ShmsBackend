@@ -40,6 +40,7 @@ public interface IEmailService
     Task SendApprovalStepEmailAsync(string toEmail, string firstName, string ticketNumber, int stepOrder, string? userId = null, bool isPortalUser = false);
     Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason, string? userId = null, bool isPortalUser = false);
     Task SendLandlordApprovalNeededEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false);
+    Task SendFlatEditApprovalNeededEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false);
     Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount, string? userId = null, bool isPortalUser = false);
     Task SendFlatEditSubmittedEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false);
     Task SendDeductionCreatedEmailAsync(string toEmail, string firstName, string ticketNumber, decimal amount, string? description, string? userId = null, bool isPortalUser = false);
