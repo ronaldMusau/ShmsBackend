@@ -149,6 +149,69 @@ public class FlatController : ControllerBase
         }
     }
 
+    [HttpPost("{flatId:guid}/house-types/{houseTypeId:guid}/increase-count")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> IncreaseHouseTypeCount(Guid flatId, Guid houseTypeId, [FromBody] IncreaseHouseCountDto dto)
+    {
+        try
+        {
+            var result = await _flatService.IncreaseHouseCountAsync(flatId, houseTypeId, dto.AdditionalCount);
+            if (result == null) return NotFound(new { success = false, message = "Flat not found." });
+            return Ok(new { success = true, data = result });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to increase house count for flat {FlatId}, house type {HouseTypeId}: {Message}", flatId, houseTypeId, ex.Message);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpPut("{flatId:guid}/house-types/{houseTypeId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> EditHouseTypeGroup(Guid flatId, Guid houseTypeId, [FromBody] EditHouseGroupDto dto)
+    {
+        try
+        {
+            var result = await _flatService.EditHouseGroupAsync(flatId, houseTypeId, dto);
+            if (result == null) return NotFound(new { success = false, message = "Flat not found." });
+            return Ok(new { success = true, data = result });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to edit house type group for flat {FlatId}, house type {HouseTypeId}: {Message}", flatId, houseTypeId, ex.Message);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpDelete("{flatId:guid}/house-types/{houseTypeId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> DeleteHouseTypeGroup(Guid flatId, Guid houseTypeId)
+    {
+        try
+        {
+            var result = await _flatService.DeleteHouseGroupAsync(flatId, houseTypeId);
+            if (result == null) return NotFound(new { success = false, message = "Flat not found." });
+            return Ok(new { success = true, message = "House type group deleted." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete house type group for flat {FlatId}, house type {HouseTypeId}: {Message}", flatId, houseTypeId, ex.Message);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
     // POST /api/flats/{id}/edit-request
     [HttpPost("{id:guid}/edit-request")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]

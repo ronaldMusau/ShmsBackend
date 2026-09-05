@@ -201,6 +201,7 @@ public class PortalFlatController : ControllerBase
                 {
                     h.Id,
                     h.HouseNumber,
+                    h.HouseTypeId,
                     HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                     h.RentFee,
                     h.DepositFee,
@@ -249,6 +250,7 @@ public class PortalFlatController : ControllerBase
                 {
                     h.Id,
                     h.HouseNumber,
+                    h.HouseTypeId,
                     HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                     h.RentFee,
                     h.DepositFee,
@@ -293,6 +295,7 @@ public class PortalFlatController : ControllerBase
             {
                 h.Id,
                 h.HouseNumber,
+                h.HouseTypeId,
                 HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,

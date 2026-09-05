@@ -285,6 +285,7 @@ public class FlatService
             {
                 h.Id,
                 h.HouseNumber,
+                h.HouseTypeId,
                 HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,
@@ -435,13 +436,32 @@ public class FlatService
             .Select(t => t.Id)
             .ToListAsync();
 
+        var existingHouseTypeIds = await _context.Houses
+            .Where(h => h.FlatId == flatId)
+            .Select(h => h.HouseTypeId)
+            .Distinct()
+            .ToListAsync();
+
+        foreach (var group in houseLines)
+        {
+            if (existingHouseTypeIds.Contains(group.HouseTypeId))
+            {
+                var typeName = await _context.HouseTypes
+                    .Where(t => t.Id == group.HouseTypeId)
+                    .Select(t => t.Name)
+                    .FirstOrDefaultAsync();
+                throw new InvalidOperationException($"House type '{typeName ?? group.HouseTypeId.ToString()}' already exists on this flat. Use increase-count instead.");
+            }
+        }
+
         var houses = new List<House>();
         foreach (var group in houseLines)
         {
             if (!validHouseTypeIds.Contains(group.HouseTypeId))
                 throw new InvalidOperationException($"Invalid house type.");
 
-            for (int i = 1; i <= group.Count; i++)
+            var startIndex = await GetNextIndexForPrefix(flatId, group.HouseNumberPrefix);
+            for (int i = startIndex; i < startIndex + group.Count; i++)
             {
                 houses.Add(new House
                 {
@@ -481,5 +501,167 @@ public class FlatService
         }
 
         return houseGroups;
+    }
+
+    public async Task<object?> IncreaseHouseCountAsync(Guid flatId, Guid houseTypeId, int additionalCount)
+    {
+        var flat = await _context.Flats.FindAsync(flatId);
+        if (flat == null) return null;
+
+        var existingHouses = await _context.Houses
+            .Where(h => h.FlatId == flatId && h.HouseTypeId == houseTypeId)
+            .ToListAsync();
+
+        if (existingHouses.Count == 0)
+            throw new InvalidOperationException("No houses of this type exist on this flat to increase.");
+
+        var sample = existingHouses.First();
+        var prefix = SplitHouseNumber(sample.HouseNumber).Prefix;
+        var startIndex = await GetNextIndexForPrefix(flatId, prefix);
+
+        var newHouses = new List<House>();
+        for (int i = startIndex; i < startIndex + additionalCount; i++)
+        {
+            newHouses.Add(new House
+            {
+                Id = Guid.NewGuid(),
+                HouseNumber = $"{prefix}{i}",
+                HouseTypeId = houseTypeId,
+                RentFee = sample.RentFee,
+                DepositFee = sample.DepositFee,
+                OccupancyStatus = OccupancyStatus.Vacant,
+                PaymentStatus = PaymentStatus.NotPaid,
+                FlatId = flatId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
+
+        _context.Houses.AddRange(newHouses);
+        await _context.SaveChangesAsync();
+
+        return newHouses.Select(h => new { h.Id, h.HouseNumber }).ToList();
+    }
+
+    public async Task<object?> EditHouseGroupAsync(Guid flatId, Guid houseTypeId, EditHouseGroupDto dto)
+    {
+        var flat = await _context.Flats.FindAsync(flatId);
+        if (flat == null) return null;
+
+        var existingHouses = await _context.Houses
+            .Where(h => h.FlatId == flatId && h.HouseTypeId == houseTypeId)
+            .ToListAsync();
+
+        if (existingHouses.Count == 0)
+            throw new InvalidOperationException("No houses of this type exist on this flat.");
+
+        var houseIds = existingHouses.Select(h => h.Id).ToList();
+        var everOccupied = await _context.TenantHouseHistories.AnyAsync(h => houseIds.Contains(h.HouseId));
+        if (everOccupied)
+            throw new InvalidOperationException("This house type has occupied units and cannot be fully edited — only count can be increased.");
+
+        var currentCount = existingHouses.Count;
+
+        if (dto.NewCount < currentCount)
+        {
+            var toRemove = currentCount - dto.NewCount;
+            var removals = existingHouses
+                .OrderByDescending(h => SplitHouseNumber(h.HouseNumber).Suffix)
+                .Take(toRemove)
+                .ToList();
+            _context.Houses.RemoveRange(removals);
+            foreach (var h in removals)
+                existingHouses.Remove(h);
+        }
+
+        foreach (var house in existingHouses)
+        {
+            var suffix = SplitHouseNumber(house.HouseNumber).Suffix;
+            house.HouseNumber = $"{dto.NewPrefix}{suffix}";
+            house.RentFee = dto.NewRentFee;
+            house.DepositFee = dto.NewDepositFee;
+            house.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Save removals + re-prefixed houses first so the next-index lookup below reflects
+        // the final state and doesn't hand out a number that collides with a just-renamed house.
+        await _context.SaveChangesAsync();
+
+        var newHouses = new List<House>();
+        if (dto.NewCount > currentCount)
+        {
+            var toAdd = dto.NewCount - currentCount;
+            var startIndex = await GetNextIndexForPrefix(flatId, dto.NewPrefix);
+            for (int i = startIndex; i < startIndex + toAdd; i++)
+            {
+                newHouses.Add(new House
+                {
+                    Id = Guid.NewGuid(),
+                    HouseNumber = $"{dto.NewPrefix}{i}",
+                    HouseTypeId = houseTypeId,
+                    RentFee = dto.NewRentFee,
+                    DepositFee = dto.NewDepositFee,
+                    OccupancyStatus = OccupancyStatus.Vacant,
+                    PaymentStatus = PaymentStatus.NotPaid,
+                    FlatId = flatId,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+            }
+            _context.Houses.AddRange(newHouses);
+            await _context.SaveChangesAsync();
+        }
+
+        return existingHouses.Concat(newHouses)
+            .Select(h => new { h.Id, h.HouseNumber })
+            .ToList();
+    }
+
+    public async Task<bool?> DeleteHouseGroupAsync(Guid flatId, Guid houseTypeId)
+    {
+        var flat = await _context.Flats.FindAsync(flatId);
+        if (flat == null) return null;
+
+        var existingHouses = await _context.Houses
+            .Where(h => h.FlatId == flatId && h.HouseTypeId == houseTypeId)
+            .ToListAsync();
+
+        if (existingHouses.Count == 0)
+            throw new InvalidOperationException("No houses of this type exist on this flat.");
+
+        var houseIds = existingHouses.Select(h => h.Id).ToList();
+        var everOccupied = await _context.TenantHouseHistories.AnyAsync(h => houseIds.Contains(h.HouseId));
+        if (everOccupied)
+            throw new InvalidOperationException("This house type has occupied units and cannot be deleted — only unoccupied groups can be removed.");
+
+        _context.Houses.RemoveRange(existingHouses);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task<int> GetNextIndexForPrefix(Guid flatId, string prefix)
+    {
+        var existingNumbers = await _context.Houses
+            .Where(h => h.FlatId == flatId && h.HouseNumber.StartsWith(prefix))
+            .Select(h => h.HouseNumber)
+            .ToListAsync();
+
+        int maxIndex = 0;
+        foreach (var number in existingNumbers)
+        {
+            var suffix = number.Substring(prefix.Length);
+            if (int.TryParse(suffix, out var idx) && idx > maxIndex)
+                maxIndex = idx;
+        }
+        return maxIndex + 1;
+    }
+
+    private static (string Prefix, int Suffix) SplitHouseNumber(string houseNumber)
+    {
+        int i = houseNumber.Length;
+        while (i > 0 && char.IsDigit(houseNumber[i - 1])) i--;
+        var prefix = houseNumber.Substring(0, i);
+        int.TryParse(houseNumber.Substring(i), out var suffix);
+        return (prefix, suffix);
     }
 }
