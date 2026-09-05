@@ -411,9 +411,19 @@ public class FlatController : ControllerBase
 
         var requests = await _context.FlatEditRequests
             .Include(r => r.Flat)
+            .Include(r => r.HouseTypeChanges)
             .Where(r => r.CurrentApprovalStepOrder != null && myStepOrders.Contains(r.CurrentApprovalStepOrder.Value))
             .OrderBy(r => r.CreatedAt)
             .ToListAsync();
+
+        var houseTypeIds = requests
+            .SelectMany(r => r.HouseTypeChanges)
+            .Select(c => c.HouseTypeId)
+            .Distinct()
+            .ToList();
+        var houseTypeNames = await _context.HouseTypes
+            .Where(t => houseTypeIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Name);
 
         var requesterIds = requests.Select(r => r.RequestedByUserId).Distinct().ToList();
         var requesters = await _context.PortalUsers
@@ -465,7 +475,20 @@ public class FlatController : ControllerBase
             CurrentAgentName = currentAgentByFlat.GetValueOrDefault(r.FlatId),
             ProposedAgentName = r.ProposedAgentId.HasValue ? proposedAgents.GetValueOrDefault(r.ProposedAgentId.Value) : null,
             r.ClearAgent,
-            r.SubmissionNotes
+            r.SubmissionNotes,
+            HouseTypeChanges = r.HouseTypeChanges.Select(c => new
+            {
+                c.Id,
+                c.ActionType,
+                c.HouseTypeId,
+                HouseTypeName = houseTypeNames.GetValueOrDefault(c.HouseTypeId, "Unknown"),
+                c.ProposedPrefix,
+                c.ProposedRentFee,
+                c.ProposedDepositFee,
+                c.ProposedCount,
+                c.AdditionalCount,
+                c.DeleteReason
+            }).ToList()
         });
 
         return Ok(new { success = true, requests = data });
