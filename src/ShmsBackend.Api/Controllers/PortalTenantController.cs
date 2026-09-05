@@ -54,6 +54,11 @@ public class PortalTenantController : ControllerBase
         if (tenant.House == null) return NotFound("No house has been assigned to this tenant yet.");
 
         var h = tenant.House;
+        var scheduledRentChange = await _context.PendingRentChanges
+            .Where(pc => pc.HouseId == h.Id && pc.AppliedAt == null)
+            .OrderByDescending(pc => pc.CreatedAt)
+            .FirstOrDefaultAsync();
+
         return Ok(ApiResponse<object>.SuccessResponse(new
         {
             h.Id,
@@ -63,6 +68,13 @@ public class PortalTenantController : ControllerBase
             h.RentFee,
             h.DepositFee,
             PaymentStatus = h.PaymentStatus.ToString(),
+            ScheduledRentChange = scheduledRentChange == null ? null : new
+            {
+                scheduledRentChange.NewRentFee,
+                scheduledRentChange.NewDepositFee,
+                scheduledRentChange.EffectiveMonth,
+                scheduledRentChange.EffectiveYear
+            },
             h.FlatId,
             LandlordId = h.Flat != null ? h.Flat.LandlordId : (Guid?)null,
             Flat = h.Flat == null ? null : new

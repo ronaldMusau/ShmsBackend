@@ -191,6 +191,13 @@ public class PortalFlatController : ControllerBase
                 return NotFound(new { success = false, message = "Flat not found or not assigned to you." });
 
             var flat = agentFlat.Flat;
+            var agentHouseIds = flat.Houses.Select(h => h.Id).ToList();
+            var agentPendingRentChanges = (await _context.PendingRentChanges
+                    .Where(pc => agentHouseIds.Contains(pc.HouseId) && pc.AppliedAt == null)
+                    .ToListAsync())
+                .GroupBy(pc => pc.HouseId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(pc => pc.CreatedAt).First());
+
             return Ok(new { success = true, data = new
             {
                 flat.Id,
@@ -212,7 +219,14 @@ public class PortalFlatController : ControllerBase
                     h.DepositFee,
                     OccupancyStatus = h.OccupancyStatus.ToString(),
                     PaymentStatus = h.PaymentStatus.ToString(),
-                    Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList()
+                    Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
+                    ScheduledRentChange = agentPendingRentChanges.TryGetValue(h.Id, out var agentPrc) ? new
+                    {
+                        agentPrc.NewRentFee,
+                        agentPrc.NewDepositFee,
+                        agentPrc.EffectiveMonth,
+                        agentPrc.EffectiveYear
+                    } : null
                 }).ToList(),
                 HasPendingEditRequest = _context.FlatEditRequests.Any(r => r.FlatId == flat.Id && r.Status == "Pending"),
                 flat.CreatedAt
@@ -236,6 +250,13 @@ public class PortalFlatController : ControllerBase
 
             if (landlordFlat == null)
                 return NotFound(new { success = false, message = "Flat not found or not owned by you." });
+
+            var landlordHouseIds = landlordFlat.Houses.Select(h => h.Id).ToList();
+            var landlordPendingRentChanges = (await _context.PendingRentChanges
+                    .Where(pc => landlordHouseIds.Contains(pc.HouseId) && pc.AppliedAt == null)
+                    .ToListAsync())
+                .GroupBy(pc => pc.HouseId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(pc => pc.CreatedAt).First());
 
             return Ok(new { success = true, data = new
             {
@@ -271,7 +292,14 @@ public class PortalFlatController : ControllerBase
                         t.Email,
                         t.CreatedAt
                     }).FirstOrDefault(),
-                    Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList()
+                    Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
+                    ScheduledRentChange = landlordPendingRentChanges.TryGetValue(h.Id, out var landlordPrc) ? new
+                    {
+                        landlordPrc.NewRentFee,
+                        landlordPrc.NewDepositFee,
+                        landlordPrc.EffectiveMonth,
+                        landlordPrc.EffectiveYear
+                    } : null
                 }),
                 HasPendingEditRequest = _context.FlatEditRequests.Any(r => r.FlatId == landlordFlat.Id && r.Status == "Pending"),
                 landlordFlat.CreatedAt
@@ -284,6 +312,13 @@ public class PortalFlatController : ControllerBase
             .FirstOrDefaultAsync(f => f.Id == id);
 
         if (result == null) return NotFound(new { success = false, message = "Flat not found." });
+
+        var defaultHouseIds = result.Houses.Select(h => h.Id).ToList();
+        var defaultPendingRentChanges = (await _context.PendingRentChanges
+                .Where(pc => defaultHouseIds.Contains(pc.HouseId) && pc.AppliedAt == null)
+                .ToListAsync())
+            .GroupBy(pc => pc.HouseId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(pc => pc.CreatedAt).First());
 
         return Ok(new { success = true, data = new
         {
@@ -307,7 +342,14 @@ public class PortalFlatController : ControllerBase
                 OccupancyStatus = h.OccupancyStatus.ToString(),
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
-                Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList()
+                Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
+                ScheduledRentChange = defaultPendingRentChanges.TryGetValue(h.Id, out var defaultPrc) ? new
+                {
+                    defaultPrc.NewRentFee,
+                    defaultPrc.NewDepositFee,
+                    defaultPrc.EffectiveMonth,
+                    defaultPrc.EffectiveYear
+                } : null
             }),
             result.CreatedAt
         }});
@@ -615,6 +657,6 @@ public class PortalFlatController : ControllerBase
             };
         }).ToList();
 
-        return Ok(new { success = true, history = data });
+        return Ok(new { success = true, data = data });
     }
 }

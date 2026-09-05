@@ -265,6 +265,12 @@ public class FlatService
                 .ToListAsync()
         );
 
+        var pendingRentChangesByHouse = (await _context.PendingRentChanges
+                .Where(pc => houseIds.Contains(pc.HouseId) && pc.AppliedAt == null)
+                .ToListAsync())
+            .GroupBy(pc => pc.HouseId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(pc => pc.CreatedAt).First());
+
         return new
         {
             flat.Id,
@@ -272,6 +278,11 @@ public class FlatService
             flat.County,
             flat.Constituency,
             flat.Ward,
+            flat.GoogleMapsLink,
+            flat.RentDueDay,
+            flat.BillableGracePeriodMonths,
+            flat.VacateNoticeDeadlineDay,
+            flat.SitDeposit,
             flat.LandlordId,
             Landlord = flat.Landlord == null ? null : new
             {
@@ -293,7 +304,14 @@ public class FlatService
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
                 Images = h.Images.OrderBy(hi => hi.SortOrder).Select(hi => new { hi.Id, hi.ImagePath }).ToList(),
-                EverOccupied = everOccupiedSet.Contains(h.Id)
+                EverOccupied = everOccupiedSet.Contains(h.Id),
+                ScheduledRentChange = pendingRentChangesByHouse.TryGetValue(h.Id, out var prc) ? new
+                {
+                    prc.NewRentFee,
+                    prc.NewDepositFee,
+                    prc.EffectiveMonth,
+                    prc.EffectiveYear
+                } : null
             }),
             TotalHouses = flat.Houses.Count,
             VacantHouses = flat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),

@@ -909,7 +909,7 @@ public class PortalComplaintController : ControllerBase
             };
         }).ToList();
 
-        return Ok(new { success = true, history = data });
+        return Ok(new { success = true, data = data });
     }
 
     // GET /api/portalcomplaint/my-verification-history
