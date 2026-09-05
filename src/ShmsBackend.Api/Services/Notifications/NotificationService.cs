@@ -220,7 +220,10 @@ public class NotificationService : INotificationService
         if (entityType == "Complaint")
             return "Complaints";
 
-        if (entityType is "FlatEdit" or "Flat" or "Vacate")
+        if (entityType == "FlatEdit")
+            return "Approvals";
+
+        if (entityType is "Flat" or "Vacate")
             return "Properties";
 
         if (entityType == "Agreement")

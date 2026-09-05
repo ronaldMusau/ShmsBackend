@@ -578,7 +578,7 @@ public class PortalFlatController : ControllerBase
             }).ToList()
         });
 
-        return Ok(new { success = true, requests = data });
+        return Ok(new { success = true, data = data });
     }
 
     // GET /api/portalflats/edit-request/my-approval-history
