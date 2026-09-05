@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace ShmsBackend.Data.Models.Entities.Portal;
 
@@ -29,4 +30,6 @@ public class FlatEditRequest
     public DateTime? LandlordActionedAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+
+    public ICollection<FlatEditHouseTypeChange> HouseTypeChanges { get; set; } = new List<FlatEditHouseTypeChange>();
 }

@@ -165,6 +165,46 @@ public class NotificationService : INotificationService
         _logger.LogInformation("Notification sent to user {UserId}: {Message}", userId, message);
     }
 
+    public async Task SendForcedToUserAsync(string userId, string message, string category = "general",
+        string? entityType = null, string? entityId = null)
+    {
+        var isPortalUser = Guid.TryParse(userId, out var uid)
+            && await _context.PortalUsers.AsNoTracking().AnyAsync(u => u.Id == uid);
+
+        var parsedEntityId = string.IsNullOrEmpty(entityId) ? (Guid?)null : Guid.Parse(entityId);
+
+        var notification = new Notification
+        {
+            Id = Guid.NewGuid(),
+            Audience = NotificationAudience.SpecificUser,
+            TargetUserId = userId,
+            Message = message,
+            Category = category,
+            EntityType = entityType,
+            EntityId = parsedEntityId,
+            IsRead = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Notifications.Add(notification);
+        await _context.SaveChangesAsync();
+
+        await _hubContext.Clients.Group($"user_{userId}").SendAsync("ReceiveNotification", new
+        {
+            id = notification.Id,
+            message = notification.Message,
+            category = notification.Category,
+            entityType = notification.EntityType,
+            entityId = notification.EntityId,
+            isRead = false,
+            createdAt = notification.CreatedAt
+        });
+
+        await SendWebPushAsync(userId, isPortalUser, message);
+
+        _logger.LogInformation("Forced (preference-bypassing) notification sent to user {UserId}: {Message}", userId, message);
+    }
+
     // ── Push / preference enforcement ────────────────────────────────────────
 
     private static bool IsPortalAudience(NotificationAudience audience) => audience switch

@@ -250,10 +250,25 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear, string? userId = null, bool isPortalUser = false)
     {
-        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
         _logger.LogInformation("Sending rent change notice to: {Email}", toEmail);
         return await SendEmail(toEmail, "Upcoming Rent Change — Romah Estates",
             GetRentChangeNoticeTemplate(firstName, houseNumber, newRentFee, effectiveMonth, effectiveYear));
+    }
+
+    public async Task SendRentNowEffectiveEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee, string? userId = null, bool isPortalUser = false)
+    {
+        _logger.LogInformation("Sending rent-now-effective email to: {Email}", toEmail);
+        await SendEmail(toEmail, "Your Rent Has Changed — Romah Estates",
+            GetRentNowEffectiveTemplate(firstName, houseNumber, newRentFee, newDepositFee));
+    }
+
+    // Always-on: an upcoming rent-change reminder must never be silently muted by a preference
+    // toggle, so this skips ShouldSendEmailAsync entirely (same pattern as OTP/account-locked emails).
+    public async Task<bool> SendRentChangeReminderEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear)
+    {
+        _logger.LogInformation("Sending rent change reminder email to: {Email}", toEmail);
+        return await SendEmail(toEmail, "Reminder: Upcoming Rent Change — Romah Estates",
+            GetRentChangeReminderTemplate(firstName, houseNumber, newRentFee, effectiveMonth, effectiveYear));
     }
 
     public async Task<bool> SendFlatCreatedLandlordEmailAsync(string toEmail, string firstName, string flatName, int houseCount, string? userId = null, bool isPortalUser = false)
@@ -998,6 +1013,40 @@ public class EmailService : IEmailService
 {Divider()}
 {SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
         return WrapInLayout("Upcoming Rent Change — Romah Estates", inner);
+    }
+
+    private string GetRentNowEffectiveTemplate(string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"As previously announced, the rent for <strong style='color:{ColourGold};'>House {houseNumber}</strong> has now taken effect this month.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>NEW RENT AMOUNT</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>KES {newRentFee:N2}</p>
+  <p style='margin:12px 0 0;color:{ColourTextMuted};font-size:12px;letter-spacing:1px;'>NEW DEPOSIT AMOUNT</p>
+  <p style='margin:0;font-size:18px;font-weight:700;color:{ColourGold};'>KES {newDepositFee:N2}</p>
+")}
+{Para("If you have any questions regarding this change, please contact your property manager.")}
+{Divider()}
+{SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
+        return WrapInLayout("Your Rent Has Changed — Romah Estates", inner);
+    }
+
+    private string GetRentChangeReminderTemplate(string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear)
+    {
+        var monthName = new DateTime(effectiveYear, effectiveMonth, 1).ToString("MMMM yyyy");
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Reminder: starting <strong style='color:{ColourGold};'>{monthName}</strong>, your rent for <strong style='color:{ColourGold};'>House {houseNumber}</strong> will change to the amount shown below.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>NEW RENT AMOUNT</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>KES {newRentFee:N2}</p>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>Effective from: <strong style='color:{ColourTextSec};'>{monthName}</strong></p>
+")}
+{Para("If you have any questions regarding this change, please contact your property manager.")}
+{Divider()}
+{SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
+        return WrapInLayout("Reminder: Upcoming Rent Change — Romah Estates", inner);
     }
 
     private string GetFlatCreatedLandlordTemplate(string firstName, string flatName, int houseCount)

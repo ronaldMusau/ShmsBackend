@@ -36,6 +36,7 @@ public class ShmsDbContext : DbContext
     public DbSet<FlatEditRequest> FlatEditRequests { get; set; }
     public DbSet<FlatEditApprovalAction> FlatEditApprovalActions { get; set; }
     public DbSet<FlatEditLandlordDecision> FlatEditLandlordDecisions { get; set; }
+    public DbSet<FlatEditHouseTypeChange> FlatEditHouseTypeChanges { get; set; }
 
     // Agent–Flat assignments
     public DbSet<AgentFlat> AgentFlats { get; set; }
@@ -338,6 +339,20 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasOne(e => e.FlatEditRequest)
                   .WithMany()
+                  .HasForeignKey(e => e.FlatEditRequestId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── FlatEditHouseTypeChange Configuration ────────────────────────────
+        modelBuilder.Entity<FlatEditHouseTypeChange>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ActionType).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.ProposedRentFee).HasColumnType("decimal(10,2)");
+            entity.Property(e => e.ProposedDepositFee).HasColumnType("decimal(10,2)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasOne(e => e.FlatEditRequest)
+                  .WithMany(r => r.HouseTypeChanges)
                   .HasForeignKey(e => e.FlatEditRequestId)
                   .OnDelete(DeleteBehavior.Cascade);
         });

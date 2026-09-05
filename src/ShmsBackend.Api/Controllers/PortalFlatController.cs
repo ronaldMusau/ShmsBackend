@@ -7,8 +7,10 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Models.DTOs.Flat;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 
@@ -23,17 +25,20 @@ public class PortalFlatController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<PortalFlatController> _logger;
+    private readonly FlatService _flatService;
 
     public PortalFlatController(
         ShmsDbContext context,
         IEmailService emailService,
         INotificationService notificationService,
-        ILogger<PortalFlatController> logger)
+        ILogger<PortalFlatController> logger,
+        FlatService flatService)
     {
         _context = context;
         _emailService = emailService;
         _notificationService = notificationService;
         _logger = logger;
+        _flatService = flatService;
     }
 
     private Guid GetUserId()
@@ -314,17 +319,24 @@ public class PortalFlatController : ControllerBase
     public async Task<IActionResult> LandlordFinalEditApproval(Guid id, [FromBody] LandlordApprovalDto dto)
     {
         var landlordId = GetUserId();
-        var request = await _context.FlatEditRequests.Include(r => r.Flat).FirstOrDefaultAsync(r => r.Id == id);
+        var request = await _context.FlatEditRequests
+            .Include(r => r.Flat)
+            .Include(r => r.HouseTypeChanges)
+            .FirstOrDefaultAsync(r => r.Id == id);
         if (request == null) return NotFound(new { success = false, message = "Edit request not found." });
         if (request.Flat!.LandlordId != landlordId) return Forbid();
         if (request.CurrentApprovalStepOrder != null) return BadRequest(new { success = false, message = "Internal approval is still in progress." });
         if (request.Status != "Pending") return BadRequest(new { success = false, message = "This request has already been actioned." });
+        if (!dto.Approved && string.IsNullOrWhiteSpace(dto.Notes))
+            return BadRequest(new { success = false, message = "A reason is required to reject this edit." });
 
         request.LandlordDecision = dto.Approved ? "Approved" : "Rejected";
         request.LandlordDecisionNotes = dto.Notes;
         request.LandlordActionedAt = DateTime.UtcNow;
         request.Status = dto.Approved ? "Approved" : "Rejected";
         request.UpdatedAt = DateTime.UtcNow;
+
+        var houseTypeChangeFailures = new List<string>();
 
         if (dto.Approved)
         {
@@ -335,6 +347,8 @@ public class PortalFlatController : ControllerBase
             if (request.ProposedWard != null) flat.Ward = request.ProposedWard;
             if (request.ProposedRentDueDay.HasValue) flat.RentDueDay = request.ProposedRentDueDay.Value;
             if (request.ProposedBillableGracePeriodMonths.HasValue) flat.BillableGracePeriodMonths = request.ProposedBillableGracePeriodMonths.Value;
+            if (request.ProposedVacateNoticeDeadlineDay.HasValue) flat.VacateNoticeDeadlineDay = request.ProposedVacateNoticeDeadlineDay.Value;
+            if (request.ProposedSitDeposit.HasValue) flat.SitDeposit = request.ProposedSitDeposit.Value;
             if (request.ProposedGoogleMapsLink != null) flat.GoogleMapsLink = request.ProposedGoogleMapsLink;
             flat.UpdatedAt = DateTime.UtcNow;
 
@@ -353,6 +367,52 @@ public class PortalFlatController : ControllerBase
                     FlatId = flat.Id,
                     AssignedAt = DateTime.UtcNow
                 });
+            }
+
+            await _context.SaveChangesAsync();
+
+            foreach (var change in request.HouseTypeChanges)
+            {
+                try
+                {
+                    switch (change.ActionType)
+                    {
+                        case "AddLine":
+                            var line = new List<HouseGroupDto>
+                            {
+                                new HouseGroupDto
+                                {
+                                    HouseTypeId = change.HouseTypeId,
+                                    Count = change.ProposedCount!.Value,
+                                    HouseNumberPrefix = change.ProposedPrefix!,
+                                    RentFee = change.ProposedRentFee!.Value,
+                                    DepositFee = change.ProposedDepositFee!.Value
+                                }
+                            };
+                            await _flatService.AddHouseLinesAsync(flat.Id, line);
+                            break;
+                        case "IncreaseCount":
+                            await _flatService.IncreaseHouseCountAsync(flat.Id, change.HouseTypeId, change.AdditionalCount!.Value);
+                            break;
+                        case "EditGroup":
+                            await _flatService.EditHouseGroupAsync(flat.Id, change.HouseTypeId, new EditHouseGroupDto
+                            {
+                                NewPrefix = change.ProposedPrefix!,
+                                NewRentFee = change.ProposedRentFee!.Value,
+                                NewDepositFee = change.ProposedDepositFee!.Value,
+                                NewCount = change.ProposedCount!.Value
+                            });
+                            break;
+                        case "Delete":
+                            await _flatService.DeleteHouseGroupAsync(flat.Id, change.HouseTypeId);
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to apply house type change {ActionType} for house type {HouseTypeId} on flat edit request {RequestId}", change.ActionType, change.HouseTypeId, request.Id);
+                    houseTypeChangeFailures.Add($"{change.ActionType} ({change.HouseTypeId}): {ex.Message}");
+                }
             }
         }
 
@@ -378,7 +438,13 @@ public class PortalFlatController : ControllerBase
             catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit landlord-decision email"); }
         }
 
-        return Ok(new { success = true, message = dto.Approved ? "Approved. Flat updated." : "Rejected." });
+        if (!dto.Approved)
+            return Ok(new { success = true, message = "Rejected." });
+
+        if (houseTypeChangeFailures.Count > 0)
+            return Ok(new { success = true, message = "Approved. Flat updated, but some house type changes failed to apply.", failures = houseTypeChangeFailures });
+
+        return Ok(new { success = true, message = "Approved. Flat updated." });
     }
 
     // GET /api/portalflats/edit-request/my-queue

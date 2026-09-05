@@ -19,6 +19,11 @@ public interface INotificationService
     Task SendToUserAsync(string userId, string message, string category = "general",
         string? entityType = null, string? entityId = null);
 
+    // Send to one specific user, bypassing their In-App/Push preference toggles entirely
+    // (mirrors the always-on email pattern — for alerts that must never be silently muted).
+    Task SendForcedToUserAsync(string userId, string message, string category = "general",
+        string? entityType = null, string? entityId = null);
+
     // Fetch all notifications for a specific user (by role + specific)
     Task<IEnumerable<Notification>> GetForUserAsync(string userId, NotificationAudience? userRole);
 

@@ -234,6 +234,14 @@ public class FlatController : ControllerBase
         if (firstStep == null)
             return BadRequest(new { success = false, errorCode = "NO_APPROVAL_SEQUENCE", message = "No approval sequence is configured for Flat Edits yet. Set one up under Setups > Approvals before proceeding." });
 
+        if (dto.HouseTypeChanges != null && dto.HouseTypeChanges.Count > 0)
+        {
+            var missingDeleteReason = dto.HouseTypeChanges
+                .Any(c => c.ActionType == "Delete" && string.IsNullOrWhiteSpace(c.DeleteReason));
+            if (missingDeleteReason)
+                return BadRequest(new { success = false, message = "A reason is required for every house type group being deleted." });
+        }
+
         var adminId = GetUserId();
         var request = new FlatEditRequest
         {
@@ -258,6 +266,28 @@ public class FlatController : ControllerBase
             UpdatedAt = DateTime.UtcNow
         };
         _context.FlatEditRequests.Add(request);
+
+        if (dto.HouseTypeChanges != null)
+        {
+            foreach (var change in dto.HouseTypeChanges)
+            {
+                _context.FlatEditHouseTypeChanges.Add(new FlatEditHouseTypeChange
+                {
+                    Id = Guid.NewGuid(),
+                    FlatEditRequestId = request.Id,
+                    ActionType = change.ActionType,
+                    HouseTypeId = change.HouseTypeId,
+                    ProposedPrefix = change.Prefix,
+                    ProposedRentFee = change.RentFee,
+                    ProposedDepositFee = change.DepositFee,
+                    ProposedCount = change.Count,
+                    AdditionalCount = change.AdditionalCount,
+                    DeleteReason = change.DeleteReason,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
         await _context.SaveChangesAsync();
 
         var landlord = await _context.Landlords.FirstOrDefaultAsync(l => l.Id == flat.LandlordId);

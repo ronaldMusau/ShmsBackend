@@ -24,6 +24,7 @@ public interface IPaymentService
     Task<decimal> GetServiceChargeAsync(decimal rentAmount);
     Task GenerateMonthlyPaymentsAsync();
     Task CheckOverduePaymentsAsync();
+    Task SendRentChangeRemindersAsync();
     Task<VacateSettlementResult> CalculateVacateSettlementAsync(Guid vacateRequestId);
 }
 
@@ -753,17 +754,46 @@ public class PaymentService : IPaymentService
         _logger.LogInformation("Generating monthly payments for {Month}/{Year}", now.Month, now.Year);
 
         var duePriceChanges = await _context.PendingRentChanges
-            .Where(pc => pc.AppliedAt == null && pc.EffectiveMonth == now.Month && pc.EffectiveYear == now.Year)
+            .Where(pc => pc.AppliedAt == null && (pc.EffectiveYear < now.Year || (pc.EffectiveYear == now.Year && pc.EffectiveMonth <= now.Month)))
             .ToListAsync();
         foreach (var change in duePriceChanges)
         {
-            var house = await _context.Houses.FindAsync(change.HouseId);
+            var house = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == change.HouseId);
             if (house != null)
             {
                 house.RentFee = change.NewRentFee;
                 house.DepositFee = change.NewDepositFee;
             }
             change.AppliedAt = DateTime.UtcNow;
+
+            if (house != null)
+            {
+                var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.HouseId == house.Id && t.IsActive);
+                if (tenant != null)
+                {
+                    try
+                    {
+                        await _emailService.SendRentNowEffectiveEmailAsync(tenant.Email, tenant.FirstName, house.HouseNumber, change.NewRentFee, change.NewDepositFee, tenant.Id.ToString(), true);
+                        await _notificationService.SendForcedToUserAsync(tenant.Id.ToString(), $"Your rent for House {house.HouseNumber} is now KES {change.NewRentFee:N2}, effective this month.", "rent_change");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send rent-now-effective notification to tenant {TenantId} for house {HouseId}", tenant.Id, house.Id);
+                    }
+                }
+
+                if (house.Flat?.LandlordId != null)
+                {
+                    try
+                    {
+                        await _notificationService.SendForcedToUserAsync(house.Flat.LandlordId.ToString(), $"Rent for House {house.HouseNumber} in {house.Flat.FlatName} is now KES {change.NewRentFee:N2}, effective this month.", "rent_change");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to notify landlord of rent-now-effective change for house {HouseId}", house.Id);
+                    }
+                }
+            }
         }
         if (duePriceChanges.Any())
             await _context.SaveChangesAsync();
@@ -881,6 +911,60 @@ public class PaymentService : IPaymentService
             .SumAsync(p => p.Amount);
 
         return Math.Max(0, totalPaid - totalDue);
+    }
+
+    public async Task SendRentChangeRemindersAsync()
+    {
+        var now = DateTime.UtcNow;
+        _logger.LogInformation("Checking for rent change reminders due on {Date}", now.Date);
+
+        var pendingReminders = await _context.PendingRentChanges
+            .Where(pc => pc.AppliedAt == null && pc.ReminderSentAt == null)
+            .ToListAsync();
+
+        foreach (var change in pendingReminders)
+        {
+            var effectiveDate = new DateTime(change.EffectiveYear, change.EffectiveMonth, 1);
+            var daysUntil = (effectiveDate - now.Date).TotalDays;
+            if (daysUntil < 0 || daysUntil > 7)
+                continue;
+
+            var house = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == change.HouseId);
+
+            if (house != null)
+            {
+                var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.HouseId == house.Id && t.IsActive);
+                if (tenant != null)
+                {
+                    try
+                    {
+                        await _emailService.SendRentChangeReminderEmailAsync(tenant.Email, tenant.FirstName, house.HouseNumber, change.NewRentFee, change.EffectiveMonth, change.EffectiveYear);
+                        await _notificationService.SendForcedToUserAsync(tenant.Id.ToString(), $"Reminder: starting {change.EffectiveMonth}/{change.EffectiveYear}, your rent for House {house.HouseNumber} will change to KES {change.NewRentFee:N2}.", "rent_change");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send rent-change reminder to tenant {TenantId} for house {HouseId}", tenant.Id, house.Id);
+                    }
+                }
+
+                if (house.Flat?.LandlordId != null)
+                {
+                    try
+                    {
+                        await _notificationService.SendForcedToUserAsync(house.Flat.LandlordId.ToString(), $"Reminder: starting {change.EffectiveMonth}/{change.EffectiveYear}, rent for House {house.HouseNumber} in {house.Flat.FlatName} will change to KES {change.NewRentFee:N2}.", "rent_change");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to notify landlord of rent-change reminder for house {HouseId}", house.Id);
+                    }
+                }
+            }
+
+            change.ReminderSentAt = DateTime.UtcNow;
+        }
+
+        if (pendingReminders.Any())
+            await _context.SaveChangesAsync();
     }
 
     public async Task CheckOverduePaymentsAsync()

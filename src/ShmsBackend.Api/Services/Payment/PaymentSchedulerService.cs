@@ -14,6 +14,7 @@ public class PaymentSchedulerService : BackgroundService
     private DateTime? _lastOverdueCheckDate;
     private DateTime? _lastReminderDate;
     private DateTime? _lastVacateStatusFlipDate;
+    private DateTime? _lastRentReminderDate;
 
     public PaymentSchedulerService(
         IServiceProvider serviceProvider,
@@ -57,6 +58,14 @@ public class PaymentSchedulerService : BackgroundService
                     _lastReminderDate = now.Date;
                 }
 
+                // Run rent change reminders daily at 09:15, avoiding the 09:00 payment-reminders slot
+                if (now.Hour == 9 && now.Minute >= 15 && now.Minute < 17
+                    && _lastRentReminderDate?.Date != now.Date)
+                {
+                    await RunRentChangeReminders();
+                    _lastRentReminderDate = now.Date;
+                }
+
                 // Flip Active tenants to SettlingVacate daily at 10:00
                 if (now.Hour == 10 && now.Minute >= 0 && now.Minute < 2
                     && _lastVacateStatusFlipDate?.Date != now.Date)
@@ -97,6 +106,14 @@ public class PaymentSchedulerService : BackgroundService
         using var scope = _serviceProvider.CreateScope();
         var paymentService = scope.ServiceProvider.GetRequiredService<IPaymentService>();
         await paymentService.CheckOverduePaymentsAsync();
+    }
+
+    private async Task RunRentChangeReminders()
+    {
+        _logger.LogInformation("Running rent change reminders");
+        using var scope = _serviceProvider.CreateScope();
+        var paymentService = scope.ServiceProvider.GetRequiredService<IPaymentService>();
+        await paymentService.SendRentChangeRemindersAsync();
     }
 
     private async Task RunVacateStatusFlip()

@@ -13,5 +13,6 @@ public class PendingRentChange
     public int EffectiveYear { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? AppliedAt { get; set; }
+    public DateTime? ReminderSentAt { get; set; }
     public Guid CreatedByUserId { get; set; }
 }

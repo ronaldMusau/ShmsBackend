@@ -646,12 +646,12 @@ public class HouseController : ControllerBase
                 {
                     await _emailService.SendRentChangeNoticeAsync(currentTenant.Email, currentTenant.FirstName,
                         house.HouseNumber, dto.NewRentFee, dto.EffectiveMonth.Value, dto.EffectiveYear.Value, currentTenant.Id.ToString(), true);
-                    await _notificationService.SendToUserAsync(currentTenant.Id.ToString(),
+                    await _notificationService.SendForcedToUserAsync(currentTenant.Id.ToString(),
                         $"Your rent for House {house.HouseNumber} will change to KES {dto.NewRentFee} starting {dto.EffectiveMonth}/{dto.EffectiveYear}.", "rent_change");
                 }
                 if (house.Flat?.LandlordId != null)
                 {
-                    await _notificationService.SendToUserAsync(house.Flat.LandlordId.ToString(),
+                    await _notificationService.SendForcedToUserAsync(house.Flat.LandlordId.ToString(),
                         $"Rent for House {house.HouseNumber} in {house.Flat.FlatName} will change to KES {dto.NewRentFee} starting {dto.EffectiveMonth}/{dto.EffectiveYear}.", "rent_change");
                 }
             }

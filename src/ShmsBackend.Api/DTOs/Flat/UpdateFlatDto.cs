@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace ShmsBackend.Api.Models.DTOs.Flat;
@@ -17,4 +19,17 @@ public class UpdateFlatDto
     public bool SitDeposit { get; set; }
     [Required]
     public string SubmissionNotes { get; set; } = string.Empty;
+    public List<HouseTypeChangeDto>? HouseTypeChanges { get; set; }
+}
+
+public class HouseTypeChangeDto
+{
+    public string ActionType { get; set; } = string.Empty;
+    public Guid HouseTypeId { get; set; }
+    public string? Prefix { get; set; }
+    public decimal? RentFee { get; set; }
+    public decimal? DepositFee { get; set; }
+    public int? Count { get; set; }
+    public int? AdditionalCount { get; set; }
+    public string? DeleteReason { get; set; }
 }

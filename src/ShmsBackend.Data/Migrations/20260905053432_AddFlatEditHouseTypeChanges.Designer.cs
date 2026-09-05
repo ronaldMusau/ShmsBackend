@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ShmsBackend.Data.Context;
 
@@ -11,9 +12,11 @@ using ShmsBackend.Data.Context;
 namespace ShmsBackend.Data.Migrations
 {
     [DbContext(typeof(ShmsDbContext))]
-    partial class ShmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260905053432_AddFlatEditHouseTypeChanges")]
+    partial class AddFlatEditHouseTypeChanges
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1670,9 +1673,6 @@ namespace ShmsBackend.Data.Migrations
 
                     b.Property<decimal>("NewRentFee")
                         .HasColumnType("decimal(10,2)");
-
-                    b.Property<DateTime?>("ReminderSentAt")
-                        .HasColumnType("datetime2");
 
                     b.HasKey("Id");
 

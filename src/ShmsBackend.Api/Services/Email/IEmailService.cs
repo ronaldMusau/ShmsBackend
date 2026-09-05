@@ -29,6 +29,8 @@ public interface IEmailService
     Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
     Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
     Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear, string? userId = null, bool isPortalUser = false);
+    Task SendRentNowEffectiveEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendRentChangeReminderEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear);
     Task<bool> SendFlatCreatedLandlordEmailAsync(string toEmail, string firstName, string flatName, int houseCount, string? userId = null, bool isPortalUser = false);
     Task<bool> SendFlatAssignedAgentEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false);
     Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string? userId = null, bool isPortalUser = false);
