@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Models.DTOs.House;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 
@@ -1021,13 +1022,13 @@ public class PublicListingController : ControllerBase
     // PATCH /api/public/listings/comments/{commentId}/hide
     [HttpPatch("comments/{commentId:guid}/hide")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
-    public async Task<IActionResult> HideComment(Guid commentId)
+    public async Task<IActionResult> HideComment(Guid commentId, [FromBody] SetCommentHiddenDto dto)
     {
         var comment = await _context.HouseListingComments.FindAsync(commentId);
         if (comment == null) return NotFound(new { success = false, message = "Comment not found." });
 
-        comment.IsHidden = true;
+        comment.IsHidden = dto.Hidden;
         await _context.SaveChangesAsync();
-        return Ok(new { success = true, message = "Comment hidden." });
+        return Ok(new { success = true, message = dto.Hidden ? "Comment hidden." : "Comment unhidden." });
     }
 }
