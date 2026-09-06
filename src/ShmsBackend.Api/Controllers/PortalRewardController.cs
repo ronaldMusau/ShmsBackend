@@ -17,11 +17,13 @@ public class PortalRewardController : ControllerBase
 {
     private readonly ShmsDbContext _context;
     private readonly IRewardService _rewardService;
+    private readonly ILogger<PortalRewardController> _logger;
 
-    public PortalRewardController(ShmsDbContext context, IRewardService rewardService)
+    public PortalRewardController(ShmsDbContext context, IRewardService rewardService, ILogger<PortalRewardController> logger)
     {
         _context = context;
         _rewardService = rewardService;
+        _logger = logger;
     }
 
     private Guid GetUserId()
