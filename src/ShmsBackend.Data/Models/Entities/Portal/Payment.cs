@@ -28,7 +28,8 @@ public enum PaymentMethod
 {
     Mpesa,
     Cash,
-    BankTransfer
+    BankTransfer,
+    PointsRedemption
 }
 
 public class Payment : ISoftDelete
@@ -68,6 +69,7 @@ public class Payment : ISoftDelete
     public string? PhoneNumber { get; set; }
     public string? MpesaResultCode { get; set; }
     public string? MpesaResultDesc { get; set; }
+    public string? RedemptionReference { get; set; }
 
     // Schedule
     public DateTime DueDate { get; set; }

@@ -53,6 +53,11 @@ public class NotificationPreference
     public bool TeamActivityInAppEnabled { get; set; } = true;
     public bool TeamActivityPushEnabled { get; set; } = true;
 
+    // Rewards (points earned / redeemed)
+    public bool RewardsEmailEnabled { get; set; } = true;
+    public bool RewardsInAppEnabled { get; set; } = true;
+    public bool RewardsPushEnabled { get; set; } = true;
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

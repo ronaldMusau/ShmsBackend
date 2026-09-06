@@ -66,6 +66,10 @@ public class ShmsDbContext : DbContext
     public DbSet<PaymentCheckoutAttempt> PaymentCheckoutAttempts { get; set; }
     public DbSet<ServiceChargeSetting> ServiceChargeSettings { get; set; }
 
+    // Rewards
+    public DbSet<RewardSettings> RewardSettings { get; set; }
+    public DbSet<RewardTransaction> RewardTransactions { get; set; }
+
     // Complaints
     public DbSet<ComplaintType> ComplaintTypes { get; set; }
     public DbSet<ApprovalSequenceStep> ApprovalSequenceSteps { get; set; }
@@ -414,6 +418,9 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.TeamActivityEmailEnabled).HasDefaultValue(true);
             entity.Property(e => e.TeamActivityInAppEnabled).HasDefaultValue(true);
             entity.Property(e => e.TeamActivityPushEnabled).HasDefaultValue(true);
+            entity.Property(e => e.RewardsEmailEnabled).HasDefaultValue(true);
+            entity.Property(e => e.RewardsInAppEnabled).HasDefaultValue(true);
+            entity.Property(e => e.RewardsPushEnabled).HasDefaultValue(true);
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.ToTable("NotificationPreferences");
@@ -502,6 +509,32 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.MinRent).HasColumnType("decimal(18,2)");
             entity.Property(e => e.MaxRent).HasColumnType("decimal(18,2)");
             entity.Property(e => e.ServiceCharge).HasColumnType("decimal(18,2)");
+        });
+
+        // ── RewardSettings Configuration ─────────────────────────────────────
+        modelBuilder.Entity<RewardSettings>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.InitialPaymentEarnRate).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.RegularPaymentEarnRate).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.RedemptionRate).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        // ── RewardTransaction Configuration ──────────────────────────────────
+        modelBuilder.Entity<RewardTransaction>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TransactionType).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Source).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.AmountPaidOrRedeemed).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.HasIndex(e => e.TenantId);
+            entity.HasOne(e => e.Tenant)
+                  .WithMany()
+                  .HasForeignKey(e => e.TenantId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ── ComplaintType Configuration ──────────────────────────────────────

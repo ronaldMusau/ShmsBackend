@@ -16,6 +16,7 @@ public class Flat : ISoftDelete
     public int BillableGracePeriodMonths { get; set; } = 3;
     public int VacateNoticeDeadlineDay { get; set; } = 15;
     public bool SitDeposit { get; set; } = false;
+    public bool RewardEnabled { get; set; } = false;
     public Guid LandlordId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
