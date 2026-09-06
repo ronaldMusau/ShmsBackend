@@ -429,6 +429,11 @@ public class TenantController : ControllerBase
                             ? $"{t.House.HouseNumber} - {fn}"
                             : $"{t.House.HouseNumber} - (Flat Deleted)"))
                     : null,
+                FlatName = t.House != null
+                    ? (t.House.Flat != null
+                        ? t.House.Flat.FlatName
+                        : (deletedFlatNames.TryGetValue(t.House.FlatId, out var fn2) ? fn2 : null))
+                    : null,
                 t.CreatedAt,
                 t.NationalId,
                 t.County,
