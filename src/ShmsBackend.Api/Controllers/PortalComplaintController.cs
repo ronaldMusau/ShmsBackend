@@ -902,6 +902,7 @@ public class PortalComplaintController : ControllerBase
                 ticketNumber = c?.TicketNumber,
                 complaintTypeName = c?.ComplaintType?.Name,
                 tenantName = c != null && tenants.TryGetValue(c.TenantId, out var tn) ? tn : null,
+                billableAmount = c?.BillableAmount,
                 d.ApprovalAttemptNumber,
                 decision = d.Decision,
                 notes = d.Notes,
