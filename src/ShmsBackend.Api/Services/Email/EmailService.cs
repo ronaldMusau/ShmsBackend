@@ -262,6 +262,22 @@ public class EmailService : IEmailService
             GetRentNowEffectiveTemplate(firstName, houseNumber, newRentFee, newDepositFee));
     }
 
+    public async Task SendPointsEarnedEmailAsync(string toEmail, string firstName, int pointsEarned, int newBalance, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rewards")) return;
+        _logger.LogInformation("Sending points-earned email to: {Email}", toEmail);
+        await SendEmail(toEmail, "You Earned Reward Points — Romah Estates",
+            GetPointsEarnedTemplate(firstName, pointsEarned, newBalance));
+    }
+
+    public async Task SendPointsRedeemedEmailAsync(string toEmail, string firstName, int pointsRedeemed, decimal kesAmount, string redemptionReference, int newBalance, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rewards")) return;
+        _logger.LogInformation("Sending points-redeemed email to: {Email}", toEmail);
+        await SendEmail(toEmail, "Points Redeemed — Romah Estates",
+            GetPointsRedeemedTemplate(firstName, pointsRedeemed, kesAmount, redemptionReference, newBalance));
+    }
+
     // Always-on: an upcoming rent-change reminder must never be silently muted by a preference
     // toggle, so this skips ShouldSendEmailAsync entirely (same pattern as OTP/account-locked emails).
     public async Task<bool> SendRentChangeReminderEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear)
@@ -1055,6 +1071,42 @@ public class EmailService : IEmailService
 {Divider()}
 {SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
         return WrapInLayout("Reminder: Upcoming Rent Change — Romah Estates", inner);
+    }
+
+    private string GetPointsEarnedTemplate(string firstName, int pointsEarned, int newBalance)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"You've earned <strong style='color:{ColourGold};'>reward points</strong> on your recent payment.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>POINTS EARNED</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>+{pointsEarned:N0}</p>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>New balance: <strong style='color:{ColourTextSec};'>{newBalance:N0} points</strong></p>
+")}
+{Para("Log in to your tenant portal to view your points history or redeem your balance.")}
+{Divider()}
+{SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
+        return WrapInLayout("You Earned Reward Points — Romah Estates", inner);
+    }
+
+    private string GetPointsRedeemedTemplate(string firstName, int pointsRedeemed, decimal kesAmount, string redemptionReference, int newBalance)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your points redemption has been applied to your account.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>POINTS REDEEMED</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>-{pointsRedeemed:N0}</p>
+  <p style='margin:12px 0 0;color:{ColourTextMuted};font-size:12px;letter-spacing:1px;'>AMOUNT APPLIED</p>
+  <p style='margin:0;font-size:18px;font-weight:700;color:{ColourGold};'>KES {kesAmount:N2}</p>
+  <p style='margin:12px 0 0;color:{ColourTextMuted};font-size:12px;letter-spacing:1px;'>REFERENCE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:16px;font-weight:700;color:{ColourGold};letter-spacing:2px;'>{redemptionReference}</span>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>New balance: <strong style='color:{ColourTextSec};'>{newBalance:N0} points</strong></p>
+")}
+{Para("Log in to your tenant portal to view your full points history.")}
+{Divider()}
+{SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
+        return WrapInLayout("Points Redeemed — Romah Estates", inner);
     }
 
     private string GetFlatCreatedLandlordTemplate(string firstName, string flatName, int houseCount)

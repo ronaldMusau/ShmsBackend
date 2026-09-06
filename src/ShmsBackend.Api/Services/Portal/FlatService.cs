@@ -52,6 +52,7 @@ public class FlatService
             BillableGracePeriodMonths = dto.BillableGracePeriodMonths,
             VacateNoticeDeadlineDay = dto.VacateNoticeDeadlineDay,
             SitDeposit = dto.SitDeposit,
+            RewardEnabled = dto.RewardEnabled,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -206,13 +207,19 @@ public class FlatService
         return new { flat = flatResult, houseGroups };
     }
 
-    public async Task<IEnumerable<object>> GetAllAsync()
+    public async Task<IEnumerable<object>> GetAllAsync(bool? rewardEnabled = null)
     {
-        return await _context.Flats
+        var query = _context.Flats
             .Include(f => f.Landlord)
             .Include(f => f.Houses)
             .Include(f => f.AgentFlats)
                 .ThenInclude(af => af.Agent)
+            .AsQueryable();
+
+        if (rewardEnabled.HasValue)
+            query = query.Where(f => f.RewardEnabled == rewardEnabled.Value);
+
+        return await query
             .Select(f => new
             {
                 f.Id,
@@ -283,6 +290,7 @@ public class FlatService
             flat.BillableGracePeriodMonths,
             flat.VacateNoticeDeadlineDay,
             flat.SitDeposit,
+            flat.RewardEnabled,
             flat.LandlordId,
             Landlord = flat.Landlord == null ? null : new
             {
@@ -351,6 +359,7 @@ public class FlatService
         flat.BillableGracePeriodMonths = dto.BillableGracePeriodMonths;
         flat.VacateNoticeDeadlineDay = dto.VacateNoticeDeadlineDay;
         flat.SitDeposit = dto.SitDeposit;
+        if (dto.RewardEnabled.HasValue) flat.RewardEnabled = dto.RewardEnabled.Value;
 
         flat.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();

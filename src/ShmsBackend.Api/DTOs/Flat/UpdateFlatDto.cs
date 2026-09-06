@@ -17,6 +17,7 @@ public class UpdateFlatDto
     public int BillableGracePeriodMonths { get; set; }
     public int VacateNoticeDeadlineDay { get; set; }
     public bool SitDeposit { get; set; }
+    public bool? RewardEnabled { get; set; }
     [Required]
     public string SubmissionNotes { get; set; } = string.Empty;
     public List<HouseTypeChangeDto>? HouseTypeChanges { get; set; }

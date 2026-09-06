@@ -68,9 +68,9 @@ public class FlatController : ControllerBase
 
     [HttpGet]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] bool? rewardEnabled = null)
     {
-        var result = await _flatService.GetAllAsync();
+        var result = await _flatService.GetAllAsync(rewardEnabled);
         return Ok(new { success = true, data = result });
     }
 

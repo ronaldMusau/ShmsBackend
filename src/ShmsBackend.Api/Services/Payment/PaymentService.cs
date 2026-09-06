@@ -3,6 +3,7 @@ using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Api.Services.Reward;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
@@ -36,6 +37,8 @@ public class PaymentService : IPaymentService
     private readonly INotificationService _notificationService;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly IAgreementService _agreementService;
+    private readonly IPaymentDistributionService _distributionService;
+    private readonly IRewardService _rewardService;
     private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
@@ -45,6 +48,8 @@ public class PaymentService : IPaymentService
         INotificationService notificationService,
         IFrontendUrlService frontendUrlService,
         IAgreementService agreementService,
+        IPaymentDistributionService distributionService,
+        IRewardService rewardService,
         ILogger<PaymentService> logger)
     {
         _context = context;
@@ -53,6 +58,8 @@ public class PaymentService : IPaymentService
         _notificationService = notificationService;
         _frontendUrlService = frontendUrlService;
         _agreementService = agreementService;
+        _distributionService = distributionService;
+        _rewardService = rewardService;
         _logger = logger;
     }
 
@@ -442,7 +449,7 @@ public class PaymentService : IPaymentService
                 var overpayment = distributionBase - capacity;
                 if (overpayment > 0)
                 {
-                    itemizedBreakdown = await DistributePaymentAsync(payment.TenantId, payment.HouseId,
+                    itemizedBreakdown = await _distributionService.DistributePaymentAsync(payment.TenantId, payment.HouseId,
                         overpayment, payment.TenancyCycle, details.MpesaReceiptNumber, checkoutRequestId, payment.Id);
                 }
             }
@@ -510,6 +517,15 @@ public class PaymentService : IPaymentService
             {
                 _logger.LogError(ex, "Failed to send payment notifications");
             }
+
+            try
+            {
+                await _rewardService.EarnPointsAsync(payment.TenantId, payment.HouseId, details.Amount.Value, payment.IsInitialPayment, payment.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to earn reward points for payment {PaymentId}", payment.Id);
+            }
         }
         else if (details.IsCancelled)
         {
@@ -546,170 +562,6 @@ public class PaymentService : IPaymentService
         }
 
         await _context.SaveChangesAsync();
-    }
-
-    private async Task<List<(int month, int year, decimal applied)>> DistributePaymentAsync(
-        Guid tenantId, Guid houseId, decimal excessAmount, int tenancyCycle,
-        string? receiptNumber = null, string? checkoutRequestId = null, Guid? excludePaymentId = null)
-    {
-        var remaining = excessAmount;
-        var itemized = new List<(int month, int year, decimal applied)>();
-        var currentDate = DateTime.UtcNow;
-
-        var existingUnpaid = await _context.Payments
-            .Where(p => p.TenantId == tenantId && p.HouseId == houseId
-                     && p.TenancyCycle == tenancyCycle
-                     && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted
-                     && p.Id != excludePaymentId)
-            .OrderBy(p => p.Year).ThenBy(p => p.Month)
-            .ToListAsync();
-
-        var house = await _context.Houses
-            .Include(h => h.Flat)
-            .FirstOrDefaultAsync(h => h.Id == houseId)
-            ?? throw new Exception($"House {houseId} not found during payment distribution");
-
-        foreach (var row in existingUnpaid)
-        {
-            if (remaining <= 0) break;
-            var applyAmount = Math.Min(remaining, row.Balance);
-            row.AmountPaid += applyAmount;
-            row.Balance = Math.Max(0, row.Amount - row.AmountPaid);
-            row.PaymentStatus = row.Balance <= 0
-                ? PaymentTransactionStatus.Paid
-                : PaymentTransactionStatus.PartiallyPaid;
-            if (!string.IsNullOrEmpty(receiptNumber) && applyAmount > 0)
-            {
-                row.MpesaReceiptNumber = receiptNumber;
-                row.PaidAt = DateTime.UtcNow;
-                _context.PaymentApplications.Add(new PaymentApplication
-                {
-                    PaymentId = row.Id,
-                    MpesaReceiptNumber = receiptNumber,
-                    AmountApplied = applyAmount,
-                    CheckoutRequestId = checkoutRequestId,
-                    AppliedAt = DateTime.UtcNow
-                });
-            }
-            remaining -= applyAmount;
-            itemized.Add((row.Month, row.Year, applyAmount));
-        }
-
-        var serviceCharge = await GetServiceChargeAsync(house.RentFee);
-        var cursorMonth = currentDate.Month;
-        var cursorYear = currentDate.Year;
-        var totalIterations = 0;
-
-        while (remaining > 0)
-        {
-            if (++totalIterations > 60) break;
-            if (itemized.Count > 36) break;
-
-            var existingMonthRow = await _context.Payments.FirstOrDefaultAsync(p =>
-                p.TenantId == tenantId && p.HouseId == houseId
-                && p.TenancyCycle == tenancyCycle
-                && p.Month == cursorMonth && p.Year == cursorYear && !p.IsDeleted);
-
-            if (existingMonthRow != null && existingMonthRow.Balance > 0)
-            {
-                // Existing unpaid row — apply funds to it rather than creating a duplicate
-                var applyAmount = Math.Min(remaining, existingMonthRow.Balance);
-                existingMonthRow.AmountPaid += applyAmount;
-                existingMonthRow.Balance = Math.Max(0, existingMonthRow.Amount - existingMonthRow.AmountPaid);
-                existingMonthRow.PaymentStatus = existingMonthRow.Balance <= 0
-                    ? PaymentTransactionStatus.Paid
-                    : PaymentTransactionStatus.PartiallyPaid;
-                if (!string.IsNullOrEmpty(receiptNumber) && applyAmount > 0)
-                {
-                    existingMonthRow.MpesaReceiptNumber = receiptNumber;
-                    existingMonthRow.PaidAt = DateTime.UtcNow;
-                    _context.PaymentApplications.Add(new PaymentApplication
-                    {
-                        PaymentId = existingMonthRow.Id,
-                        MpesaReceiptNumber = receiptNumber,
-                        AmountApplied = applyAmount,
-                        CheckoutRequestId = checkoutRequestId,
-                        AppliedAt = DateTime.UtcNow
-                    });
-                }
-                remaining -= applyAmount;
-                itemized.Add((cursorMonth, cursorYear, applyAmount));
-            }
-            else if (existingMonthRow == null)
-            {
-                // No row yet — create one
-                var monthlyTotal = house.RentFee;
-                var applyAmount = Math.Min(remaining, monthlyTotal);
-                var newPayment = new PaymentRecord
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = tenantId,
-                    HouseId = houseId,
-                    FlatId = house.FlatId,
-                    LandlordId = house.Flat?.LandlordId,
-                    TenancyCycle = tenancyCycle,
-                    Amount = monthlyTotal,
-                    AmountPaid = applyAmount,
-                    Balance = monthlyTotal - applyAmount,
-                    RentAmount = house.RentFee,
-                    ServiceChargeAmount = serviceCharge,
-                    Month = cursorMonth,
-                    Year = cursorYear,
-                    IsInitialPayment = false,
-                    PaymentType = PaymentType.Rent,
-                    DueDate = new DateTime(cursorYear, cursorMonth, Math.Min(house.Flat!.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth))),
-                    PaymentStatus = applyAmount >= monthlyTotal
-                        ? PaymentTransactionStatus.Paid
-                        : applyAmount > 0
-                            ? PaymentTransactionStatus.PartiallyPaid
-                            : PaymentTransactionStatus.Pending,
-                    Description = $"Monthly rent - {new DateTime(cursorYear, cursorMonth, 1):MMMM yyyy}",
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-                _context.Payments.Add(newPayment);
-                if (!string.IsNullOrEmpty(receiptNumber) && applyAmount > 0)
-                {
-                    newPayment.MpesaReceiptNumber = receiptNumber;
-                    newPayment.PaidAt = DateTime.UtcNow;
-                    _context.PaymentApplications.Add(new PaymentApplication
-                    {
-                        PaymentId = newPayment.Id,
-                        MpesaReceiptNumber = receiptNumber,
-                        AmountApplied = applyAmount,
-                        CheckoutRequestId = checkoutRequestId,
-                        AppliedAt = DateTime.UtcNow
-                    });
-                }
-                remaining -= applyAmount;
-                itemized.Add((cursorMonth, cursorYear, applyAmount));
-            }
-            // else: existingMonthRow.Balance <= 0 — month fully settled, advance cursor only
-
-            cursorMonth++;
-            if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
-        }
-
-        var currentMonthPayment = await _context.Payments
-            .Where(p => p.TenantId == tenantId && p.HouseId == houseId && p.TenancyCycle == tenancyCycle
-                && p.Month == currentDate.Month && p.Year == currentDate.Year
-                && !p.IsInitialPayment && !p.IsDeleted)
-            .OrderByDescending(p => p.CreatedAt)
-            .FirstOrDefaultAsync();
-
-        if (currentMonthPayment != null)
-        {
-            house.PaymentStatus = currentMonthPayment.Balance <= 0
-                ? PaymentStatus.Paid
-                : (currentMonthPayment.DueDate != default && currentMonthPayment.DueDate < currentDate.AddDays(-3)
-                    ? PaymentStatus.Overdue
-                    : PaymentStatus.PartiallyPaid);
-            house.OccupancyStatus = OccupancyStatus.Occupied;
-            house.UpdatedAt = currentDate;
-        }
-
-        await _context.SaveChangesAsync();
-        return itemized;
     }
 
     public async Task<STKQueryResponse> QueryPaymentStatusAsync(string checkoutRequestId)
