@@ -324,11 +324,19 @@ public class TenantService : ITenantService
             .FirstOrDefaultAsync(t => t.Id == id);
         if (tenant == null) return false;
 
-        var hasAnyHistory = await _context.TenantHouseHistories.AnyAsync(h => h.TenantId == id);
-        var hasAnyPayments = await _context.Payments.AnyAsync(p => p.TenantId == id);
-
-        if (!hasAnyHistory && !hasAnyPayments && !tenant.HasCompletedInitialPayment)
+        if (!tenant.HasCompletedInitialPayment)
         {
+            var ownHistory = await _context.TenantHouseHistories.Where(h => h.TenantId == id).ToListAsync();
+            if (ownHistory.Count > 0)
+                _context.TenantHouseHistories.RemoveRange(ownHistory);
+
+            if (tenant.HouseId.HasValue && tenant.House != null)
+            {
+                tenant.House.OccupancyStatus = OccupancyStatus.Vacant;
+                tenant.House.PaymentStatus = PaymentStatus.NotPaid;
+                tenant.House.UpdatedAt = DateTime.UtcNow;
+            }
+
             _context.Tenants.Remove(tenant);
             await _context.SaveChangesAsync();
             return true;

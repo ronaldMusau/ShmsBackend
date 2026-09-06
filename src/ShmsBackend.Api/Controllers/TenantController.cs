@@ -385,7 +385,7 @@ public class TenantController : ControllerBase
                     .IgnoreQueryFilters()
                     .Include(t => t.House)
                         .ThenInclude(h => h!.Flat)
-                    .Where(t => t.IsDeleted)
+                    .Where(t => t.IsDeleted && t.HasCompletedInitialPayment)
                     .ToListAsync()
                 : (await _tenantService.GetAllAsync()).ToList();
 
