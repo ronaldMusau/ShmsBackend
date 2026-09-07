@@ -109,6 +109,7 @@ public class HouseService
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.FlatId,
                 Flat = h.Flat == null ? null : new { h.Flat.Id, h.Flat.FlatName },
+                h.IsAwaitingExistingTenant,
                 h.CreatedAt,
                 h.UpdatedAt,
                 ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
@@ -279,6 +280,7 @@ public class HouseService
         PaymentStatus = h.PaymentStatus.ToString(),
         h.FlatId,
         Flat = h.Flat == null ? null : new { h.Flat.Id, h.Flat.FlatName },
+        h.IsAwaitingExistingTenant,
         h.CreatedAt,
         h.UpdatedAt,
         ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
