@@ -143,6 +143,7 @@ public class HouseService
                 OccupancyStatus = h.OccupancyStatus.ToString(),
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.FlatId,
+                h.IsAwaitingExistingTenant,
                 h.CreatedAt,
                 h.UpdatedAt,
                 ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()

@@ -303,7 +303,11 @@ public class PortalTenantController : ControllerBase
                     tenant.PhoneNumber,
                     tenant.HouseId,
                     tenant.IsActive,
-                    tenant.CreatedAt
+                    tenant.CreatedAt,
+                    TenantStatus = tenant.TenantStatus.ToString(),
+                    tenant.HasCompletedInitialPayment,
+                    tenant.DepositAlreadySitting,
+                    tenant.ExternalDepositAmount
                 }
             });
         }

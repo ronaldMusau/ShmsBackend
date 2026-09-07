@@ -72,7 +72,11 @@ public class TenantController : ControllerBase
                     tenant.EmergencyContactName,
                     tenant.EmergencyContactPhone,
                     tenant.IsActive,
-                    tenant.PortalUserType
+                    tenant.PortalUserType,
+                    TenantStatus = tenant.TenantStatus.ToString(),
+                    tenant.HasCompletedInitialPayment,
+                    tenant.DepositAlreadySitting,
+                    tenant.ExternalDepositAmount
                 }, "Tenant created successfully"));
         }
         catch (InvalidOperationException ex)
