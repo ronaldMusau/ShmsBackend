@@ -4,10 +4,12 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Tenant;
+using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Enums;
 using ShmsBackend.Data.Models.Entities;
@@ -25,6 +27,8 @@ public class TenantService : ITenantService
     private readonly INotificationService _notificationService;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly ITokenBlacklistService _tokenBlacklistService;
+    private readonly IAgreementService _agreementService;
+    private readonly IPaymentService _paymentService;
     private readonly ShmsDbContext _context;
 
     public TenantService(
@@ -34,6 +38,8 @@ public class TenantService : ITenantService
         INotificationService notificationService,
         IFrontendUrlService frontendUrlService,
         ITokenBlacklistService tokenBlacklistService,
+        IAgreementService agreementService,
+        IPaymentService paymentService,
         ShmsDbContext context)
     {
         _unitOfWork = unitOfWork;
@@ -42,6 +48,8 @@ public class TenantService : ITenantService
         _notificationService = notificationService;
         _frontendUrlService = frontendUrlService;
         _tokenBlacklistService = tokenBlacklistService;
+        _agreementService = agreementService;
+        _paymentService = paymentService;
         _context = context;
     }
 
@@ -166,6 +174,120 @@ public class TenantService : ITenantService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send notification for tenant creation {Email}", tenant.Email);
+        }
+
+        if (dto.HouseId.HasValue)
+        {
+            var house = await _context.Houses
+                .Include(h => h.Flat)
+                .FirstOrDefaultAsync(h => h.Id == dto.HouseId.Value);
+
+            if (house != null && house.IsAwaitingExistingTenant)
+            {
+                tenant.HasCompletedInitialPayment = true;
+                tenant.TenantStatus = TenantStatus.Pending;
+                tenant.DepositAlreadySitting = dto.DepositAlreadySitting;
+                tenant.ExternalDepositAmount = dto.ExternalDepositAmount;
+
+                try
+                {
+                    await _context.TenantHouseHistories.AddAsync(new TenantHouseHistory
+                    {
+                        Id = Guid.NewGuid(),
+                        HouseId = house.Id,
+                        TenantId = tenant.Id,
+                        TenantFirstName = tenant.FirstName,
+                        TenantLastName = tenant.LastName,
+                        TenantEmail = tenant.Email,
+                        TenantPhone = tenant.PhoneNumber,
+                        HouseNumber = house.HouseNumber,
+                        FlatName = house.Flat?.FlatName ?? "",
+                        AssignedAt = DateTime.UtcNow,
+                        RemovedAt = null,
+                        TenancyCycle = tenant.TenancyCycle
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to write TenantHouseHistory for existing tenant {TenantId}", tenant.Id);
+                }
+
+                string? verificationLink = null;
+                var tempPassword = tenant.TemporaryInitialPassword;
+                if (!string.IsNullOrEmpty(tenant.EmailVerificationToken) && !string.IsNullOrEmpty(tempPassword))
+                {
+                    verificationLink = _frontendUrlService.GetPortalEmailVerificationUrl(
+                        tenant.EmailVerificationToken, tenant.Email, PortalUserType.Tenant);
+                }
+
+                if (verificationLink != null)
+                {
+                    var emailSent = false;
+                    for (var attempt = 1; attempt <= 3 && !emailSent; attempt++)
+                    {
+                        try
+                        {
+                            await _emailService.SendPortalVerifyWithPasswordEmailAsync(
+                                tenant.Email, tenant.FirstName, verificationLink, tempPassword!);
+                            emailSent = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to send verification email to existing tenant {Email} (attempt {Attempt}/3)", tenant.Email, attempt);
+                            if (attempt < 3) await Task.Delay(2000);
+                        }
+                    }
+                    if (emailSent) { tenant.VerificationEmailSentAt = DateTime.UtcNow; }
+                }
+
+                try
+                {
+                    await _agreementService.SendAgreementForSigningAsync(tenant.Id, (int)PortalUserType.Tenant);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send agreement for signing to existing tenant {TenantId}", tenant.Id);
+                }
+
+                house.OccupancyStatus = OccupancyStatus.Occupied;
+                house.IsAwaitingExistingTenant = false;
+
+                var paymentMonth = tenant.LeaseStartMonth ?? DateTime.UtcNow.Month;
+                var paymentYear = tenant.LeaseStartYear ?? DateTime.UtcNow.Year;
+                var serviceCharge = await _paymentService.GetServiceChargeAsync(house.RentFee);
+                var rentDueDay = house.Flat != null
+                    ? Math.Min(house.Flat.RentDueDay, DateTime.DaysInMonth(paymentYear, paymentMonth))
+                    : DateTime.DaysInMonth(paymentYear, paymentMonth);
+                var dueDate = new DateTime(paymentYear, paymentMonth, rentDueDay);
+                var monthName = new DateTime(paymentYear, paymentMonth, 1).ToString("MMMM yyyy");
+
+                await _context.Payments.AddAsync(new ShmsBackend.Data.Models.Entities.Portal.Payment
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenant.Id,
+                    HouseId = house.Id,
+                    FlatId = house.FlatId,
+                    LandlordId = house.Flat?.LandlordId ?? Guid.Empty,
+                    Amount = house.RentFee,
+                    AmountPaid = 0,
+                    Balance = house.RentFee,
+                    RentAmount = house.RentFee,
+                    ServiceChargeAmount = serviceCharge,
+                    Month = paymentMonth,
+                    Year = paymentYear,
+                    IsInitialPayment = false,
+                    PaymentType = PaymentType.Rent,
+                    PhoneNumber = tenant.PhoneNumber,
+                    DueDate = dueDate,
+                    PaymentStatus = PaymentTransactionStatus.Pending,
+                    Description = $"Monthly rent - {monthName}",
+                    TenancyCycle = tenant.TenancyCycle,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                });
+
+                await _context.SaveChangesAsync();
+            }
         }
 
         _logger.LogInformation("Tenant created: {Email}", tenant.Email);

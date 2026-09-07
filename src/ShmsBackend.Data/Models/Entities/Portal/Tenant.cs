@@ -18,6 +18,8 @@ public class Tenant : PortalUser
     public int? LeaseStartMonth { get; set; }
     public int? LeaseStartYear { get; set; }
     public int PointsBalance { get; set; } = 0;
+    public bool? DepositAlreadySitting { get; set; }
+    public decimal? ExternalDepositAmount { get; set; }
 
     public Tenant()
     {

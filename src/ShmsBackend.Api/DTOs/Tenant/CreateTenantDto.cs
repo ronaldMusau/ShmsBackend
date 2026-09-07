@@ -33,4 +33,6 @@ public class CreateTenantDto
     public Guid? HouseId { get; set; }
     public int? LeaseStartMonth { get; set; }
     public int? LeaseStartYear { get; set; }
+    public bool? DepositAlreadySitting { get; set; }
+    public decimal? ExternalDepositAmount { get; set; }
 }

@@ -912,6 +912,13 @@ public class PaymentService : IPaymentService
         var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
         var depositFee = house?.DepositFee ?? 0m;
 
+        var hasRealInitialPayment = await _context.Payments.AnyAsync(p =>
+            p.TenantId == tenant.Id && p.IsInitialPayment && p.TenancyCycle == tenant.TenancyCycle && !p.IsDeleted);
+        if (!hasRealInitialPayment && tenant.DepositAlreadySitting.HasValue)
+        {
+            depositFee = tenant.DepositAlreadySitting.Value ? (tenant.ExternalDepositAmount ?? 0m) : 0m;
+        }
+
         var totalDamages = vacateRequest.InspectionLines.Sum(l => l.AssessedAmount ?? 0m);
         var totalOwed = totalDamages;
 

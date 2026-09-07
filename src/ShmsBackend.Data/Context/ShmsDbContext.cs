@@ -211,6 +211,7 @@ public class ShmsDbContext : DbContext
             entity.ToTable("Tenants");
             entity.Property(e => e.EmergencyContactName).HasMaxLength(100);
             entity.Property(e => e.EmergencyContactPhone).HasMaxLength(20);
+            entity.Property(e => e.ExternalDepositAmount).HasColumnType("decimal(18,2)");
             entity.HasOne(e => e.House)
                   .WithMany(h => h.Tenants)
                   .HasForeignKey(e => e.HouseId)
