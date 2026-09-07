@@ -17,5 +17,6 @@ public class FlatEditHouseTypeChange
     public string? DeleteReason { get; set; } // required when ActionType == "Delete", null otherwise
     public int? ProposedEffectiveMonth { get; set; } // used by ScheduleRentChange only
     public int? ProposedEffectiveYear { get; set; } // used by ScheduleRentChange only
+    public bool ExistingTenant { get; set; } = false; // used by AddLine only
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

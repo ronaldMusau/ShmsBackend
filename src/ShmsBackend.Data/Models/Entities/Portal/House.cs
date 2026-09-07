@@ -44,6 +44,7 @@ public class House : ISoftDelete
     public DateTime UpdatedAt { get; set; }
     public bool IsListingHidden { get; set; } = false;
     public bool CommentsMuted { get; set; } = false;
+    public bool IsAwaitingExistingTenant { get; set; } = false;
     public bool IsDeleted { get; set; } = false;
     public DateTime? DeletedAt { get; set; }
 

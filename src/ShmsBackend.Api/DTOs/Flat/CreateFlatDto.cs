@@ -23,6 +23,8 @@ public class HouseGroupDto
     [Required]
     [Range(1, double.MaxValue)]
     public decimal DepositFee { get; set; }
+
+    public bool ExistingTenant { get; set; } = false;
 }
 
 public class CreateFlatDto

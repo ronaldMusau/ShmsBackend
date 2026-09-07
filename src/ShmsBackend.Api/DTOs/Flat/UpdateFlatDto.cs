@@ -35,4 +35,5 @@ public class HouseTypeChangeDto
     public string? DeleteReason { get; set; }
     public int? EffectiveMonth { get; set; }
     public int? EffectiveYear { get; set; }
+    public bool ExistingTenant { get; set; } = false;
 }

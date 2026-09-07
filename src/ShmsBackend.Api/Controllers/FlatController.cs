@@ -291,6 +291,7 @@ public class FlatController : ControllerBase
                     DeleteReason = change.DeleteReason,
                     ProposedEffectiveMonth = change.EffectiveMonth,
                     ProposedEffectiveYear = change.EffectiveYear,
+                    ExistingTenant = change.ExistingTenant,
                     CreatedAt = DateTime.UtcNow
                 });
             }

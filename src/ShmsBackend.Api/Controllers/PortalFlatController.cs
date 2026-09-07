@@ -432,7 +432,8 @@ public class PortalFlatController : ControllerBase
                                     Count = change.ProposedCount!.Value,
                                     HouseNumberPrefix = change.ProposedPrefix!,
                                     RentFee = change.ProposedRentFee!.Value,
-                                    DepositFee = change.ProposedDepositFee!.Value
+                                    DepositFee = change.ProposedDepositFee!.Value,
+                                    ExistingTenant = change.ExistingTenant
                                 }
                             };
                             await _flatService.AddHouseLinesAsync(flat.Id, line);

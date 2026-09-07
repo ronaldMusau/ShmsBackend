@@ -80,8 +80,9 @@ public class FlatService
                         HouseTypeId = group.HouseTypeId,
                         RentFee = group.RentFee,
                         DepositFee = group.DepositFee,
-                        OccupancyStatus = OccupancyStatus.Vacant,
+                        OccupancyStatus = group.ExistingTenant ? OccupancyStatus.Occupied : OccupancyStatus.Vacant,
                         PaymentStatus = PaymentStatus.NotPaid,
+                        IsAwaitingExistingTenant = group.ExistingTenant,
                         FlatId = flat.Id,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
@@ -497,8 +498,9 @@ public class FlatService
                     HouseTypeId = group.HouseTypeId,
                     RentFee = group.RentFee,
                     DepositFee = group.DepositFee,
-                    OccupancyStatus = OccupancyStatus.Vacant,
+                    OccupancyStatus = group.ExistingTenant ? OccupancyStatus.Occupied : OccupancyStatus.Vacant,
                     PaymentStatus = PaymentStatus.NotPaid,
+                    IsAwaitingExistingTenant = group.ExistingTenant,
                     FlatId = flatId,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
