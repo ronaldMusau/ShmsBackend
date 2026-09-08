@@ -322,6 +322,8 @@ public class TenantController : ControllerBase
                     tenant.IsActive,
                     tenant.IsEmailVerified,
                     tenant.HasCompletedInitialPayment,
+                    tenant.DepositAlreadySitting,
+                    tenant.ExternalDepositAmount,
                     tenant.TenancyCycle,
                     tenant.CreatedAt,
                     tenant.UpdatedAt,
