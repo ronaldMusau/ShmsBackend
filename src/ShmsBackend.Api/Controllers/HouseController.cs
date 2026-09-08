@@ -402,6 +402,7 @@ public class HouseController : ControllerBase
                 constituency = h.Flat?.Constituency,
                 ward = h.Flat?.Ward,
                 occupancyStatus = h.OccupancyStatus.ToString(),
+                isAwaitingExistingTenant = h.IsAwaitingExistingTenant,
                 images = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
                 isListingHidden = h.IsListingHidden,
                 commentsMuted = h.CommentsMuted,

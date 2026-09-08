@@ -65,6 +65,7 @@ public class PortalTenantController : ControllerBase
             h.HouseNumber,
             HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
             OccupancyStatus = h.OccupancyStatus.ToString(),
+            h.IsAwaitingExistingTenant,
             h.RentFee,
             h.DepositFee,
             PaymentStatus = h.PaymentStatus.ToString(),

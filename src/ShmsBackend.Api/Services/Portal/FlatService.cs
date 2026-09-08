@@ -310,6 +310,7 @@ public class FlatService
                 h.RentFee,
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
+                h.IsAwaitingExistingTenant,
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
                 Images = h.Images.OrderBy(hi => hi.SortOrder).Select(hi => new { hi.Id, hi.ImagePath }).ToList(),

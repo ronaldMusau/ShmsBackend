@@ -335,6 +335,7 @@ public class TenantController : ControllerBase
                     h.RentFee,
                     h.DepositFee,
                     OccupancyStatus = h.OccupancyStatus.ToString(),
+                    h.IsAwaitingExistingTenant,
                     PaymentStatus = h.PaymentStatus.ToString(),
                     // "Tenant since" — first day of the lease-start month, when both parts are recorded.
                     TenancyStartedAt = tenant.LeaseStartYear.HasValue && tenant.LeaseStartMonth.HasValue

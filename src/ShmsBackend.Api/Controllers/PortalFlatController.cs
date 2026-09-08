@@ -222,6 +222,7 @@ public class PortalFlatController : ControllerBase
                     h.RentFee,
                     h.DepositFee,
                     OccupancyStatus = h.OccupancyStatus.ToString(),
+                    h.IsAwaitingExistingTenant,
                     PaymentStatus = h.PaymentStatus.ToString(),
                     Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
                     ScheduledRentChange = agentPendingRentChanges.TryGetValue(h.Id, out var agentPrc) ? new
@@ -286,6 +287,7 @@ public class PortalFlatController : ControllerBase
                     h.RentFee,
                     h.DepositFee,
                     OccupancyStatus = h.OccupancyStatus.ToString(),
+                    h.IsAwaitingExistingTenant,
                     PaymentStatus = h.PaymentStatus.ToString(),
                     h.CreatedAt,
                     CurrentTenant = h.Tenants.Select(t => new
@@ -346,6 +348,7 @@ public class PortalFlatController : ControllerBase
                 h.RentFee,
                 h.DepositFee,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
+                h.IsAwaitingExistingTenant,
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
                 Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
