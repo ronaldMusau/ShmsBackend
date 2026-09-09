@@ -70,6 +70,9 @@ public class ShmsDbContext : DbContext
     public DbSet<RewardSettings> RewardSettings { get; set; }
     public DbSet<RewardTransaction> RewardTransactions { get; set; }
 
+    // Company Settings
+    public DbSet<CompanySettings> CompanySettings { get; set; }
+
     // Complaints
     public DbSet<ComplaintType> ComplaintTypes { get; set; }
     public DbSet<ApprovalSequenceStep> ApprovalSequenceSteps { get; set; }
@@ -519,6 +522,13 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.InitialPaymentEarnRate).HasColumnType("decimal(18,4)");
             entity.Property(e => e.RegularPaymentEarnRate).HasColumnType("decimal(18,4)");
             entity.Property(e => e.RedemptionRate).HasColumnType("decimal(18,4)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        // ── CompanySettings Configuration ────────────────────────────────────
+        modelBuilder.Entity<CompanySettings>(entity =>
+        {
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
         });
