@@ -31,7 +31,7 @@ public class CompanySettingsController : ControllerBase
 
     // GET /api/companysettings
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Landlord,Tenant")]
     public async Task<IActionResult> GetSettings()
     {
         var settings = await _context.CompanySettings.FirstOrDefaultAsync();
