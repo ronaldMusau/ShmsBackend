@@ -8,6 +8,7 @@ using ShmsBackend.Api.Middleware;
 using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services;
 using ShmsBackend.Api.Services.OTP;
 using ShmsBackend.Api.Services.User;
 using ShmsBackend.Api.Services.Common;
@@ -15,6 +16,7 @@ using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.PortalAuth;
 using ShmsBackend.Api.Services.Payment;
+using ShmsBackend.Api.Services.Reports;
 using ShmsBackend.Api.Services.Reward;
 using ShmsBackend.Api.Utilities;
 using ShmsBackend.Data.Context;
@@ -72,6 +74,11 @@ builder.Services.AddScoped<ITokenBlacklistService, TokenBlacklistService>();
 builder.Services.AddScoped<IOtpService, OtpService>();
 builder.Services.AddScoped<IPreAuthCacheService, PreAuthCacheService>();
 builder.Services.AddScoped<IFrontendUrlService, FrontendUrlService>();
+builder.Services.AddScoped<TenantQueryService>();
+builder.Services.AddScoped<PaymentQueryService>();
+builder.Services.AddScoped<IReportRenderer, ReportRenderer>();
+builder.Services.AddScoped<TenantReportBuilder>();
+builder.Services.AddScoped<PaymentReportBuilder>();
 
 // Register HttpClient factory and EmailService
 builder.Services.AddHttpClient();

@@ -11,6 +11,7 @@ using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Agreements;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services;
 using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
@@ -31,6 +32,7 @@ public class TenantController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly IPaymentService _paymentService;
     private readonly IAgreementService _agreementService;
+    private readonly TenantQueryService _tenantQueryService;
 
     public TenantController(
         ITenantService tenantService,
@@ -39,7 +41,8 @@ public class TenantController : ControllerBase
         IFrontendUrlService frontendUrlService,
         IEmailService emailService,
         IPaymentService paymentService,
-        IAgreementService agreementService)
+        IAgreementService agreementService,
+        TenantQueryService tenantQueryService)
     {
         _tenantService = tenantService;
         _logger = logger;
@@ -48,6 +51,7 @@ public class TenantController : ControllerBase
         _emailService = emailService;
         _paymentService = paymentService;
         _agreementService = agreementService;
+        _tenantQueryService = tenantQueryService;
     }
 
     [HttpPost]
@@ -382,24 +386,33 @@ public class TenantController : ControllerBase
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
-        [FromQuery] string? status = null)
+        [FromQuery] string? status = null,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] Guid? houseId = null,
+        [FromQuery] int? tenancyCycle = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] string? search = null)
     {
         try
         {
-            // status == "vacated" (case-insensitive) → soft-deleted tenants; otherwise the normal filtered list.
-            var isVacated = string.Equals(status, "vacated", StringComparison.OrdinalIgnoreCase);
+            var query = _tenantQueryService.BuildFilteredQuery(new TenantFilters
+            {
+                FlatId = flatId,
+                HouseId = houseId,
+                Status = status,
+                TenancyCycle = tenancyCycle,
+                FromDate = fromDate,
+                ToDate = toDate,
+                Search = search
+            });
 
-            var tenants = isVacated
-                ? await _context.Tenants
-                    .IgnoreQueryFilters()
-                    .Include(t => t.House)
-                        .ThenInclude(h => h!.Flat)
-                    .Where(t => t.IsDeleted && t.HasCompletedInitialPayment)
-                    .ToListAsync()
-                : (await _tenantService.GetAllAsync()).ToList();
-
-            var total = tenants.Count;
-            var pagedTenants = tenants.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+            var total = await query.CountAsync();
+            var pagedTenants = await query
+                .OrderByDescending(t => t.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
 
             // For any house whose flat was soft-deleted, look up the real name
             var deletedFlatIds = pagedTenants
