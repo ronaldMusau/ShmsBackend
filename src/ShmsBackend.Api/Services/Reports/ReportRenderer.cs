@@ -62,6 +62,30 @@ public class ReportRenderer : IReportRenderer
         return row.TryGetValue(key, out var v) ? FormatValue(v) : "";
     }
 
+    // ── Column-width weighting — shared by the PDF and Word renderers so a wide table lays out
+    // identically in both. Wide-report threshold and per-column weight are both header-driven so a
+    // report builder never has to declare its own layout hints. ──
+    private const int WideReportColumnThreshold = 5;
+
+    private static readonly string[] LongHeaderKeywords = { "email", "name", "flat", "unit", "address" };
+    private static readonly string[] ShortHeaderKeywords = { "status", "cycle", "amount", "rent", "deposit", "balance", "type", "method" };
+
+    private static double ColumnWeight(string header)
+    {
+        var h = header.ToLowerInvariant();
+        if (LongHeaderKeywords.Any(k => h.Contains(k))) return 2.0;
+        if (ShortHeaderKeywords.Any(k => h.Contains(k))) return 1.0;
+        return 1.5;
+    }
+
+    private static System.Collections.Generic.List<double> DistributeColumnWidths(
+        System.Collections.Generic.IReadOnlyList<ReportColumn> columns, double availableWidth)
+    {
+        var weights = columns.Select(c => ColumnWeight(c.Header)).ToList();
+        var totalWeight = weights.Sum();
+        return weights.Select(w => availableWidth * w / totalWeight).ToList();
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // PDF — PdfSharp + MigraDoc
     // ═══════════════════════════════════════════════════════════════════
@@ -88,12 +112,26 @@ public class ReportRenderer : IReportRenderer
             var document = new MigraDocDocument();
             document.Info.Title = data.Title;
 
+            var isWideReport = data.Columns.Count > WideReportColumnThreshold;
+
             var section = document.AddSection();
             section.PageSetup = document.DefaultPageSetup.Clone();
             section.PageSetup.LeftMargin = Unit.FromCentimeter(1.5);
             section.PageSetup.RightMargin = Unit.FromCentimeter(1.5);
             section.PageSetup.TopMargin = Unit.FromCentimeter(1.2);
             section.PageSetup.BottomMargin = Unit.FromCentimeter(1.5);
+
+            if (isWideReport)
+            {
+                // MigraDoc/PdfSharp do NOT swap PageWidth/PageHeight when Orientation is set — confirmed
+                // by direct render-time test (setting only Orientation left the rendered PDF page
+                // portrait-shaped). Both must be set explicitly for the page to actually turn landscape.
+                section.PageSetup.Orientation = Orientation.Landscape;
+                var portraitWidth = section.PageSetup.PageWidth;
+                var portraitHeight = section.PageSetup.PageHeight;
+                section.PageSetup.PageWidth = portraitHeight;
+                section.PageSetup.PageHeight = portraitWidth;
+            }
 
             // ── Letterhead: logo left, company info stacked right ──
             var headerTable = section.AddTable();
@@ -149,11 +187,18 @@ public class ReportRenderer : IReportRenderer
                 metaPara.Format.SpaceAfter = Unit.FromPoint(8);
             }
 
-            // ── Data table ──
+            // ── Data table — column widths are weighted by header content (see ColumnWeight) and
+            // distributed across the actual available content width, not an assumed page size, so this
+            // is correct in both portrait and the landscape switch above. MigraDoc wraps paragraph text
+            // by default within a properly-widthed cell — nothing here disables that. ──
+            var availableWidth = (section.PageSetup.PageWidth - section.PageSetup.LeftMargin - section.PageSetup.RightMargin).Point;
+            var columnWidths = DistributeColumnWidths(data.Columns, availableWidth);
+
             var table = section.AddTable();
             table.Borders.Width = 0.5;
             table.Borders.Color = Colors.LightGray;
-            foreach (var _ in data.Columns) table.AddColumn(Unit.FromCentimeter(16.0 / Math.Max(1, data.Columns.Count)));
+            for (var i = 0; i < data.Columns.Count; i++)
+                table.AddColumn(Unit.FromPoint(columnWidths[i]));
 
             var tableHeaderRow = table.AddRow();
             tableHeaderRow.Shading.Color = Colors.LightGray;
@@ -165,7 +210,7 @@ public class ReportRenderer : IReportRenderer
             foreach (var row in data.Rows)
             {
                 var dataRow = table.AddRow();
-                dataRow.Format.Font.Size = Unit.FromPoint(9);
+                dataRow.Format.Font.Size = Unit.FromPoint(8);
                 for (var i = 0; i < data.Columns.Count; i++)
                     dataRow.Cells[i].AddParagraph(CellText(row, data.Columns[i].Key) ?? "");
             }
@@ -272,6 +317,8 @@ public class ReportRenderer : IReportRenderer
             row++;
         }
 
+        // Confirmed: this runs after every data row is written above, not before — auto-fit sizes
+        // against the actual populated sheet, not an empty one.
         ws.Columns(1, colCount).AdjustToContents();
 
         using var ms = new MemoryStream();
@@ -322,6 +369,23 @@ public class ReportRenderer : IReportRenderer
 
             body.AppendChild(new WordParagraph());
 
+            // A4 in dxa (1/20 pt): 11906 x 16838 portrait. Word does not auto-swap these when Orient is
+            // set (same underlying issue as MigraDoc) — both are swapped explicitly here for a wide report.
+            const int a4WidthDxa = 11906;
+            const int a4HeightDxa = 16838;
+            const int leftMarginDxa = 850;   // ≈ 1.5cm, matching the PDF renderer's margins
+            const int rightMarginDxa = 850;
+            const int topMarginDxa = 680;    // ≈ 1.2cm
+            const int bottomMarginDxa = 850;
+
+            var isWideReport = data.Columns.Count > WideReportColumnThreshold;
+            var pageWidthDxa = isWideReport ? a4HeightDxa : a4WidthDxa;
+            var pageHeightDxa = isWideReport ? a4WidthDxa : a4HeightDxa;
+            var availableWidthDxa = pageWidthDxa - leftMarginDxa - rightMarginDxa;
+            var columnWidthsDxa = DistributeColumnWidths(data.Columns, availableWidthDxa)
+                .Select(w => (int)Math.Round(w))
+                .ToList();
+
             var table = new WordTable();
             var tableProps = new TableProperties(
                 new TableBorders(
@@ -332,16 +396,22 @@ public class ReportRenderer : IReportRenderer
                     new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4 },
                     new InsideVerticalBorder { Val = BorderValues.Single, Size = 4 }
                 ),
-                new TableWidth { Type = TableWidthUnitValues.Pct, Width = "5000" }
+                // Fixed layout + an explicit Dxa table width are both required for Word to actually
+                // honor the per-column widths below instead of silently auto-fitting to content.
+                new TableLayout { Type = TableLayoutValues.Fixed },
+                new TableWidth { Type = TableWidthUnitValues.Dxa, Width = availableWidthDxa.ToString() }
             );
             table.AppendChild(tableProps);
+            table.AppendChild(new TableGrid(columnWidthsDxa.Select(w => new GridColumn { Width = w.ToString() })));
 
             var headerRow = new TableRow();
-            foreach (var col in data.Columns)
+            for (var i = 0; i < data.Columns.Count; i++)
             {
                 var cell = new TableCell(
-                    new TableCellProperties(new WordShading { Fill = "D9D9D9" }),
-                    BuildParagraph(col.Header, bold: true, sizeHalfPoints: "18"));
+                    new TableCellProperties(
+                        new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() },
+                        new WordShading { Fill = "D9D9D9" }),
+                    BuildParagraph(data.Columns[i].Header, bold: true, sizeHalfPoints: "18"));
                 headerRow.Append(cell);
             }
             table.Append(headerRow);
@@ -349,8 +419,12 @@ public class ReportRenderer : IReportRenderer
             foreach (var dataRow in data.Rows)
             {
                 var tr = new TableRow();
-                foreach (var col in data.Columns)
-                    tr.Append(new TableCell(BuildParagraph(CellText(dataRow, col.Key) ?? "", bold: false, sizeHalfPoints: "18")));
+                for (var i = 0; i < data.Columns.Count; i++)
+                {
+                    tr.Append(new TableCell(
+                        new TableCellProperties(new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() }),
+                        BuildParagraph(CellText(dataRow, data.Columns[i].Key) ?? "", bold: false, sizeHalfPoints: "16")));
+                }
                 table.Append(tr);
             }
 
@@ -375,7 +449,20 @@ public class ReportRenderer : IReportRenderer
             footerPart.Footer = footer;
 
             var sectPr = new SectionProperties(
-                new FooterReference { Type = HeaderFooterValues.Default, Id = mainPart.GetIdOfPart(footerPart) });
+                new FooterReference { Type = HeaderFooterValues.Default, Id = mainPart.GetIdOfPart(footerPart) },
+                new PageSize
+                {
+                    Width = (uint)pageWidthDxa,
+                    Height = (uint)pageHeightDxa,
+                    Orient = isWideReport ? PageOrientationValues.Landscape : PageOrientationValues.Portrait
+                },
+                new PageMargin
+                {
+                    Top = topMarginDxa,
+                    Right = (uint)rightMarginDxa,
+                    Bottom = bottomMarginDxa,
+                    Left = (uint)leftMarginDxa
+                });
             body.Append(sectPr);
 
             mainPart.Document.Save();

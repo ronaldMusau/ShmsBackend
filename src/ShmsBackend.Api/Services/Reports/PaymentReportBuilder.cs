@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.Reports;
 using ShmsBackend.Api.Services;
+using ShmsBackend.Data.Context;
 
 namespace ShmsBackend.Api.Services.Reports;
 
@@ -16,10 +16,12 @@ namespace ShmsBackend.Api.Services.Reports;
 public class PaymentReportBuilder
 {
     private readonly PaymentQueryService _paymentQueryService;
+    private readonly ShmsDbContext _context;
 
-    public PaymentReportBuilder(PaymentQueryService paymentQueryService)
+    public PaymentReportBuilder(PaymentQueryService paymentQueryService, ShmsDbContext context)
     {
         _paymentQueryService = paymentQueryService;
+        _context = context;
     }
 
     public async Task<ReportData> BuildAsync(PaymentFilters filters)
@@ -45,11 +47,21 @@ public class PaymentReportBuilder
             ["paidAt"] = p.PaidAt
         }).ToList();
 
+        string? flatName = null;
+        if (filters.FlatId.HasValue)
+        {
+            flatName = await _context.Flats
+                .IgnoreQueryFilters()
+                .Where(f => f.Id == filters.FlatId.Value)
+                .Select(f => f.FlatName)
+                .FirstOrDefaultAsync();
+        }
+
         return new ReportData
         {
             Title = "Payments Report",
             GeneratedAt = DateTime.UtcNow,
-            FilterSummary = BuildFilterSummary(filters),
+            FilterSummary = BuildFilterSummary(filters, flatName),
             Columns = new List<ReportColumn>
             {
                 new() { Key = "tenantName", Header = "Tenant Name" },
@@ -68,10 +80,10 @@ public class PaymentReportBuilder
         };
     }
 
-    private static string BuildFilterSummary(PaymentFilters filters)
+    private static string BuildFilterSummary(PaymentFilters filters, string? flatName)
     {
         var parts = new List<string>();
-        if (filters.FlatId.HasValue) parts.Add($"Flat: {filters.FlatId}");
+        if (filters.FlatId.HasValue) parts.Add($"Flat: {flatName ?? filters.FlatId.ToString()}");
         if (filters.HouseId.HasValue) parts.Add($"House: {filters.HouseId}");
         if (filters.TenantId.HasValue) parts.Add($"Tenant: {filters.TenantId}");
         if (!string.IsNullOrWhiteSpace(filters.Status)) parts.Add($"Status: {filters.Status}");
@@ -79,12 +91,23 @@ public class PaymentReportBuilder
         if (!string.IsNullOrWhiteSpace(filters.PaymentMethod)) parts.Add($"Method: {filters.PaymentMethod}");
         if (filters.Month.HasValue) parts.Add($"Month: {filters.Month}");
         if (filters.Year.HasValue) parts.Add($"Year: {filters.Year}");
-        if (filters.FromDate.HasValue) parts.Add($"From: {filters.FromDate.Value.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}");
-        if (filters.ToDate.HasValue) parts.Add($"To: {filters.ToDate.Value.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}");
-        if (filters.MinAmount.HasValue) parts.Add($"Min Amount: {filters.MinAmount}");
-        if (filters.MaxAmount.HasValue) parts.Add($"Max Amount: {filters.MaxAmount}");
+
+        var dateRange = TenantReportBuilder.FormatDateRange(filters.FromDate, filters.ToDate);
+        if (dateRange != null) parts.Add(dateRange);
+
+        var amountRange = FormatAmountRange(filters.MinAmount, filters.MaxAmount);
+        if (amountRange != null) parts.Add(amountRange);
+
         if (filters.IsInitialPayment.HasValue) parts.Add(filters.IsInitialPayment.Value ? "Stage: Initial" : "Stage: Monthly");
 
-        return parts.Count == 0 ? "All payments" : string.Join("  |  ", parts);
+        return parts.Count == 0 ? "All payments" : string.Join(" | ", parts);
+    }
+
+    private static string? FormatAmountRange(decimal? min, decimal? max)
+    {
+        if (min.HasValue && max.HasValue) return $"Amount {min:N0} to {max:N0}";
+        if (min.HasValue) return $"Amount from {min:N0}";
+        if (max.HasValue) return $"Amount up to {max:N0}";
+        return null;
     }
 }

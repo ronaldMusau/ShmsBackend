@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.Reports;
 using ShmsBackend.Api.Services;
+using ShmsBackend.Data.Context;
 
 namespace ShmsBackend.Api.Services.Reports;
 
@@ -17,10 +18,12 @@ namespace ShmsBackend.Api.Services.Reports;
 public class TenantReportBuilder
 {
     private readonly TenantQueryService _tenantQueryService;
+    private readonly ShmsDbContext _context;
 
-    public TenantReportBuilder(TenantQueryService tenantQueryService)
+    public TenantReportBuilder(TenantQueryService tenantQueryService, ShmsDbContext context)
     {
         _tenantQueryService = tenantQueryService;
+        _context = context;
     }
 
     public async Task<ReportData> BuildAsync(TenantFilters filters)
@@ -65,11 +68,23 @@ public class TenantReportBuilder
             };
         }).ToList();
 
+        string? flatName = null;
+        if (filters.FlatId.HasValue)
+        {
+            // IgnoreQueryFilters so a since-deleted flat still resolves a name — this report is a
+            // point-in-time export, same reasoning as the deleted-flat handling above.
+            flatName = await _context.Flats
+                .IgnoreQueryFilters()
+                .Where(f => f.Id == filters.FlatId.Value)
+                .Select(f => f.FlatName)
+                .FirstOrDefaultAsync();
+        }
+
         return new ReportData
         {
             Title = "Tenants Report",
             GeneratedAt = DateTime.UtcNow,
-            FilterSummary = BuildFilterSummary(filters),
+            FilterSummary = BuildFilterSummary(filters, flatName),
             Columns = new List<ReportColumn>
             {
                 new() { Key = "name", Header = "Name" },
@@ -86,17 +101,29 @@ public class TenantReportBuilder
         };
     }
 
-    private static string BuildFilterSummary(TenantFilters filters)
+    private static string BuildFilterSummary(TenantFilters filters, string? flatName)
     {
         var parts = new List<string>();
-        if (filters.FlatId.HasValue) parts.Add($"Flat: {filters.FlatId}");
+        if (filters.FlatId.HasValue) parts.Add($"Flat: {flatName ?? filters.FlatId.ToString()}");
         if (filters.HouseId.HasValue) parts.Add($"House: {filters.HouseId}");
         if (!string.IsNullOrWhiteSpace(filters.Status)) parts.Add($"Status: {filters.Status}");
         if (filters.TenancyCycle.HasValue) parts.Add($"Tenancy Cycle: {filters.TenancyCycle}");
-        if (filters.FromDate.HasValue) parts.Add($"From: {filters.FromDate.Value.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}");
-        if (filters.ToDate.HasValue) parts.Add($"To: {filters.ToDate.Value.ToString("d MMM yyyy", CultureInfo.InvariantCulture)}");
+
+        var dateRange = FormatDateRange(filters.FromDate, filters.ToDate);
+        if (dateRange != null) parts.Add(dateRange);
+
         if (!string.IsNullOrWhiteSpace(filters.Search)) parts.Add($"Search: \"{filters.Search}\"");
 
-        return parts.Count == 0 ? "All tenants" : string.Join("  |  ", parts);
+        return parts.Count == 0 ? "All tenants" : string.Join(" | ", parts);
+    }
+
+    internal static string? FormatDateRange(DateTime? fromDate, DateTime? toDate)
+    {
+        string Fmt(DateTime d) => d.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
+
+        if (fromDate.HasValue && toDate.HasValue) return $"From {Fmt(fromDate.Value)} to {Fmt(toDate.Value)}";
+        if (fromDate.HasValue) return $"From {Fmt(fromDate.Value)}";
+        if (toDate.HasValue) return $"To {Fmt(toDate.Value)}";
+        return null;
     }
 }
