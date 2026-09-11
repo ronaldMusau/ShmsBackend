@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -52,9 +53,48 @@ public class HouseReportBuilder
                 g => g.Key,
                 g => g.FirstOrDefault(t => t.TenantStatus != TenantStatus.SettlingVacate) ?? g.First());
 
+        var hasMonthFilter = filters.Month.HasValue && filters.Year.HasValue;
+
+        // Batched per-month rent-status resolution — mirrors PaymentDistributionService's
+        // TenantId+HouseId+TenancyCycle+Month+Year filter (excluding IsInitialPayment/IsDeleted rows)
+        // and its OrderByDescending(CreatedAt) tie-break — but scoped by HouseId only, since a report
+        // row cares about "what happened in this house that month", not which tenant's cycle it fell
+        // under. Only houses with a currently-resolved tenant are considered; vacant houses always
+        // show "—" regardless of this filter.
+        var monthlyStatusByHouse = new Dictionary<Guid, string>();
+        if (hasMonthFilter)
+        {
+            var occupiedHouseIds = currentTenantByHouse.Keys.ToList();
+            if (occupiedHouseIds.Count > 0)
+            {
+                var monthPayments = await _context.Payments
+                    .Where(p => occupiedHouseIds.Contains(p.HouseId)
+                        && p.Month == filters.Month!.Value && p.Year == filters.Year!.Value
+                        && !p.IsInitialPayment && !p.IsDeleted)
+                    .OrderByDescending(p => p.CreatedAt)
+                    .ToListAsync();
+
+                monthlyStatusByHouse = monthPayments
+                    .GroupBy(p => p.HouseId)
+                    .ToDictionary(g => g.Key, g => g.First().PaymentStatus.ToString());
+            }
+        }
+
+        var monthlyStatusHeader = hasMonthFilter
+            ? $"Status ({new DateTime(filters.Year!.Value, filters.Month!.Value, 1).ToString("MMM yyyy", CultureInfo.InvariantCulture)})"
+            : "Current Status";
+
         var rows = houses.Select(h =>
         {
             currentTenantByHouse.TryGetValue(h.Id, out var tenant);
+
+            string monthlyStatus;
+            if (tenant == null)
+                monthlyStatus = "—";
+            else if (hasMonthFilter)
+                monthlyStatus = monthlyStatusByHouse.GetValueOrDefault(h.Id, "No Payment");
+            else
+                monthlyStatus = h.PaymentStatus.ToString();
 
             return new Dictionary<string, object?>
             {
@@ -64,7 +104,9 @@ public class HouseReportBuilder
                 ["occupancyStatus"] = h.OccupancyStatus.ToString(),
                 ["rent"] = h.RentFee,
                 ["deposit"] = h.DepositFee,
-                ["currentTenant"] = tenant != null ? $"{tenant.FirstName} {tenant.LastName}".Trim() : ""
+                ["currentTenant"] = tenant != null ? $"{tenant.FirstName} {tenant.LastName}".Trim() : "",
+                ["monthlyStatus"] = monthlyStatus,
+                ["awaitingTenant"] = h.IsAwaitingExistingTenant ? "Yes" : ""
             };
         }).ToList();
 
@@ -83,7 +125,9 @@ public class HouseReportBuilder
                 new() { Key = "occupancyStatus", Header = "Occupancy Status" },
                 new() { Key = "rent", Header = "Rent" },
                 new() { Key = "deposit", Header = "Deposit" },
-                new() { Key = "currentTenant", Header = "Current Tenant" }
+                new() { Key = "currentTenant", Header = "Current Tenant" },
+                new() { Key = "monthlyStatus", Header = monthlyStatusHeader },
+                new() { Key = "awaitingTenant", Header = "Awaiting Tenant" }
             },
             Rows = rows
         };
@@ -94,6 +138,10 @@ public class HouseReportBuilder
         var parts = new List<string>();
         if (filters.FlatId.HasValue) parts.Add($"Flat: {flatName ?? filters.FlatId.ToString()}");
         if (!string.IsNullOrWhiteSpace(filters.OccupancyStatus)) parts.Add($"Occupancy Status: {filters.OccupancyStatus}");
+        if (filters.IsAwaitingExistingTenant.HasValue)
+            parts.Add($"Awaiting Tenant: {(filters.IsAwaitingExistingTenant.Value ? "Yes" : "No")}");
+        if (filters.Month.HasValue && filters.Year.HasValue)
+            parts.Add($"For {new DateTime(filters.Year.Value, filters.Month.Value, 1).ToString("MMMM yyyy", CultureInfo.InvariantCulture)}");
 
         return parts.Count == 0 ? "All houses" : string.Join(" | ", parts);
     }

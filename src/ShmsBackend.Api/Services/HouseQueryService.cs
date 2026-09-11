@@ -10,6 +10,12 @@ public class HouseFilters
 {
     public Guid? FlatId { get; set; }
     public string? OccupancyStatus { get; set; }
+    public bool? IsAwaitingExistingTenant { get; set; }
+    // Month/Year are NOT applied as a Where clause on the House query itself — a house isn't "in" a
+    // month. They're consumed downstream by HouseReportBuilder to resolve each house's rent-payment
+    // status for that specific month, not to decide which houses appear in the report.
+    public int? Month { get; set; }
+    public int? Year { get; set; }
     public Guid? LandlordId { get; set; }   // set server-side only, never bound from a client filter param
 }
 
@@ -47,6 +53,9 @@ public class HouseQueryService
         {
             query = query.Where(h => h.OccupancyStatus == parsedStatus);
         }
+
+        if (filters.IsAwaitingExistingTenant.HasValue)
+            query = query.Where(h => h.IsAwaitingExistingTenant == filters.IsAwaitingExistingTenant.Value);
 
         return query;
     }
