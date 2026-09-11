@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -229,6 +230,49 @@ public class ReportsController : ControllerBase
         var data = await _houseReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Houses-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Distinct payment years (for report filter dropdowns)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/years
+    [HttpGet("years")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetPaymentYears()
+    {
+        var years = await _context.Payments
+            .Where(p => !p.IsDeleted)
+            .Select(p => p.Year)
+            .Distinct()
+            .OrderBy(y => y)
+            .ToListAsync();
+
+        if (years.Count == 0)
+            years.Add(DateTime.UtcNow.Year);
+
+        return Ok(new { success = true, data = years });
+    }
+
+    // GET /api/reports/landlord/years
+    [HttpGet("landlord/years")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordPaymentYears()
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+
+        var years = await _context.Payments
+            .Where(p => !p.IsDeleted && p.LandlordId == landlordId)
+            .Select(p => p.Year)
+            .Distinct()
+            .OrderBy(y => y)
+            .ToListAsync();
+
+        if (years.Count == 0)
+            years.Add(DateTime.UtcNow.Year);
+
+        return Ok(new { success = true, data = years });
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
