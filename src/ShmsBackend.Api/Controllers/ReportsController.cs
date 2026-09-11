@@ -245,7 +245,7 @@ public class ReportsController : ControllerBase
             .Where(p => !p.IsDeleted)
             .Select(p => p.Year)
             .Distinct()
-            .OrderBy(y => y)
+            .OrderByDescending(y => y)
             .ToListAsync();
 
         if (years.Count == 0)
@@ -266,7 +266,7 @@ public class ReportsController : ControllerBase
             .Where(p => !p.IsDeleted && p.LandlordId == landlordId)
             .Select(p => p.Year)
             .Distinct()
-            .OrderBy(y => y)
+            .OrderByDescending(y => y)
             .ToListAsync();
 
         if (years.Count == 0)
