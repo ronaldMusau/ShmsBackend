@@ -39,17 +39,20 @@ public class ReportsController : ControllerBase
 {
     private readonly TenantReportBuilder _tenantReportBuilder;
     private readonly PaymentReportBuilder _paymentReportBuilder;
+    private readonly HouseReportBuilder _houseReportBuilder;
     private readonly IReportRenderer _reportRenderer;
     private readonly ShmsDbContext _context;
 
     public ReportsController(
         TenantReportBuilder tenantReportBuilder,
         PaymentReportBuilder paymentReportBuilder,
+        HouseReportBuilder houseReportBuilder,
         IReportRenderer reportRenderer,
         ShmsDbContext context)
     {
         _tenantReportBuilder = tenantReportBuilder;
         _paymentReportBuilder = paymentReportBuilder;
+        _houseReportBuilder = houseReportBuilder;
         _reportRenderer = reportRenderer;
         _context = context;
     }
@@ -106,6 +109,30 @@ public class ReportsController : ControllerBase
         var data = await _paymentReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Payments-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Houses — admin-wide (no landlordId query param accepted — admin sees all)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/houses/preview
+    [HttpGet("houses/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewHousesReport([FromQuery] HouseFilters filters)
+    {
+        var data = await _houseReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/houses/export?format=pdf|excel|word
+    [HttpGet("houses/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportHousesReport([FromQuery] HouseFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _houseReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Houses-Report", format);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -170,6 +197,38 @@ public class ReportsController : ControllerBase
         var data = await _tenantReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Tenants-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Landlord-scoped — houses
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/landlord/houses/preview
+    [HttpGet("landlord/houses/preview")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> PreviewLandlordHousesReport([FromQuery] HouseFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+
+        var data = await _houseReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/landlord/houses/export?format=pdf|excel|word
+    [HttpGet("landlord/houses/export")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> ExportLandlordHousesReport([FromQuery] HouseFilters filters, [FromQuery] string format = "pdf")
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+
+        var data = await _houseReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Houses-Report", format);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

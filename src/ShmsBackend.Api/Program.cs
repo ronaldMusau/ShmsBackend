@@ -76,9 +76,11 @@ builder.Services.AddScoped<IPreAuthCacheService, PreAuthCacheService>();
 builder.Services.AddScoped<IFrontendUrlService, FrontendUrlService>();
 builder.Services.AddScoped<TenantQueryService>();
 builder.Services.AddScoped<PaymentQueryService>();
+builder.Services.AddScoped<HouseQueryService>();
 builder.Services.AddScoped<IReportRenderer, ReportRenderer>();
 builder.Services.AddScoped<TenantReportBuilder>();
 builder.Services.AddScoped<PaymentReportBuilder>();
+builder.Services.AddScoped<HouseReportBuilder>();
 
 // Register HttpClient factory and EmailService
 builder.Services.AddHttpClient();

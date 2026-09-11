@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -68,17 +67,9 @@ public class TenantReportBuilder
             };
         }).ToList();
 
-        string? flatName = null;
-        if (filters.FlatId.HasValue)
-        {
-            // IgnoreQueryFilters so a since-deleted flat still resolves a name — this report is a
-            // point-in-time export, same reasoning as the deleted-flat handling above.
-            flatName = await _context.Flats
-                .IgnoreQueryFilters()
-                .Where(f => f.Id == filters.FlatId.Value)
-                .Select(f => f.FlatName)
-                .FirstOrDefaultAsync();
-        }
+        // IgnoreQueryFilters (inside the shared helper) so a since-deleted flat still resolves a name —
+        // this report is a point-in-time export, same reasoning as the deleted-flat handling above.
+        var flatName = await ReportBuilderHelpers.ResolveFlatNameAsync(_context, filters.FlatId);
 
         return new ReportData
         {
@@ -109,21 +100,11 @@ public class TenantReportBuilder
         if (!string.IsNullOrWhiteSpace(filters.Status)) parts.Add($"Status: {filters.Status}");
         if (filters.TenancyCycle.HasValue) parts.Add($"Tenancy Cycle: {filters.TenancyCycle}");
 
-        var dateRange = FormatDateRange(filters.FromDate, filters.ToDate);
+        var dateRange = ReportBuilderHelpers.FormatDateRange(filters.FromDate, filters.ToDate);
         if (dateRange != null) parts.Add(dateRange);
 
         if (!string.IsNullOrWhiteSpace(filters.Search)) parts.Add($"Search: \"{filters.Search}\"");
 
         return parts.Count == 0 ? "All tenants" : string.Join(" | ", parts);
-    }
-
-    internal static string? FormatDateRange(DateTime? fromDate, DateTime? toDate)
-    {
-        string Fmt(DateTime d) => d.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
-
-        if (fromDate.HasValue && toDate.HasValue) return $"From {Fmt(fromDate.Value)} to {Fmt(toDate.Value)}";
-        if (fromDate.HasValue) return $"From {Fmt(fromDate.Value)}";
-        if (toDate.HasValue) return $"To {Fmt(toDate.Value)}";
-        return null;
     }
 }

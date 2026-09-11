@@ -47,15 +47,7 @@ public class PaymentReportBuilder
             ["paidAt"] = p.PaidAt
         }).ToList();
 
-        string? flatName = null;
-        if (filters.FlatId.HasValue)
-        {
-            flatName = await _context.Flats
-                .IgnoreQueryFilters()
-                .Where(f => f.Id == filters.FlatId.Value)
-                .Select(f => f.FlatName)
-                .FirstOrDefaultAsync();
-        }
+        var flatName = await ReportBuilderHelpers.ResolveFlatNameAsync(_context, filters.FlatId);
 
         return new ReportData
         {
@@ -92,7 +84,7 @@ public class PaymentReportBuilder
         if (filters.Month.HasValue) parts.Add($"Month: {filters.Month}");
         if (filters.Year.HasValue) parts.Add($"Year: {filters.Year}");
 
-        var dateRange = TenantReportBuilder.FormatDateRange(filters.FromDate, filters.ToDate);
+        var dateRange = ReportBuilderHelpers.FormatDateRange(filters.FromDate, filters.ToDate);
         if (dateRange != null) parts.Add(dateRange);
 
         var amountRange = FormatAmountRange(filters.MinAmount, filters.MaxAmount);
