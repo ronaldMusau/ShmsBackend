@@ -23,6 +23,7 @@ public class PaymentFilters
     public decimal? MaxAmount { get; set; }
     public bool? IsInitialPayment { get; set; }
     public Guid? LandlordId { get; set; }   // set server-side only, never bound from a client filter param
+    public int? TenancyCycle { get; set; }  // set server-side only for tenant-scoped actions, never bound from a client filter param
 }
 
 /// <summary>
@@ -59,6 +60,9 @@ public class PaymentQueryService
 
         if (filters.TenantId.HasValue)
             query = query.Where(p => p.TenantId == filters.TenantId.Value);
+
+        if (filters.TenancyCycle.HasValue)
+            query = query.Where(p => p.TenancyCycle == filters.TenancyCycle.Value);
 
         // Mirrors GetLandlordPayments' exact default: explicit status wins; otherwise only the
         // "settled or overdue" statuses show, hiding Pending/Processing/Failed/Cancelled noise.

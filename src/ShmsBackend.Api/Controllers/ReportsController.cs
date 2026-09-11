@@ -64,6 +64,12 @@ public class ReportsController : ControllerBase
         return Guid.TryParse(landlordIdStr, out var landlordId) ? landlordId : null;
     }
 
+    private Guid? GetTenantId()
+    {
+        var tenantIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(tenantIdStr, out var tenantId) ? tenantId : null;
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // Tenants — admin-wide
     // ═══════════════════════════════════════════════════════════════════
@@ -169,6 +175,48 @@ public class ReportsController : ControllerBase
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // Tenant-scoped — payments (reuses PaymentReportBuilder as-is — no new builder needed)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/tenant/payments/preview
+    [HttpGet("tenant/payments/preview")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> PreviewTenantPaymentsReport([FromQuery] PaymentFilters filters)
+    {
+        var tenantId = GetTenantId();
+        if (tenantId == null) return Unauthorized();
+
+        var tenant = await _context.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId.Value);
+        if (tenant == null) return Unauthorized();
+
+        filters.TenantId = tenantId;
+        filters.TenancyCycle = tenant.TenancyCycle;
+
+        var data = await _paymentReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/tenant/payments/export?format=pdf|excel|word
+    [HttpGet("tenant/payments/export")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> ExportTenantPaymentsReport([FromQuery] PaymentFilters filters, [FromQuery] string format = "pdf")
+    {
+        var tenantId = GetTenantId();
+        if (tenantId == null) return Unauthorized();
+
+        var tenant = await _context.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId.Value);
+        if (tenant == null) return Unauthorized();
+
+        filters.TenantId = tenantId;
+        filters.TenancyCycle = tenant.TenancyCycle;
+
+        var data = await _paymentReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Payments-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // Landlord-scoped — tenants
     // ═══════════════════════════════════════════════════════════════════
 
@@ -264,6 +312,27 @@ public class ReportsController : ControllerBase
 
         var years = await _context.Payments
             .Where(p => !p.IsDeleted && p.LandlordId == landlordId)
+            .Select(p => p.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        if (years.Count == 0)
+            years.Add(DateTime.UtcNow.Year);
+
+        return Ok(new { success = true, data = years });
+    }
+
+    // GET /api/reports/tenant/years
+    [HttpGet("tenant/years")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetTenantPaymentYears()
+    {
+        var tenantId = GetTenantId();
+        if (tenantId == null) return Unauthorized();
+
+        var years = await _context.Payments
+            .Where(p => !p.IsDeleted && p.TenantId == tenantId)
             .Select(p => p.Year)
             .Distinct()
             .OrderByDescending(y => y)
