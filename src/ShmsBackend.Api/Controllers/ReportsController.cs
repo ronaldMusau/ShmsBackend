@@ -49,6 +49,9 @@ public class ReportsController : ControllerBase
     private readonly RewardReportBuilder _rewardReportBuilder;
     private readonly ServiceChargeReportBuilder _serviceChargeReportBuilder;
     private readonly RefundReportBuilder _refundReportBuilder;
+    private readonly ListingReportBuilder _listingReportBuilder;
+    private readonly SessionReportBuilder _sessionReportBuilder;
+    private readonly AgreementReportBuilder _agreementReportBuilder;
     private readonly IReportRenderer _reportRenderer;
     private readonly ShmsDbContext _context;
 
@@ -64,6 +67,9 @@ public class ReportsController : ControllerBase
         RewardReportBuilder rewardReportBuilder,
         ServiceChargeReportBuilder serviceChargeReportBuilder,
         RefundReportBuilder refundReportBuilder,
+        ListingReportBuilder listingReportBuilder,
+        SessionReportBuilder sessionReportBuilder,
+        AgreementReportBuilder agreementReportBuilder,
         IReportRenderer reportRenderer,
         ShmsDbContext context)
     {
@@ -78,6 +84,9 @@ public class ReportsController : ControllerBase
         _rewardReportBuilder = rewardReportBuilder;
         _serviceChargeReportBuilder = serviceChargeReportBuilder;
         _refundReportBuilder = refundReportBuilder;
+        _listingReportBuilder = listingReportBuilder;
+        _sessionReportBuilder = sessionReportBuilder;
+        _agreementReportBuilder = agreementReportBuilder;
         _reportRenderer = reportRenderer;
         _context = context;
     }
@@ -494,6 +503,78 @@ public class ReportsController : ControllerBase
         var data = await _refundReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Refunds-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Listings — admin-wide (roles match HouseController.GetAllListingStats' actual role set)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/listings/preview
+    [HttpGet("listings/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> PreviewListingsReport([FromQuery] HouseFilters filters)
+    {
+        var data = await _listingReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/listings/export?format=pdf|excel|word
+    [HttpGet("listings/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> ExportListingsReport([FromQuery] HouseFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _listingReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Listings-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Booked Sessions — admin-wide (roles match SessionController.GetAllSessions' actual role set)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/sessions/preview
+    [HttpGet("sessions/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> PreviewSessionsReport([FromQuery] SessionFilters filters)
+    {
+        var data = await _sessionReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/sessions/export?format=pdf|excel|word
+    [HttpGet("sessions/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> ExportSessionsReport([FromQuery] SessionFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _sessionReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Sessions-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Agreements — admin-wide (roles match AgreementController's actual class-level restriction)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/agreements/preview
+    [HttpGet("agreements/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> PreviewAgreementsReport([FromQuery] AgreementFilters filters)
+    {
+        var data = await _agreementReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/agreements/export?format=pdf|excel|word
+    [HttpGet("agreements/export")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> ExportAgreementsReport([FromQuery] AgreementFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _agreementReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Agreements-Report", format);
     }
 
     // ═══════════════════════════════════════════════════════════════════

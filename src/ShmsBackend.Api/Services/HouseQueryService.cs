@@ -17,6 +17,13 @@ public class HouseFilters
     public int? Month { get; set; }
     public int? Year { get; set; }
     public Guid? LandlordId { get; set; }   // set server-side only, never bound from a client filter param
+
+    // Listing-report-only filters, mirroring HouseController.GetAllListingStats' filter set.
+    public bool? IsListingHidden { get; set; }
+    public bool? CommentsMuted { get; set; }
+    public decimal? MinRent { get; set; }
+    public decimal? MaxRent { get; set; }
+    public string? County { get; set; }
 }
 
 /// <summary>
@@ -40,6 +47,7 @@ public class HouseQueryService
         var query = _context.Houses
             .Include(h => h.Flat)
             .Include(h => h.HouseTypeRef)
+            .Include(h => h.Images)
             .AsQueryable();
 
         if (filters.LandlordId.HasValue)
@@ -56,6 +64,21 @@ public class HouseQueryService
 
         if (filters.IsAwaitingExistingTenant.HasValue)
             query = query.Where(h => h.IsAwaitingExistingTenant == filters.IsAwaitingExistingTenant.Value);
+
+        if (filters.IsListingHidden.HasValue)
+            query = query.Where(h => h.IsListingHidden == filters.IsListingHidden.Value);
+
+        if (filters.CommentsMuted.HasValue)
+            query = query.Where(h => h.CommentsMuted == filters.CommentsMuted.Value);
+
+        if (filters.MinRent.HasValue)
+            query = query.Where(h => h.RentFee >= filters.MinRent.Value);
+
+        if (filters.MaxRent.HasValue)
+            query = query.Where(h => h.RentFee <= filters.MaxRent.Value);
+
+        if (!string.IsNullOrWhiteSpace(filters.County))
+            query = query.Where(h => h.Flat != null && h.Flat.County == filters.County);
 
         return query;
     }
