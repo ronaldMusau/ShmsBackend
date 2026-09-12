@@ -71,6 +71,9 @@ public class UserAgreementStatusDto
     public string Role { get; set; } = string.Empty;
     /// <summary>Role-context: "House 12 — Flat A" for a tenant, agency name for an agent/landlord, else null.</summary>
     public string? Context { get; set; }
+    /// <summary>The tenant's assigned Flat.Id, populated only for Tenant-role rows via the same
+    /// Tenant.House.Flat lookup that builds Context — null for Landlord/Agent rows.</summary>
+    public Guid? FlatId { get; set; }
     public string AgreementStatus { get; set; } = string.Empty;
     public int TemplateVersion { get; set; }
     public string? UploadedFilePath { get; set; }
@@ -79,6 +82,7 @@ public class UserAgreementStatusDto
     public DateTime? LastReminderSentAt { get; set; }
     public bool HasIdFront { get; set; }
     public bool HasIdBack { get; set; }
+    public bool HasIdUploaded { get; set; }
     public DateTime? IdUploadedAt { get; set; }
 }
 

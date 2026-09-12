@@ -16,6 +16,8 @@ public class AgreementFilters
     public string? Status { get; set; }  // AgreementStatus enum
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }  // both against UploadedAt
+    public Guid? FlatId { get; set; }      // matches only Tenant-role rows — Landlord/Agent rows never have a Flat, so they're correctly excluded, not a gap
+    public bool? HasIdUploaded { get; set; }
 }
 
 /// <summary>
@@ -56,15 +58,28 @@ public class AgreementReportBuilder
                 .Where(a => userIds.Contains(a.PortalUserId)).ToListAsync())
             .GroupBy(a => a.PortalUserId).ToDictionary(g => g.Key, g => g.First());
 
-        var tenantContext = (await _context.Tenants
+        var idDocs = (await _context.UserIdDocuments
+                .Where(d => userIds.Contains(d.PortalUserId)).ToListAsync())
+            .GroupBy(d => d.PortalUserId).ToDictionary(g => g.Key, g => g.First());
+
+        var tenantHouseFlat = await _context.Tenants
                 .Where(t => userIds.Contains(t.Id))
                 .Include(t => t.House).ThenInclude(h => h!.Flat)
-                .Select(t => new { t.Id, HouseNumber = t.House != null ? t.House.HouseNumber : null, FlatName = t.House != null && t.House.Flat != null ? t.House.Flat.FlatName : null })
-                .ToListAsync())
-            .ToDictionary(x => x.Id, x =>
-                x.HouseNumber == null ? null
-                : x.FlatName == null ? $"House {x.HouseNumber}"
-                : $"House {x.HouseNumber} — {x.FlatName}");
+                .Select(t => new
+                {
+                    t.Id,
+                    HouseNumber = t.House != null ? t.House.HouseNumber : null,
+                    FlatName = t.House != null && t.House.Flat != null ? t.House.Flat.FlatName : null,
+                    FlatId = t.House != null && t.House.Flat != null ? t.House.Flat.Id : (Guid?)null
+                })
+                .ToListAsync();
+
+        var tenantContext = tenantHouseFlat.ToDictionary(x => x.Id, x =>
+            x.HouseNumber == null ? null
+            : x.FlatName == null ? $"House {x.HouseNumber}"
+            : $"House {x.HouseNumber} — {x.FlatName}");
+
+        var tenantFlatId = tenantHouseFlat.ToDictionary(x => x.Id, x => x.FlatId);
 
         string? parsedStatusFilter = null;
         if (!string.IsNullOrWhiteSpace(filters.Status) &&
@@ -77,6 +92,7 @@ public class AgreementReportBuilder
         foreach (var u in users)
         {
             agreements.TryGetValue(u.Id, out var a);
+            idDocs.TryGetValue(u.Id, out var d);
 
             var status = (a?.Status ?? AgreementStatus.NotSent).ToString();
             if (parsedStatusFilter != null && status != parsedStatusFilter)
@@ -86,6 +102,21 @@ public class AgreementReportBuilder
             if (filters.FromDate.HasValue && (uploadedAt == null || uploadedAt < filters.FromDate.Value))
                 continue;
             if (filters.ToDate.HasValue && (uploadedAt == null || uploadedAt > filters.ToDate.Value.AddDays(1)))
+                continue;
+
+            Guid? flatId = u.PortalUserType == PortalUserType.Tenant && tenantFlatId.TryGetValue(u.Id, out var fid)
+                ? fid
+                : null;
+
+            // Landlord/Agent rows never have a FlatId, so this filter correctly excludes them rather
+            // than leaving a gap — matching only Tenant-role rows on the resolved Flat is the intended behavior.
+            if (filters.FlatId.HasValue && flatId != filters.FlatId.Value)
+                continue;
+
+            var hasIdFront = d?.FrontImagePath != null;
+            var hasIdBack = d?.BackImagePath != null;
+            var hasIdUploaded = hasIdFront && hasIdBack;
+            if (filters.HasIdUploaded.HasValue && hasIdUploaded != filters.HasIdUploaded.Value)
                 continue;
 
             var property = u.PortalUserType == PortalUserType.Tenant
@@ -104,11 +135,13 @@ public class AgreementReportBuilder
             });
         }
 
+        var flatName = await ReportBuilderHelpers.ResolveFlatNameAsync(_context, filters.FlatId);
+
         return new ReportData
         {
             Title = "Agreements Report",
             GeneratedAt = DateTime.UtcNow,
-            FilterSummary = BuildFilterSummary(filters),
+            FilterSummary = BuildFilterSummary(filters, flatName),
             Columns = new List<ReportColumn>
             {
                 new() { Key = "name", Header = "Name" },
@@ -123,11 +156,13 @@ public class AgreementReportBuilder
         };
     }
 
-    private static string BuildFilterSummary(AgreementFilters filters)
+    private static string BuildFilterSummary(AgreementFilters filters, string? flatName)
     {
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(filters.Role)) parts.Add($"Role: {filters.Role}");
         if (!string.IsNullOrWhiteSpace(filters.Status)) parts.Add($"Status: {filters.Status}");
+        if (filters.FlatId.HasValue) parts.Add($"Flat: {flatName ?? filters.FlatId.ToString()}");
+        if (filters.HasIdUploaded.HasValue) parts.Add($"ID Uploaded: {(filters.HasIdUploaded.Value ? "Yes" : "No")}");
 
         var dateRange = ReportBuilderHelpers.FormatDateRange(filters.FromDate, filters.ToDate);
         if (dateRange != null) parts.Add(dateRange);

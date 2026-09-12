@@ -383,15 +383,24 @@ public class AgreementService : IAgreementService
             .GroupBy(d => d.PortalUserId).ToDictionary(g => g.Key, g => g.First());
 
         // Role-context lookups
-        var tenantContext = (await _context.Tenants
+        var tenantHouseFlat = await _context.Tenants
                 .Where(t => userIds.Contains(t.Id))
                 .Include(t => t.House).ThenInclude(h => h!.Flat)
-                .Select(t => new { t.Id, HouseNumber = t.House != null ? t.House.HouseNumber : null, FlatName = t.House != null && t.House.Flat != null ? t.House.Flat.FlatName : null })
-                .ToListAsync())
-            .ToDictionary(x => x.Id, x =>
-                x.HouseNumber == null ? null
-                : x.FlatName == null ? $"House {x.HouseNumber}"
-                : $"House {x.HouseNumber} — {x.FlatName}");
+                .Select(t => new
+                {
+                    t.Id,
+                    HouseNumber = t.House != null ? t.House.HouseNumber : null,
+                    FlatName = t.House != null && t.House.Flat != null ? t.House.Flat.FlatName : null,
+                    FlatId = t.House != null && t.House.Flat != null ? t.House.Flat.Id : (Guid?)null
+                })
+                .ToListAsync();
+
+        var tenantContext = tenantHouseFlat.ToDictionary(x => x.Id, x =>
+            x.HouseNumber == null ? null
+            : x.FlatName == null ? $"House {x.HouseNumber}"
+            : $"House {x.HouseNumber} — {x.FlatName}");
+
+        var tenantFlatId = tenantHouseFlat.ToDictionary(x => x.Id, x => x.FlatId);
 
         var landlordAgency = (await _context.Landlords
                 .Where(l => userIds.Contains(l.Id))
@@ -416,6 +425,13 @@ public class AgreementService : IAgreementService
                 _ => null
             };
 
+            Guid? flatId = u.PortalUserType == PortalUserType.Tenant && tenantFlatId.TryGetValue(u.Id, out var fid)
+                ? fid
+                : null;
+
+            var hasIdFront = d?.FrontImagePath != null;
+            var hasIdBack = d?.BackImagePath != null;
+
             return new UserAgreementStatusDto
             {
                 PortalUserId = u.Id,
@@ -424,14 +440,16 @@ public class AgreementService : IAgreementService
                 Email = u.Email,
                 Role = u.PortalUserType.ToString(),
                 Context = context,
+                FlatId = flatId,
                 AgreementStatus = (a?.Status ?? AgreementStatus.NotSent).ToString(),
                 TemplateVersion = a?.TemplateVersion ?? 0,
                 UploadedFilePath = a?.UploadedFilePath,
                 AgreementUploadedAt = a?.UploadedAt,
                 RejectionReason = a?.RejectionReason,
                 LastReminderSentAt = a?.LastReminderSentAt,
-                HasIdFront = d?.FrontImagePath != null,
-                HasIdBack = d?.BackImagePath != null,
+                HasIdFront = hasIdFront,
+                HasIdBack = hasIdBack,
+                HasIdUploaded = hasIdFront && hasIdBack,
                 IdUploadedAt = d?.UploadedAt
             };
         }).ToList();
