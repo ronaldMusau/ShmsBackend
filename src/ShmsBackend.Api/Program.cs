@@ -79,6 +79,11 @@ builder.Services.AddScoped<PaymentQueryService>();
 builder.Services.AddScoped<HouseQueryService>();
 builder.Services.AddScoped<VacateQueryService>();
 builder.Services.AddScoped<ComplaintQueryService>();
+builder.Services.AddScoped<LandlordQueryService>();
+builder.Services.AddScoped<AgentQueryService>();
+builder.Services.AddScoped<RewardTransactionQueryService>();
+builder.Services.AddScoped<ServiceChargeQueryService>();
+builder.Services.AddScoped<RefundQueryService>();
 builder.Services.AddScoped<IReportRenderer, ReportRenderer>();
 builder.Services.AddScoped<IReceiptRenderer, ReceiptRenderer>();
 builder.Services.AddScoped<TenantReportBuilder>();
@@ -87,6 +92,11 @@ builder.Services.AddScoped<HouseReportBuilder>();
 builder.Services.AddScoped<VacateReportBuilder>();
 builder.Services.AddScoped<OverdueReportBuilder>();
 builder.Services.AddScoped<ComplaintReportBuilder>();
+builder.Services.AddScoped<LandlordReportBuilder>();
+builder.Services.AddScoped<AgentReportBuilder>();
+builder.Services.AddScoped<RewardReportBuilder>();
+builder.Services.AddScoped<ServiceChargeReportBuilder>();
+builder.Services.AddScoped<RefundReportBuilder>();
 
 // Register HttpClient factory and EmailService
 builder.Services.AddHttpClient();

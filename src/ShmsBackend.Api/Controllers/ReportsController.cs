@@ -44,6 +44,11 @@ public class ReportsController : ControllerBase
     private readonly VacateReportBuilder _vacateReportBuilder;
     private readonly OverdueReportBuilder _overdueReportBuilder;
     private readonly ComplaintReportBuilder _complaintReportBuilder;
+    private readonly LandlordReportBuilder _landlordReportBuilder;
+    private readonly AgentReportBuilder _agentReportBuilder;
+    private readonly RewardReportBuilder _rewardReportBuilder;
+    private readonly ServiceChargeReportBuilder _serviceChargeReportBuilder;
+    private readonly RefundReportBuilder _refundReportBuilder;
     private readonly IReportRenderer _reportRenderer;
     private readonly ShmsDbContext _context;
 
@@ -54,6 +59,11 @@ public class ReportsController : ControllerBase
         VacateReportBuilder vacateReportBuilder,
         OverdueReportBuilder overdueReportBuilder,
         ComplaintReportBuilder complaintReportBuilder,
+        LandlordReportBuilder landlordReportBuilder,
+        AgentReportBuilder agentReportBuilder,
+        RewardReportBuilder rewardReportBuilder,
+        ServiceChargeReportBuilder serviceChargeReportBuilder,
+        RefundReportBuilder refundReportBuilder,
         IReportRenderer reportRenderer,
         ShmsDbContext context)
     {
@@ -63,6 +73,11 @@ public class ReportsController : ControllerBase
         _vacateReportBuilder = vacateReportBuilder;
         _overdueReportBuilder = overdueReportBuilder;
         _complaintReportBuilder = complaintReportBuilder;
+        _landlordReportBuilder = landlordReportBuilder;
+        _agentReportBuilder = agentReportBuilder;
+        _rewardReportBuilder = rewardReportBuilder;
+        _serviceChargeReportBuilder = serviceChargeReportBuilder;
+        _refundReportBuilder = refundReportBuilder;
         _reportRenderer = reportRenderer;
         _context = context;
     }
@@ -359,6 +374,126 @@ public class ReportsController : ControllerBase
         var data = await _complaintReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Complaints-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Landlords — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/landlords/preview
+    [HttpGet("landlords/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewLandlordsReport([FromQuery] LandlordFilters filters)
+    {
+        var data = await _landlordReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/landlords/export?format=pdf|excel|word
+    [HttpGet("landlords/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportLandlordsReport([FromQuery] LandlordFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _landlordReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Landlords-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Agents — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/agents/preview
+    [HttpGet("agents/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewAgentsReport([FromQuery] AgentFilters filters)
+    {
+        var data = await _agentReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/agents/export?format=pdf|excel|word
+    [HttpGet("agents/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportAgentsReport([FromQuery] AgentFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _agentReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Agents-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Rewards — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/rewards/preview
+    [HttpGet("rewards/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewRewardsReport([FromQuery] RewardTransactionFilters filters)
+    {
+        var data = await _rewardReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/rewards/export?format=pdf|excel|word
+    [HttpGet("rewards/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportRewardsReport([FromQuery] RewardTransactionFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _rewardReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Rewards-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Service Charge Collected — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/service-charge/preview
+    [HttpGet("service-charge/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewServiceChargeReport([FromQuery] ServiceChargeFilters filters)
+    {
+        var data = await _serviceChargeReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/service-charge/export?format=pdf|excel|word
+    [HttpGet("service-charge/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportServiceChargeReport([FromQuery] ServiceChargeFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _serviceChargeReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Service-Charge-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Refunds — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/refunds/preview
+    [HttpGet("refunds/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewRefundsReport([FromQuery] RefundFilters filters)
+    {
+        var data = await _refundReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/refunds/export?format=pdf|excel|word
+    [HttpGet("refunds/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportRefundsReport([FromQuery] RefundFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _refundReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Refunds-Report", format);
     }
 
     // ═══════════════════════════════════════════════════════════════════
