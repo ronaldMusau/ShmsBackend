@@ -78,6 +78,7 @@ builder.Services.AddScoped<TenantQueryService>();
 builder.Services.AddScoped<PaymentQueryService>();
 builder.Services.AddScoped<HouseQueryService>();
 builder.Services.AddScoped<IReportRenderer, ReportRenderer>();
+builder.Services.AddScoped<IReceiptRenderer, ReceiptRenderer>();
 builder.Services.AddScoped<TenantReportBuilder>();
 builder.Services.AddScoped<PaymentReportBuilder>();
 builder.Services.AddScoped<HouseReportBuilder>();
