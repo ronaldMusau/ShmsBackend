@@ -60,6 +60,17 @@ public class LandlordService : ILandlordService
             deleted.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12);
             deleted.EmailVerificationToken = null;
             deleted.EmailVerificationTokenExpiry = null;
+
+            // A revived account shouldn't inherit lockout/reset state from before deletion.
+            deleted.FailedLoginAttempts = 0;
+            deleted.IsLockedOut = false;
+            deleted.PasswordResetAttempts = 0;
+            deleted.PasswordResetToken = null;
+            deleted.PasswordResetTokenExpiry = null;
+            deleted.RefreshToken = null;
+            deleted.RefreshTokenExpiryTime = null;
+            deleted.PendingEmail = null;
+
             deleted.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Landlords.UpdateAsync(deleted);
             await _unitOfWork.SaveChangesAsync();
