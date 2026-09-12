@@ -420,12 +420,14 @@ public class PaymentController : ControllerBase
         [FromQuery] decimal? minAmount,
         [FromQuery] decimal? maxAmount,
         [FromQuery] bool? isInitialPayment,
+        [FromQuery] string? search,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
         var query = _context.Payments
             .Include(p => p.House)
             .ThenInclude(h => h!.Flat)
+            .Include(p => p.Tenant)
             .AsQueryable();
 
         if (!string.IsNullOrEmpty(status) && Enum.TryParse<PaymentTransactionStatus>(status, out var ps))
@@ -470,6 +472,21 @@ public class PaymentController : ControllerBase
 
         if (isInitialPayment.HasValue)
             query = query.Where(p => p.IsInitialPayment == isInitialPayment.Value);
+
+        // Free-text search — plain .Contains(), no explicit .ToLower(), matching the convention already
+        // used by RewardTransactionQueryService/HouseController.GetAllListingStats (SQL Server's default
+        // collation is case-insensitive, so this reads the same as those other search params). PaymentStatus
+        // is excluded — it's an enum, not a string, and there's already a dedicated `status` exact-match
+        // filter above; ToString().Contains() on an enum isn't reliably translatable by EF Core anyway.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            query = query.Where(p =>
+                (p.Tenant != null && (p.Tenant.FirstName.Contains(s) || p.Tenant.LastName.Contains(s) || p.Tenant.Email.Contains(s))) ||
+                (p.House != null && (p.House.HouseNumber.Contains(s) || (p.House.Flat != null && p.House.Flat.FlatName.Contains(s)))) ||
+                (p.MpesaReceiptNumber != null && p.MpesaReceiptNumber.Contains(s)) ||
+                (p.RedemptionReference != null && p.RedemptionReference.Contains(s)));
+        }
 
         var total = await query.CountAsync();
 
@@ -665,11 +682,13 @@ public class PaymentController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
         [FromQuery] decimal? minAmount = null,
-        [FromQuery] decimal? maxAmount = null)
+        [FromQuery] decimal? maxAmount = null,
+        [FromQuery] string? search = null)
     {
         var query = _context.Payments
             .Include(p => p.House)
                 .ThenInclude(h => h!.Flat)
+            .Include(p => p.Tenant)
             .Where(p => p.ServiceChargeAmount > 0 && p.MpesaReceiptNumber != null)
             .AsQueryable();
 
@@ -682,6 +701,19 @@ public class PaymentController : ControllerBase
         if (toDate.HasValue) query = query.Where(p => p.PaidAt < toDate.Value.Date.AddDays(1));
         if (minAmount.HasValue) query = query.Where(p => p.ServiceChargeAmount >= minAmount.Value);
         if (maxAmount.HasValue) query = query.Where(p => p.ServiceChargeAmount <= maxAmount.Value);
+
+        // Free-text search — same field set as GetAllPayments minus RedemptionReference (not applicable
+        // to service-charge rows) and ServiceChargeAmount (no numeric-as-text Contains convention exists
+        // anywhere in this codebase — amount filtering is always done via MinAmount/MaxAmount range
+        // params, as above, so introducing one here would be a new, inconsistent pattern).
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            query = query.Where(p =>
+                (p.Tenant != null && (p.Tenant.FirstName.Contains(s) || p.Tenant.LastName.Contains(s) || p.Tenant.Email.Contains(s))) ||
+                (p.House != null && (p.House.HouseNumber.Contains(s) || (p.House.Flat != null && p.House.Flat.FlatName.Contains(s)))) ||
+                (p.MpesaReceiptNumber != null && p.MpesaReceiptNumber.Contains(s)));
+        }
 
         var total = await query.CountAsync();
         var totalServiceChargeCollected = await query.SumAsync(p => p.ServiceChargeAmount ?? 0);
