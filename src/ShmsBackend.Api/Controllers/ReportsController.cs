@@ -41,6 +41,9 @@ public class ReportsController : ControllerBase
     private readonly TenantReportBuilder _tenantReportBuilder;
     private readonly PaymentReportBuilder _paymentReportBuilder;
     private readonly HouseReportBuilder _houseReportBuilder;
+    private readonly VacateReportBuilder _vacateReportBuilder;
+    private readonly OverdueReportBuilder _overdueReportBuilder;
+    private readonly ComplaintReportBuilder _complaintReportBuilder;
     private readonly IReportRenderer _reportRenderer;
     private readonly ShmsDbContext _context;
 
@@ -48,12 +51,18 @@ public class ReportsController : ControllerBase
         TenantReportBuilder tenantReportBuilder,
         PaymentReportBuilder paymentReportBuilder,
         HouseReportBuilder houseReportBuilder,
+        VacateReportBuilder vacateReportBuilder,
+        OverdueReportBuilder overdueReportBuilder,
+        ComplaintReportBuilder complaintReportBuilder,
         IReportRenderer reportRenderer,
         ShmsDbContext context)
     {
         _tenantReportBuilder = tenantReportBuilder;
         _paymentReportBuilder = paymentReportBuilder;
         _houseReportBuilder = houseReportBuilder;
+        _vacateReportBuilder = vacateReportBuilder;
+        _overdueReportBuilder = overdueReportBuilder;
+        _complaintReportBuilder = complaintReportBuilder;
         _reportRenderer = reportRenderer;
         _context = context;
     }
@@ -278,6 +287,78 @@ public class ReportsController : ControllerBase
         var data = await _houseReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Houses-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Vacate Requests — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/vacate/preview
+    [HttpGet("vacate/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewVacateReport([FromQuery] VacateFilters filters)
+    {
+        var data = await _vacateReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/vacate/export?format=pdf|excel|word
+    [HttpGet("vacate/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportVacateReport([FromQuery] VacateFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _vacateReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Vacate-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Overdue Tenants — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/overdue/preview
+    [HttpGet("overdue/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewOverdueReport([FromQuery] OverdueFilters filters)
+    {
+        var data = await _overdueReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/overdue/export?format=pdf|excel|word
+    [HttpGet("overdue/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportOverdueReport([FromQuery] OverdueFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _overdueReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Overdue-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Complaints — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/complaints/preview
+    [HttpGet("complaints/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewComplaintsReport([FromQuery] ComplaintFilters filters)
+    {
+        var data = await _complaintReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/complaints/export?format=pdf|excel|word
+    [HttpGet("complaints/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportComplaintsReport([FromQuery] ComplaintFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _complaintReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Complaints-Report", format);
     }
 
     // ═══════════════════════════════════════════════════════════════════
