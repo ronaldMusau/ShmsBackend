@@ -338,6 +338,38 @@ public class ReportsController : ControllerBase
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // Landlord-scoped — vacate requests
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/landlord/vacate/preview
+    [HttpGet("landlord/vacate/preview")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> PreviewLandlordVacateReport([FromQuery] VacateFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+
+        var data = await _vacateReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/landlord/vacate/export?format=pdf|excel|word
+    [HttpGet("landlord/vacate/export")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> ExportLandlordVacateReport([FromQuery] VacateFilters filters, [FromQuery] string format = "pdf")
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+
+        var data = await _vacateReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Vacate-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // Overdue Tenants — admin-wide
     // ═══════════════════════════════════════════════════════════════════
 
@@ -380,6 +412,38 @@ public class ReportsController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> ExportComplaintsReport([FromQuery] ComplaintFilters filters, [FromQuery] string format = "pdf")
     {
+        var data = await _complaintReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Complaints-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Landlord-scoped — complaints
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/landlord/complaints/preview
+    [HttpGet("landlord/complaints/preview")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> PreviewLandlordComplaintsReport([FromQuery] ComplaintFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+
+        var data = await _complaintReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/landlord/complaints/export?format=pdf|excel|word
+    [HttpGet("landlord/complaints/export")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> ExportLandlordComplaintsReport([FromQuery] ComplaintFilters filters, [FromQuery] string format = "pdf")
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+
         var data = await _complaintReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Complaints-Report", format);
