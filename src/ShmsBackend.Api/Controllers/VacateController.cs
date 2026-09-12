@@ -219,6 +219,7 @@ public class VacateController : ControllerBase
         {
             Id = Guid.NewGuid(),
             TenantId = dto.TenantId,
+            TenancyCycle = tenant.TenancyCycle,
             HouseId = tenant.House.Id,
             FlatId = tenant.House.Flat.Id,
             LandlordId = tenant.House.Flat.LandlordId,
@@ -1045,6 +1046,14 @@ public class VacateController : ControllerBase
             return NotFound(new { success = false, message = "Vacate request not found." });
 
         if (vacateRequest.TenantId != GetCallerId())
+            return Forbid();
+
+        // Tenant self-service view: closes the same cross-cycle gap fixed for Complaints/Rewards — a
+        // TenantId match alone isn't enough, since the same Tenant.Id can be revived across multiple
+        // tenancy cycles. A vacate request from a prior, unrelated tenancy must not be viewable via
+        // this endpoint even though the TenantId still matches.
+        var callerTenant = await _context.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == GetCallerId());
+        if (callerTenant == null || vacateRequest.TenancyCycle != callerTenant.TenancyCycle)
             return Forbid();
 
         var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);

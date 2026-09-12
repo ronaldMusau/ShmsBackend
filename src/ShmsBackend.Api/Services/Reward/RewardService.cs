@@ -55,6 +55,7 @@ public class RewardService : IRewardService
             Points = points,
             AmountPaidOrRedeemed = amountReceived,
             BalanceAfter = tenant.PointsBalance,
+            TenancyCycle = tenant.TenancyCycle,
             RelatedPaymentId = relatedPaymentId,
             CreatedAt = DateTime.UtcNow
         });
@@ -122,6 +123,7 @@ public class RewardService : IRewardService
             Points = pointsToRedeem,
             AmountPaidOrRedeemed = kesAmount,
             BalanceAfter = tenant.PointsBalance,
+            TenancyCycle = tenant.TenancyCycle,
             RelatedPaymentId = relatedPaymentId,
             RedemptionReference = redemptionReference,
             CreatedAt = DateTime.UtcNow

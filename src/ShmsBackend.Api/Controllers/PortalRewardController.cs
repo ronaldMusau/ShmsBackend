@@ -49,8 +49,13 @@ public class PortalRewardController : ControllerBase
         var canRedeem = settings != null && settings.IsGlobalEnabled
             && tenant.House?.Flat != null && tenant.House.Flat.RewardEnabled;
 
+        // Tenant self-service view: scoped to the CURRENT tenancy cycle only, so a tenant who has been
+        // revived across multiple delete/re-register cycles doesn't see points/history from a prior
+        // cycle mixed into their current balance's history. This filter is deliberately NOT applied to
+        // RewardReportBuilder or RewardController.GetTransactions (the admin audit trail) — those must
+        // keep showing full cross-cycle history. Do not copy this filter over there.
         var history = await _context.RewardTransactions
-            .Where(t => t.TenantId == tenantId)
+            .Where(t => t.TenantId == tenantId && t.TenancyCycle == tenant.TenancyCycle)
             .OrderByDescending(t => t.CreatedAt)
             .Select(t => new
             {

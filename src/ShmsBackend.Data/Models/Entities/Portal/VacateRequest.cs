@@ -6,6 +6,7 @@ public class VacateRequest : ISoftDelete
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid TenantId { get; set; }
+    public int TenancyCycle { get; set; } // the tenant's TenancyCycle at the moment this request was raised — scopes tenant self-service views to the current tenancy
     public Guid HouseId { get; set; }
     public Guid FlatId { get; set; }
     public Guid LandlordId { get; set; }

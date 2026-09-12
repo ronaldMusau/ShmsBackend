@@ -297,6 +297,7 @@ public class OverdueController : ControllerBase
         {
             Id = Guid.NewGuid(),
             TenantId = tenant.Id,
+            TenancyCycle = tenant.TenancyCycle,
             HouseId = tenant.House.Id,
             FlatId = tenant.House.Flat.Id,
             LandlordId = tenant.House.Flat.LandlordId,

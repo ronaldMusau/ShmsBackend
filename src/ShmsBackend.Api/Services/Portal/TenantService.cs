@@ -87,6 +87,64 @@ public class TenantService : ITenantService
             deleted.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password, 12);
             deleted.EmailVerificationToken = null;
             deleted.EmailVerificationTokenExpiry = null;
+
+            // A revived tenant begins a genuinely new tenancy cycle — no state from a prior cycle
+            // (lockout counters, stale tokens, old lease/deposit figures, accrued points) should carry
+            // forward, even though the underlying row is reused for referential-integrity reasons.
+            deleted.PointsBalance = 0;
+            deleted.VerificationEmailSentAt = null;
+            deleted.DepositAlreadySitting = null;
+            deleted.ExternalDepositAmount = null;
+            deleted.FailedLoginAttempts = 0;
+            deleted.IsLockedOut = false;
+            deleted.PasswordResetAttempts = 0;
+            deleted.PasswordResetToken = null;
+            deleted.PasswordResetTokenExpiry = null;
+            deleted.RefreshToken = null;
+            deleted.RefreshTokenExpiryTime = null;
+            deleted.PendingEmail = null;
+
+            // LeaseStartMonth/LeaseStartYear: mirror the fresh-signup branch's exact derivation
+            // (explicit dto value first, else the day after an approved vacate's month, else null) —
+            // not left over from whatever house/lease the prior cycle was on.
+            VacateRequest? revivalApprovedVacate = null;
+            if (dto.HouseId.HasValue)
+                revivalApprovedVacate = await _context.VacateRequests
+                    .FirstOrDefaultAsync(r => r.HouseId == dto.HouseId && !r.IsDeleted && r.Status == "Approved");
+
+            if (dto.LeaseStartMonth.HasValue && dto.LeaseStartYear.HasValue)
+            {
+                deleted.LeaseStartMonth = dto.LeaseStartMonth;
+                deleted.LeaseStartYear = dto.LeaseStartYear;
+            }
+            else if (revivalApprovedVacate != null)
+            {
+                deleted.LeaseStartMonth = revivalApprovedVacate.VacateMonth == 12 ? 1 : revivalApprovedVacate.VacateMonth + 1;
+                deleted.LeaseStartYear = revivalApprovedVacate.VacateMonth == 12 ? revivalApprovedVacate.VacateYear + 1 : revivalApprovedVacate.VacateYear;
+            }
+            else
+            {
+                deleted.LeaseStartMonth = null;
+                deleted.LeaseStartYear = null;
+            }
+
+            // A new tenancy cycle requires signing a fresh agreement — a stale Verified/Rejected status
+            // (with its old rejection reason, uploaded file, or verification timestamps) from a prior,
+            // unrelated lease should never carry forward into the new one. UserIdDocuments is
+            // deliberately NOT touched here — ID photos are permanent identity data for this person,
+            // not per-tenancy state, so they're correct to persist across cycles.
+            var existingAgreement = await _context.UserAgreements.FirstOrDefaultAsync(a => a.PortalUserId == deleted.Id);
+            if (existingAgreement != null)
+            {
+                existingAgreement.Status = AgreementStatus.NotSent;
+                existingAgreement.RejectionReason = null;
+                existingAgreement.UploadedFilePath = null;
+                existingAgreement.UploadedAt = null;
+                existingAgreement.VerifiedByAdminId = null;
+                existingAgreement.VerifiedAt = null;
+                existingAgreement.LastReminderSentAt = null;
+            }
+
             deleted.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Tenants.UpdateAsync(deleted);
             await _unitOfWork.SaveChangesAsync();
@@ -489,6 +547,7 @@ public class TenantService : ITenantService
         tenant.IsDeleted = true;
         tenant.DeletedAt = DateTime.UtcNow;
         tenant.IsActive = false;
+        tenant.PointsBalance = 0;
 
         await _unitOfWork.SaveChangesAsync();
 

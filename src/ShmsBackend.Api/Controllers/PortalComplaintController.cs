@@ -67,6 +67,7 @@ public class PortalComplaintController : ControllerBase
         {
             TicketNumber = ticketNumber,
             TenantId = tenantId,
+            TenancyCycle = tenant.TenancyCycle,
             HouseId = tenant.House.Id,
             FlatId = tenant.House.Flat.Id,
             LandlordId = tenant.House.Flat.LandlordId,
@@ -149,10 +150,19 @@ public class PortalComplaintController : ControllerBase
         if (tenantId == Guid.Empty)
             return Unauthorized(new { success = false, message = "Invalid token." });
 
+        var tenant = await _context.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId);
+        if (tenant == null)
+            return Unauthorized(new { success = false, message = "Invalid token." });
+
+        // Tenant self-service view: scoped to the CURRENT tenancy cycle only, so a tenant revived
+        // across multiple delete/re-register cycles doesn't see complaints filed about a different,
+        // prior tenancy mixed into their current list. This filter is deliberately NOT applied to the
+        // admin Complaints report/list (ComplaintReportBuilder / ComplaintController.GetAll), which must
+        // keep showing full cross-cycle history for audit purposes. Do not copy this filter over there.
         var complaints = await _context.Complaints
             .Include(c => c.ComplaintType)
             .Include(c => c.Attachments)
-            .Where(c => c.TenantId == tenantId)
+            .Where(c => c.TenantId == tenantId && c.TenancyCycle == tenant.TenancyCycle)
             .OrderByDescending(c => c.CreatedAt)
             .ToListAsync();
 
