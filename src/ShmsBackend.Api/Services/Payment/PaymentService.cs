@@ -520,7 +520,16 @@ public class PaymentService : IPaymentService
 
             try
             {
-                await _rewardService.EarnPointsAsync(payment.TenantId, payment.HouseId, details.Amount.Value, payment.IsInitialPayment, payment.Id);
+                // Points are earned only on the rewardable (non-service-charge) portion of what was
+                // actually received this transaction — excluded proportionally so a partial payment
+                // still excludes the same share of service charge as a full one, rather than risking
+                // a negative rewardable amount on a small partial payment.
+                var totalDue = payment.Amount;
+                var serviceCharge = payment.ServiceChargeAmount ?? 0m;
+                var rewardableRatio = totalDue > 0 ? Math.Max(0m, (totalDue - serviceCharge) / totalDue) : 0m;
+                var rewardableAmount = details.Amount.Value * rewardableRatio;
+
+                await _rewardService.EarnPointsAsync(payment.TenantId, payment.HouseId, rewardableAmount, payment.IsInitialPayment, payment.Id);
             }
             catch (Exception ex)
             {
