@@ -215,6 +215,7 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.EmergencyContactName).HasMaxLength(100);
             entity.Property(e => e.EmergencyContactPhone).HasMaxLength(20);
             entity.Property(e => e.ExternalDepositAmount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.PointsBalance).HasColumnType("decimal(18,4)");
             entity.HasOne(e => e.House)
                   .WithMany(h => h.Tenants)
                   .HasForeignKey(e => e.HouseId)
@@ -539,7 +540,9 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.TransactionType).IsRequired().HasMaxLength(20);
             entity.Property(e => e.Source).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Points).HasColumnType("decimal(18,4)");
             entity.Property(e => e.AmountPaidOrRedeemed).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.BalanceAfter).HasColumnType("decimal(18,4)");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.HasIndex(e => e.TenantId);
             entity.HasOne(e => e.Tenant)

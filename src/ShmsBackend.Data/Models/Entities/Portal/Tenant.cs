@@ -17,7 +17,7 @@ public class Tenant : PortalUser
     public DateTime? VerificationEmailSentAt { get; set; }
     public int? LeaseStartMonth { get; set; }
     public int? LeaseStartYear { get; set; }
-    public int PointsBalance { get; set; } = 0;
+    public decimal PointsBalance { get; set; } = 0;
     public bool? DepositAlreadySitting { get; set; }
     public decimal? ExternalDepositAmount { get; set; }
 

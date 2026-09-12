@@ -262,7 +262,7 @@ public class EmailService : IEmailService
             GetRentNowEffectiveTemplate(firstName, houseNumber, newRentFee, newDepositFee));
     }
 
-    public async Task SendPointsEarnedEmailAsync(string toEmail, string firstName, int pointsEarned, int newBalance, string? userId = null, bool isPortalUser = false)
+    public async Task SendPointsEarnedEmailAsync(string toEmail, string firstName, decimal pointsEarned, decimal newBalance, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rewards")) return;
         _logger.LogInformation("Sending points-earned email to: {Email}", toEmail);
@@ -270,7 +270,7 @@ public class EmailService : IEmailService
             GetPointsEarnedTemplate(firstName, pointsEarned, newBalance));
     }
 
-    public async Task SendPointsRedeemedEmailAsync(string toEmail, string firstName, int pointsRedeemed, decimal kesAmount, string redemptionReference, int newBalance, string? userId = null, bool isPortalUser = false)
+    public async Task SendPointsRedeemedEmailAsync(string toEmail, string firstName, decimal pointsRedeemed, decimal kesAmount, string redemptionReference, decimal newBalance, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rewards")) return;
         _logger.LogInformation("Sending points-redeemed email to: {Email}", toEmail);
@@ -1073,15 +1073,15 @@ public class EmailService : IEmailService
         return WrapInLayout("Reminder: Upcoming Rent Change — Romah Estates", inner);
     }
 
-    private string GetPointsEarnedTemplate(string firstName, int pointsEarned, int newBalance)
+    private string GetPointsEarnedTemplate(string firstName, decimal pointsEarned, decimal newBalance)
     {
         var inner = $@"
 {H2($"Hello {firstName},")}
 {Para($"You've earned <strong style='color:{ColourGold};'>reward points</strong> on your recent payment.")}
 {GoldBox($@"
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>POINTS EARNED</p>
-  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>+{pointsEarned:N0}</p>
-  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>New balance: <strong style='color:{ColourTextSec};'>{newBalance:N0} points</strong></p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>+{pointsEarned:0.##}</p>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>New balance: <strong style='color:{ColourTextSec};'>{newBalance:0.##} points</strong></p>
 ")}
 {Para("Log in to your tenant portal to view your points history or redeem your balance.")}
 {Divider()}
@@ -1089,19 +1089,19 @@ public class EmailService : IEmailService
         return WrapInLayout("You Earned Reward Points — Romah Estates", inner);
     }
 
-    private string GetPointsRedeemedTemplate(string firstName, int pointsRedeemed, decimal kesAmount, string redemptionReference, int newBalance)
+    private string GetPointsRedeemedTemplate(string firstName, decimal pointsRedeemed, decimal kesAmount, string redemptionReference, decimal newBalance)
     {
         var inner = $@"
 {H2($"Hello {firstName},")}
 {Para($"Your points redemption has been applied to your account.")}
 {GoldBox($@"
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>POINTS REDEEMED</p>
-  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>-{pointsRedeemed:N0}</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>-{pointsRedeemed:0.##}</p>
   <p style='margin:12px 0 0;color:{ColourTextMuted};font-size:12px;letter-spacing:1px;'>AMOUNT APPLIED</p>
   <p style='margin:0;font-size:18px;font-weight:700;color:{ColourGold};'>KES {kesAmount:N2}</p>
   <p style='margin:12px 0 0;color:{ColourTextMuted};font-size:12px;letter-spacing:1px;'>REFERENCE</p>
   <span style='font-family:""Courier New"",monospace;font-size:16px;font-weight:700;color:{ColourGold};letter-spacing:2px;'>{redemptionReference}</span>
-  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>New balance: <strong style='color:{ColourTextSec};'>{newBalance:N0} points</strong></p>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>New balance: <strong style='color:{ColourTextSec};'>{newBalance:0.##} points</strong></p>
 ")}
 {Para("Log in to your tenant portal to view your full points history.")}
 {Divider()}

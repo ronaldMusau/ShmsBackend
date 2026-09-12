@@ -116,8 +116,8 @@ public class RewardController : ControllerBase
         [FromQuery] string? transactionType = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] int? minPoints = null,
-        [FromQuery] int? maxPoints = null,
+        [FromQuery] decimal? minPoints = null,
+        [FromQuery] decimal? maxPoints = null,
         [FromQuery] string? search = null)
     {
         var query = _context.RewardTransactions

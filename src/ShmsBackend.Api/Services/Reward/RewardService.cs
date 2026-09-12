@@ -38,7 +38,7 @@ public class RewardService : IRewardService
         if (settings == null || !settings.IsGlobalEnabled) return;
 
         var rate = isInitialPayment ? settings.InitialPaymentEarnRate : settings.RegularPaymentEarnRate;
-        var points = (int)Math.Floor(amountReceived * rate);
+        var points = amountReceived * rate;
         if (points <= 0) return;
 
         var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId);
@@ -73,7 +73,7 @@ public class RewardService : IRewardService
         }
     }
 
-    public async Task<RedeemPointsResult> RedeemPointsAsync(Guid tenantId, int pointsToRedeem)
+    public async Task<RedeemPointsResult> RedeemPointsAsync(Guid tenantId, decimal pointsToRedeem)
     {
         var tenant = await _context.Tenants
             .Include(t => t.House)

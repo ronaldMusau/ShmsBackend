@@ -95,5 +95,5 @@ public class PortalRewardController : ControllerBase
 
 public class RedeemPointsDto
 {
-    public int Points { get; set; }
+    public decimal Points { get; set; }
 }
