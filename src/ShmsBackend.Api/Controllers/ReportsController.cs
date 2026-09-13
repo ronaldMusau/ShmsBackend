@@ -49,6 +49,8 @@ public class ReportsController : ControllerBase
     private readonly RewardReportBuilder _rewardReportBuilder;
     private readonly ServiceChargeReportBuilder _serviceChargeReportBuilder;
     private readonly RefundReportBuilder _refundReportBuilder;
+    private readonly DeductionReportBuilder _deductionReportBuilder;
+    private readonly ForfeitedAdvanceReportBuilder _forfeitedAdvanceReportBuilder;
     private readonly ListingReportBuilder _listingReportBuilder;
     private readonly SessionReportBuilder _sessionReportBuilder;
     private readonly AgreementReportBuilder _agreementReportBuilder;
@@ -67,6 +69,8 @@ public class ReportsController : ControllerBase
         RewardReportBuilder rewardReportBuilder,
         ServiceChargeReportBuilder serviceChargeReportBuilder,
         RefundReportBuilder refundReportBuilder,
+        DeductionReportBuilder deductionReportBuilder,
+        ForfeitedAdvanceReportBuilder forfeitedAdvanceReportBuilder,
         ListingReportBuilder listingReportBuilder,
         SessionReportBuilder sessionReportBuilder,
         AgreementReportBuilder agreementReportBuilder,
@@ -84,6 +88,8 @@ public class ReportsController : ControllerBase
         _rewardReportBuilder = rewardReportBuilder;
         _serviceChargeReportBuilder = serviceChargeReportBuilder;
         _refundReportBuilder = refundReportBuilder;
+        _deductionReportBuilder = deductionReportBuilder;
+        _forfeitedAdvanceReportBuilder = forfeitedAdvanceReportBuilder;
         _listingReportBuilder = listingReportBuilder;
         _sessionReportBuilder = sessionReportBuilder;
         _agreementReportBuilder = agreementReportBuilder;
@@ -567,6 +573,54 @@ public class ReportsController : ControllerBase
         var data = await _refundReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Refunds-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Deductions — admin-wide (roles match DeductionController.GetAll's actual role set)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/deductions/preview
+    [HttpGet("deductions/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewDeductionsReport([FromQuery] DeductionFilters filters)
+    {
+        var data = await _deductionReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/deductions/export?format=pdf|excel|word
+    [HttpGet("deductions/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportDeductionsReport([FromQuery] DeductionFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _deductionReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Deductions-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Forfeited Advance — admin-wide (roles match VacateController.GetAllForfeitedAdvances' actual role set)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/forfeited-advance/preview
+    [HttpGet("forfeited-advance/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewForfeitedAdvanceReport([FromQuery] ForfeitedAdvanceFilters filters)
+    {
+        var data = await _forfeitedAdvanceReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/forfeited-advance/export?format=pdf|excel|word
+    [HttpGet("forfeited-advance/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportForfeitedAdvanceReport([FromQuery] ForfeitedAdvanceFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _forfeitedAdvanceReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Forfeited-Advance-Report", format);
     }
 
     // ═══════════════════════════════════════════════════════════════════
