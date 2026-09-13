@@ -52,7 +52,8 @@ public class ComplaintController : ControllerBase
         [FromQuery] bool? isBillable = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] string? ticketNumberSearch = null)
+        [FromQuery] string? ticketNumberSearch = null,
+        [FromQuery] string? search = null)
     {
         var query = _context.Complaints.AsQueryable();
 
@@ -72,6 +73,22 @@ public class ComplaintController : ControllerBase
             query = query.Where(c => c.CreatedAt <= toDate.Value.AddDays(1));
         if (!string.IsNullOrEmpty(ticketNumberSearch))
             query = query.Where(c => c.TicketNumber.Contains(ticketNumberSearch));
+
+        // Free-text search — same reasoning as VacateController: Complaint has no Tenant/House/Flat/
+        // ComplaintType navigation properties (only scalar Ids), so each match is a correlated Any(...)
+        // subquery (EF translates this to an EXISTS semi-join). Kept independent of the existing narrow
+        // `ticketNumberSearch` param above — this one is broader and also covers TicketNumber itself.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            query = query.Where(c =>
+                _context.Tenants.Any(t => t.Id == c.TenantId && (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
+                _context.Houses.Any(h => h.Id == c.HouseId && h.HouseNumber.Contains(s)) ||
+                _context.Flats.Any(f => f.Id == c.FlatId && f.FlatName.Contains(s)) ||
+                _context.ComplaintTypes.Any(ct => ct.Id == c.ComplaintTypeId && ct.Name.Contains(s)) ||
+                c.TicketNumber.Contains(s) ||
+                c.Status.Contains(s));
+        }
 
         var total = await query.CountAsync();
 

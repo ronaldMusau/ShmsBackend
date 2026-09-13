@@ -739,7 +739,8 @@ public class VacateController : ControllerBase
         [FromQuery] Guid? flatId = null,
         [FromQuery] Guid? houseId = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] string? search = null)
     {
         var query = _context.VacateRequests.Where(v => !v.IsDeleted).AsQueryable();
 
@@ -753,6 +754,24 @@ public class VacateController : ControllerBase
             query = query.Where(v => v.CreatedAt >= fromDate.Value);
         if (toDate.HasValue)
             query = query.Where(v => v.CreatedAt <= toDate.Value.AddDays(1));
+
+        // Free-text search — VacateRequest has no Tenant/House/Flat navigation properties (only scalar
+        // TenantId/HouseId/FlatId), so each match is an EF-translatable correlated subquery (Any(...)),
+        // which SQL executes as a semi-join/EXISTS — not a real .Include() join, since none is possible
+        // here, but functionally equivalent for filtering purposes and safe against any row duplication
+        // a chained inner .Join() could otherwise introduce. Same plain .Contains() convention as
+        // PaymentController's search (no explicit .ToLower(), relying on default collation). VacateMonth/
+        // VacateYear are deliberately NOT included — no existing convention in this codebase matches a
+        // numeric/date field via free-text Contains; those are always separate exact-value filters.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            query = query.Where(v =>
+                _context.Tenants.Any(t => t.Id == v.TenantId && (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
+                _context.Houses.Any(h => h.Id == v.HouseId && h.HouseNumber.Contains(s)) ||
+                _context.Flats.Any(f => f.Id == v.FlatId && f.FlatName.Contains(s)) ||
+                v.Status.Contains(s));
+        }
 
         var total = await query.CountAsync();
 
