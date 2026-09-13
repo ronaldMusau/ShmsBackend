@@ -22,7 +22,8 @@ public class DeductionController : ControllerBase
         [FromQuery] int? month = null,
         [FromQuery] int? year = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] string? search = null)
     {
         var query = _context.Deductions.AsQueryable();
         if (landlordId.HasValue) query = query.Where(d => d.LandlordId == landlordId.Value);
@@ -30,6 +31,21 @@ public class DeductionController : ControllerBase
         if (year.HasValue) query = query.Where(d => d.DeductionYear == year.Value);
         if (fromDate.HasValue) query = query.Where(d => d.CreatedAt >= fromDate.Value);
         if (toDate.HasValue) query = query.Where(d => d.CreatedAt.Date <= toDate.Value.Date);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            // Deduction has scalar Landlord/Tenant/House/FlatId only (no nav properties) — same
+            // correlated Any() subquery pattern as Vacate/Complaints. No numeric-Contains
+            // convention exists elsewhere in this codebase, so Amount is intentionally not searched.
+            query = query.Where(x =>
+                _context.Landlords.Any(l => l.Id == x.LandlordId &&
+                    (l.FirstName.Contains(s) || l.LastName.Contains(s) || l.Email.Contains(s))) ||
+                _context.Tenants.Any(t => t.Id == x.TenantId &&
+                    (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
+                _context.Houses.Any(h => h.Id == x.HouseId && h.HouseNumber.Contains(s)) ||
+                _context.Flats.Any(f => f.Id == x.FlatId && f.FlatName.Contains(s)) ||
+                (x.Description != null && x.Description.Contains(s)));
+        }
         var total = await query.CountAsync();
         var paged = await query.OrderByDescending(d => d.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 

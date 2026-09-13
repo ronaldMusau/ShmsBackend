@@ -1721,7 +1721,8 @@ public class VacateController : ControllerBase
         [FromQuery] int? month = null,
         [FromQuery] int? year = null,
         [FromQuery] DateTime? fromDate = null,
-        [FromQuery] DateTime? toDate = null)
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] string? search = null)
     {
         var query = _context.VacateSettlements
             .Where(s => s.Direction == "ManagementOwes" && !s.IsVoided)
@@ -1732,6 +1733,22 @@ public class VacateController : ControllerBase
         if (year.HasValue) query = query.Where(s => s.CreatedAt.Year == year.Value);
         if (fromDate.HasValue) query = query.Where(s => s.CreatedAt >= fromDate.Value);
         if (toDate.HasValue) query = query.Where(s => s.CreatedAt.Date <= toDate.Value.Date);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            // VacateSettlement has scalar TenantId/HouseId only (no nav properties), so
+            // Tenant/House name matches use correlated Any() subqueries, same pattern as
+            // Vacate/Complaints search. There is no real Status column on this entity —
+            // Paid/Refundable is a label derived from PaidAt elsewhere (e.g. RefundReportBuilder),
+            // so we match that same derived label here rather than inventing a column.
+            query = query.Where(x =>
+                _context.Tenants.Any(t => t.Id == x.TenantId &&
+                    (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
+                _context.Houses.Any(h => h.Id == x.HouseId && h.HouseNumber.Contains(s)) ||
+                (x.Description != null && x.Description.Contains(s)) ||
+                (x.PaidAt != null && "Paid".Contains(s)) ||
+                (x.PaidAt == null && "Refundable".Contains(s)));
+        }
 
         var totalRefundable = await query.Where(s => s.PaidAt == null).SumAsync(s => s.Amount);
         var totalPaid = await query.Where(s => s.PaidAt != null).SumAsync(s => s.Amount);
@@ -2160,7 +2177,8 @@ public class VacateController : ControllerBase
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
         [FromQuery] decimal? minAmount = null,
-        [FromQuery] decimal? maxAmount = null)
+        [FromQuery] decimal? maxAmount = null,
+        [FromQuery] string? search = null)
     {
         var allQuery = _context.VacateForfeitedAdvances.Where(f => !f.IsVoided);
         var totalForfeited = await allQuery.SumAsync(f => f.AmountForfeitedUnused);
@@ -2176,6 +2194,17 @@ public class VacateController : ControllerBase
         if (toDate.HasValue) query = query.Where(f => f.CreatedAt < toDate.Value.Date.AddDays(1));
         if (minAmount.HasValue) query = query.Where(f => f.AmountForfeitedUnused >= minAmount.Value);
         if (maxAmount.HasValue) query = query.Where(f => f.AmountForfeitedUnused <= maxAmount.Value);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            // VacateForfeitedAdvance has no Description/Reason field at all (confirmed by reading
+            // the entity), so unlike Refunds/Deductions there is nothing free-text to match beyond
+            // Tenant/House — Amount is skipped per the same no-numeric-search convention as Deductions.
+            query = query.Where(x =>
+                _context.Tenants.Any(t => t.Id == x.TenantId &&
+                    (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
+                _context.Houses.Any(h => h.Id == x.HouseId && h.HouseNumber.Contains(s)));
+        }
 
         var total = await query.CountAsync();
         var paged = await query.OrderByDescending(f => f.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
