@@ -51,6 +51,7 @@ public class ReportsController : ControllerBase
     private readonly RefundReportBuilder _refundReportBuilder;
     private readonly DeductionReportBuilder _deductionReportBuilder;
     private readonly ForfeitedAdvanceReportBuilder _forfeitedAdvanceReportBuilder;
+    private readonly ExpenseReportBuilder _expenseReportBuilder;
     private readonly ListingReportBuilder _listingReportBuilder;
     private readonly SessionReportBuilder _sessionReportBuilder;
     private readonly AgreementReportBuilder _agreementReportBuilder;
@@ -71,6 +72,7 @@ public class ReportsController : ControllerBase
         RefundReportBuilder refundReportBuilder,
         DeductionReportBuilder deductionReportBuilder,
         ForfeitedAdvanceReportBuilder forfeitedAdvanceReportBuilder,
+        ExpenseReportBuilder expenseReportBuilder,
         ListingReportBuilder listingReportBuilder,
         SessionReportBuilder sessionReportBuilder,
         AgreementReportBuilder agreementReportBuilder,
@@ -90,6 +92,7 @@ public class ReportsController : ControllerBase
         _refundReportBuilder = refundReportBuilder;
         _deductionReportBuilder = deductionReportBuilder;
         _forfeitedAdvanceReportBuilder = forfeitedAdvanceReportBuilder;
+        _expenseReportBuilder = expenseReportBuilder;
         _listingReportBuilder = listingReportBuilder;
         _sessionReportBuilder = sessionReportBuilder;
         _agreementReportBuilder = agreementReportBuilder;
@@ -621,6 +624,103 @@ public class ReportsController : ControllerBase
         var data = await _forfeitedAdvanceReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Forfeited-Advance-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Expenses — admin-wide (roles match ExpenseController's actual role set)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/expenses/preview
+    [HttpGet("expenses/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> PreviewExpensesReport([FromQuery] ExpenseFilters filters)
+    {
+        filters.LandlordId = null;
+        var data = await _expenseReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/expenses/export?format=pdf|excel|word
+    [HttpGet("expenses/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> ExportExpensesReport([FromQuery] ExpenseFilters filters, [FromQuery] string format = "pdf")
+    {
+        filters.LandlordId = null;
+        var data = await _expenseReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Expenses-Report", format);
+    }
+
+    // GET /api/reports/expenses/years
+    [HttpGet("expenses/years")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetExpenseYears()
+    {
+        var years = await _context.Expenses
+            .Where(x => x.LandlordId == null)
+            .Select(x => x.ExpenseDate.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        if (years.Count == 0)
+            years.Add(DateTime.UtcNow.Year);
+
+        return Ok(new { success = true, data = years });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Expenses — landlord-scoped
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/landlord/expenses/preview
+    [HttpGet("landlord/expenses/preview")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> PreviewLandlordExpensesReport([FromQuery] ExpenseFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+
+        var data = await _expenseReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/landlord/expenses/export?format=pdf|excel|word
+    [HttpGet("landlord/expenses/export")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> ExportLandlordExpensesReport([FromQuery] ExpenseFilters filters, [FromQuery] string format = "pdf")
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+
+        var data = await _expenseReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Expenses-Report", format);
+    }
+
+    // GET /api/reports/landlord/expenses/years
+    [HttpGet("landlord/expenses/years")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordExpenseYears()
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+
+        var years = await _context.Expenses
+            .Where(x => x.LandlordId == landlordId)
+            .Select(x => x.ExpenseDate.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        if (years.Count == 0)
+            years.Add(DateTime.UtcNow.Year);
+
+        return Ok(new { success = true, data = years });
     }
 
     // ═══════════════════════════════════════════════════════════════════

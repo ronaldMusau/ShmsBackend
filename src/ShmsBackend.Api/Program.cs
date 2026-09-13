@@ -103,6 +103,7 @@ builder.Services.AddScoped<ServiceChargeReportBuilder>();
 builder.Services.AddScoped<RefundReportBuilder>();
 builder.Services.AddScoped<DeductionReportBuilder>();
 builder.Services.AddScoped<ForfeitedAdvanceReportBuilder>();
+builder.Services.AddScoped<ExpenseReportBuilder>();
 builder.Services.AddScoped<ListingReportBuilder>();
 builder.Services.AddScoped<SessionReportBuilder>();
 builder.Services.AddScoped<AgreementReportBuilder>();
