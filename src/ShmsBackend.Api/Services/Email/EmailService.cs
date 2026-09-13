@@ -109,6 +109,15 @@ public class EmailService : IEmailService
             GetPortalVerifyWithPasswordTemplate(firstName, verificationLink, temporaryPassword));
     }
 
+    public async Task SendAccountReadyEmailAsync(string toEmail, string firstName, string? verificationLink, string? tempPassword, string? userId = null, bool isPortalUser = false)
+    {
+        _logger.LogInformation("Sending account-ready email to: {Email}", toEmail);
+        await SendEmail(
+            toEmail,
+            "Your Romah Estates Account & Next Steps",
+            GetAccountReadyTemplate(firstName, verificationLink, tempPassword));
+    }
+
     public async Task<bool> SendConfirmNewEmailAsync(string toEmail, string firstName, string confirmationLink)
     {
         _logger.LogInformation("Sending confirm-new-email to: {Email}", toEmail);
@@ -230,6 +239,14 @@ public class EmailService : IEmailService
         _logger.LogInformation("Sending itemized payment receipt email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Receipt — Romah Estates",
             GetItemizedPaymentReceiptTemplate(firstName, mpesaReceiptNumber, totalAmount, breakdown, houseNumber, flatName, paidAt));
+    }
+
+    public async Task SendPaymentConfirmationEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)>? itemizedBreakdown, string houseNumber, string flatName, DateTime paidAt, decimal? pointsEarned, decimal? newPointsBalance, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return;
+        _logger.LogInformation("Sending payment confirmation email to: {Email}", toEmail);
+        await SendEmail(toEmail, "Payment Receipt — Romah Estates",
+            GetPaymentConfirmationTemplate(firstName, mpesaReceiptNumber, totalAmount, itemizedBreakdown, houseNumber, flatName, paidAt, pointsEarned, newPointsBalance));
     }
 
     public async Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false)
@@ -742,6 +759,42 @@ public class EmailService : IEmailService
         return WrapInLayout("Verify Your Email — Romah Estates", inner);
     }
 
+    private string GetAccountReadyTemplate(string firstName, string? verificationLink, string? tempPassword)
+    {
+        var hasLoginDetails = !string.IsNullOrEmpty(verificationLink) && !string.IsNullOrEmpty(tempPassword);
+
+        var loginSection = hasLoginDetails
+            ? $@"
+{H2($"Welcome to Romah Estates, {firstName}!")}
+{Para("Your portal account has been created. Verify your email address using the button below and use the temporary password shown here to get started.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;
+            text-transform:uppercase;margin:0 0 8px 0;'>Your Temporary Password</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;
+               font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {tempPassword}
+  </span>
+")}
+{Para("Click the button below to verify your email. You will be prompted to enter your temporary password and choose a new one.")}
+{GoldButton(verificationLink!, "VERIFY EMAIL & SET PASSWORD")}
+{Para($"This link will expire in <strong style='color:{ColourGold};'>2 weeks</strong>.")}
+{Divider()}"
+            : $"{H2($"Hello {firstName},")}";
+
+        var inner = $@"
+{loginSection}
+{H2("Sign Your Tenancy Agreement")}
+{Para("As part of your onboarding on Romah Estates, you need to sign your tenancy agreement document.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>WHAT TO DO</p>
+  <p style='margin:0;font-size:15px;color:{ColourTextSec};'>Log in to your portal, download the agreement, sign it, and upload the signed copy for verification.</p>
+")}
+{Divider()}
+{SmallNote("If you did not expect this email, please contact your system administrator.")}";
+
+        return WrapInLayout("Your Romah Estates Account & Next Steps", inner);
+    }
+
     // ── Explorer Welcome Template ────────────────────────────────────────────
 
     private string GetExplorerWelcomeTemplate(string firstName, string loginUrl)
@@ -1010,6 +1063,72 @@ public class EmailService : IEmailService
 ")}
 {Divider()}
 {SmallNote("Please keep this receipt for your records. If you have any questions, contact your property manager.")}";
+        return WrapInLayout("Payment Receipt — Romah Estates", inner);
+    }
+
+    private string GetPaymentConfirmationTemplate(string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)>? itemizedBreakdown, string houseNumber, string flatName, DateTime paidAt, decimal? pointsEarned, decimal? newPointsBalance)
+    {
+        string receiptSection;
+        if (itemizedBreakdown != null && itemizedBreakdown.Count > 0)
+        {
+            var rows = string.Join("", itemizedBreakdown.Select(b =>
+                $"<tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>" +
+                $"{new DateTime(b.year, b.month, 1):MMMM yyyy}</td>" +
+                $"<td style='color:{ColourTextSec};font-weight:600;font-size:14px;text-align:right;'>KES {b.applied:N2}</td></tr>"));
+
+            receiptSection = $@"
+{H2($"Payment Received, {firstName}!")}
+{Para($"Your payment for <strong style='color:{ColourGold};'>House {houseNumber}</strong> in {flatName} has been received and applied across the following months:")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 12px 0;'>PAYMENT BREAKDOWN</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    {rows}
+    <tr><td colspan='2'><hr style='border:none;border-top:1px solid {ColourBorderGold};margin:8px 0;'></td></tr>
+    <tr>
+      <td style='color:{ColourTextSec};font-size:14px;font-weight:700;padding:4px 0;'>Total Paid</td>
+      <td style='color:{ColourGold};font-weight:700;font-size:16px;text-align:right;'>KES {totalAmount:N2}</td>
+    </tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
+  </table>
+")}";
+        }
+        else
+        {
+            receiptSection = $@"
+{H2($"Payment Received, {firstName}!")}
+{Para($"Your payment for <strong style='color:{ColourGold};'>House {houseNumber}</strong> in {flatName} has been received successfully.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>RECEIPT DETAILS</p>
+  <table style='width:100%;border-collapse:collapse;'>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Amount Paid</td><td style='color:{ColourTextSec};font-weight:700;font-size:14px;text-align:right;'>KES {totalAmount:N2}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
+  </table>
+")}";
+        }
+
+        var rewardsSection = pointsEarned.HasValue && pointsEarned.Value > 0
+            ? $@"
+{Divider()}
+{H2("Rewards")}
+{Para($"You've earned <strong style='color:{ColourGold};'>reward points</strong> on this payment.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>POINTS EARNED</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>+{pointsEarned.Value:0.##}</p>
+  <p style='margin:8px 0 0;color:{ColourTextMuted};font-size:13px;'>New balance: <strong style='color:{ColourTextSec};'>{(newPointsBalance ?? 0):0.##} points</strong></p>
+")}
+{Para("Log in to your tenant portal to view your points history or redeem your balance.")}"
+            : "";
+
+        var inner = $@"
+{receiptSection}
+{rewardsSection}
+{Divider()}
+{SmallNote("Please keep this receipt for your records. If you have any questions, contact your property manager.")}";
+
         return WrapInLayout("Payment Receipt — Romah Estates", inner);
     }
 

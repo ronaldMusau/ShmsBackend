@@ -29,20 +29,20 @@ public class RewardService : IRewardService
         _logger = logger;
     }
 
-    public async Task EarnPointsAsync(Guid tenantId, Guid houseId, decimal amountReceived, bool isInitialPayment, Guid relatedPaymentId)
+    public async Task<(decimal Points, decimal NewBalance)?> EarnPointsAsync(Guid tenantId, Guid houseId, decimal amountReceived, bool isInitialPayment, Guid relatedPaymentId)
     {
         var house = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == houseId);
-        if (house?.Flat == null || !house.Flat.RewardEnabled) return;
+        if (house?.Flat == null || !house.Flat.RewardEnabled) return null;
 
         var settings = await _context.RewardSettings.FirstOrDefaultAsync();
-        if (settings == null || !settings.IsGlobalEnabled) return;
+        if (settings == null || !settings.IsGlobalEnabled) return null;
 
         var rate = isInitialPayment ? settings.InitialPaymentEarnRate : settings.RegularPaymentEarnRate;
         var points = amountReceived * rate;
-        if (points <= 0) return;
+        if (points <= 0) return null;
 
         var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId);
-        if (tenant == null) return;
+        if (tenant == null) return null;
 
         tenant.PointsBalance += points;
 
@@ -62,9 +62,10 @@ public class RewardService : IRewardService
 
         await _context.SaveChangesAsync();
 
+        // The points-earned EMAIL is no longer sent from here — the caller (PaymentService.ProcessCallbackAsync)
+        // folds it into the combined payment-confirmation email instead. The in-app notification stays here.
         try
         {
-            await _emailService.SendPointsEarnedEmailAsync(tenant.Email, tenant.FirstName, points, tenant.PointsBalance, tenant.Id.ToString(), true);
             await _notificationService.SendForcedToUserAsync(tenant.Id.ToString(),
                 $"You earned {points} points! Your new balance is {tenant.PointsBalance} points.", "rewards", "PointsEarned", relatedPaymentId.ToString());
         }
@@ -72,6 +73,8 @@ public class RewardService : IRewardService
         {
             _logger.LogError(ex, "Failed to send points-earned notification to tenant {TenantId}", tenantId);
         }
+
+        return (points, tenant.PointsBalance);
     }
 
     public async Task<RedeemPointsResult> RedeemPointsAsync(Guid tenantId, decimal pointsToRedeem)

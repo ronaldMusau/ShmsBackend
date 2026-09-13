@@ -278,34 +278,25 @@ public class TenantService : ITenantService
                         tenant.EmailVerificationToken, tenant.Email, PortalUserType.Tenant);
                 }
 
-                if (verificationLink != null)
+                // Combined account-ready email (login details + agreement-signing instructions) —
+                // replaces the previous separate SendPortalVerifyWithPasswordEmailAsync +
+                // SendAgreementForSigningAsync pair.
+                var emailSent = false;
+                for (var attempt = 1; attempt <= 3 && !emailSent; attempt++)
                 {
-                    var emailSent = false;
-                    for (var attempt = 1; attempt <= 3 && !emailSent; attempt++)
+                    try
                     {
-                        try
-                        {
-                            await _emailService.SendPortalVerifyWithPasswordEmailAsync(
-                                tenant.Email, tenant.FirstName, verificationLink, tempPassword!);
-                            emailSent = true;
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Failed to send verification email to existing tenant {Email} (attempt {Attempt}/3)", tenant.Email, attempt);
-                            if (attempt < 3) await Task.Delay(2000);
-                        }
+                        await _emailService.SendAccountReadyEmailAsync(
+                            tenant.Email, tenant.FirstName, verificationLink, tempPassword, tenant.Id.ToString(), true);
+                        emailSent = true;
                     }
-                    if (emailSent) { tenant.VerificationEmailSentAt = DateTime.UtcNow; }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send account-ready email to existing tenant {Email} (attempt {Attempt}/3)", tenant.Email, attempt);
+                        if (attempt < 3) await Task.Delay(2000);
+                    }
                 }
-
-                try
-                {
-                    await _agreementService.SendAgreementForSigningAsync(tenant.Id, (int)PortalUserType.Tenant);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to send agreement for signing to existing tenant {TenantId}", tenant.Id);
-                }
+                if (emailSent && verificationLink != null) { tenant.VerificationEmailSentAt = DateTime.UtcNow; }
 
                 house.OccupancyStatus = OccupancyStatus.Occupied;
                 house.IsAwaitingExistingTenant = false;

@@ -11,6 +11,6 @@ public class RedeemPointsResult
 
 public interface IRewardService
 {
-    Task EarnPointsAsync(Guid tenantId, Guid houseId, decimal amountReceived, bool isInitialPayment, Guid relatedPaymentId);
+    Task<(decimal Points, decimal NewBalance)?> EarnPointsAsync(Guid tenantId, Guid houseId, decimal amountReceived, bool isInitialPayment, Guid relatedPaymentId);
     Task<RedeemPointsResult> RedeemPointsAsync(Guid tenantId, decimal pointsToRedeem);
 }

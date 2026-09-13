@@ -414,34 +414,30 @@ public class PaymentService : IPaymentService
                                 tenant.EmailVerificationToken, tenant.Email, PortalUserType.Tenant);
                         }
 
-                        if (verificationLink != null)
+                        // First successful payment → combined account-ready email (login details +
+                        // agreement-signing instructions), replacing the previous separate
+                        // SendPortalVerifyWithPasswordEmailAsync + SendAgreementForSigningAsync pair.
+                        var emailSent = false;
+                        for (var attempt = 1; attempt <= 3 && !emailSent; attempt++)
                         {
-                            var emailSent = false;
-                            for (var attempt = 1; attempt <= 3 && !emailSent; attempt++)
+                            try
                             {
-                                try
-                                {
-                                    await _emailService.SendPortalVerifyWithPasswordEmailAsync(
-                                        tenant.Email, tenant.FirstName, verificationLink, tempPassword!);
-                                    emailSent = true;
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, "Failed to send verification email to tenant {Email} (attempt {Attempt}/3)", tenant.Email, attempt);
-                                    if (attempt < 3) await Task.Delay(2000);
-                                }
+                                await _emailService.SendAccountReadyEmailAsync(
+                                    tenant.Email, tenant.FirstName, verificationLink, tempPassword, tenant.Id.ToString(), true);
+                                emailSent = true;
                             }
-
-                            if (emailSent)
+                            catch (Exception ex)
                             {
-                                tenant.VerificationEmailSentAt = DateTime.UtcNow;
+                                _logger.LogError(ex, "Failed to send account-ready email to tenant {Email} (attempt {Attempt}/3)", tenant.Email, attempt);
+                                if (attempt < 3) await Task.Delay(2000);
                             }
                         }
-                        await _context.SaveChangesAsync();
 
-                        // First successful payment → send the signable agreement.
-                        try { await _agreementService.SendAgreementForSigningAsync(tenant.Id, (int)PortalUserType.Tenant); }
-                        catch (Exception ex) { _logger.LogError(ex, "Failed to send agreement for signing to tenant {TenantId}", tenant.Id); }
+                        if (emailSent && verificationLink != null)
+                        {
+                            tenant.VerificationEmailSentAt = DateTime.UtcNow;
+                        }
+                        await _context.SaveChangesAsync();
                     }
                 }
 
@@ -464,35 +460,45 @@ public class PaymentService : IPaymentService
             if (checkoutAttempt != null)
                 checkoutAttempt.AttemptStatus = "Success";
 
+            (decimal Points, decimal NewBalance)? rewardResult = null;
+            try
+            {
+                // Points are earned only on the rewardable (non-service-charge) portion of what was
+                // actually received this transaction — excluded proportionally so a partial payment
+                // still excludes the same share of service charge as a full one, rather than risking
+                // a negative rewardable amount on a small partial payment.
+                var totalDue = payment.Amount;
+                var serviceCharge = payment.ServiceChargeAmount ?? 0m;
+                var rewardableRatio = totalDue > 0 ? Math.Max(0m, (totalDue - serviceCharge) / totalDue) : 0m;
+                var rewardableAmount = details.Amount.Value * rewardableRatio;
+
+                rewardResult = await _rewardService.EarnPointsAsync(payment.TenantId, payment.HouseId, rewardableAmount, payment.IsInitialPayment, payment.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to earn reward points for payment {PaymentId}", payment.Id);
+            }
+
             if (payment.Tenant != null && !string.IsNullOrEmpty(details.MpesaReceiptNumber))
             {
                 try
                 {
-                    if (itemizedBreakdown != null && itemizedBreakdown.Count > 0)
-                        await _emailService.SendItemizedPaymentReceiptEmailAsync(
-                            payment.Tenant.Email,
-                            payment.Tenant.FirstName,
-                            details.MpesaReceiptNumber,
-                            details.Amount.Value,
-                            itemizedBreakdown,
-                            payment.House!.HouseNumber,
-                            payment.House.Flat?.FlatName ?? "",
-                            DateTime.UtcNow,
-                            payment.Tenant.Id.ToString(), true);
-                    else
-                        await _emailService.SendPaymentReceiptEmailAsync(
-                            payment.Tenant.Email,
-                            payment.Tenant.FirstName,
-                            details.MpesaReceiptNumber,
-                            details.Amount.Value,
-                            payment.House!.HouseNumber,
-                            payment.House.Flat?.FlatName ?? "",
-                            DateTime.UtcNow,
-                            payment.Tenant.Id.ToString(), true);
+                    await _emailService.SendPaymentConfirmationEmailAsync(
+                        payment.Tenant.Email,
+                        payment.Tenant.FirstName,
+                        details.MpesaReceiptNumber,
+                        details.Amount.Value,
+                        itemizedBreakdown,
+                        payment.House!.HouseNumber,
+                        payment.House.Flat?.FlatName ?? "",
+                        DateTime.UtcNow,
+                        rewardResult?.Points,
+                        rewardResult?.NewBalance,
+                        payment.Tenant.Id.ToString(), true);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to send receipt email");
+                    _logger.LogError(ex, "Failed to send payment confirmation email");
                 }
             }
 
@@ -516,24 +522,6 @@ public class PaymentService : IPaymentService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send payment notifications");
-            }
-
-            try
-            {
-                // Points are earned only on the rewardable (non-service-charge) portion of what was
-                // actually received this transaction — excluded proportionally so a partial payment
-                // still excludes the same share of service charge as a full one, rather than risking
-                // a negative rewardable amount on a small partial payment.
-                var totalDue = payment.Amount;
-                var serviceCharge = payment.ServiceChargeAmount ?? 0m;
-                var rewardableRatio = totalDue > 0 ? Math.Max(0m, (totalDue - serviceCharge) / totalDue) : 0m;
-                var rewardableAmount = details.Amount.Value * rewardableRatio;
-
-                await _rewardService.EarnPointsAsync(payment.TenantId, payment.HouseId, rewardableAmount, payment.IsInitialPayment, payment.Id);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to earn reward points for payment {PaymentId}", payment.Id);
             }
         }
         else if (details.IsCancelled)

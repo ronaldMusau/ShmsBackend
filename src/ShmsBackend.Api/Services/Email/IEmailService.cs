@@ -17,6 +17,11 @@ public interface IEmailService
     Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password);
     Task<bool> SendWeeklyClientPasswordEmailAsync(string toEmail, string firstName, string password);
     Task<bool> SendAgreementReadyToSignEmailAsync(string toEmail, string firstName, string roleLabel);
+    // Combines SendPortalVerifyWithPasswordEmailAsync + SendAgreementReadyToSignEmailAsync into one
+    // email for the tenant-onboarding flow (registration and initial-payment paths). userId/isPortalUser
+    // are accepted for signature consistency but intentionally NOT preference-gated — like the two
+    // emails it replaces, this carries account-setup credentials and is always-on.
+    Task SendAccountReadyEmailAsync(string toEmail, string firstName, string? verificationLink, string? tempPassword, string? userId = null, bool isPortalUser = false);
 
     // ── Preference-gated emails (optional userId/isPortalUser threads the recipient identity) ──
     Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false);
@@ -29,6 +34,9 @@ public interface IEmailService
     Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
     Task<bool> SendPaymentRemindersGroupedEmailAsync(string toEmail, string firstName, List<(string HouseNumber, string FlatName, decimal AmountDue, DateTime DueDate)> items, string? userId = null, bool isPortalUser = false);
     Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
+    // Combines SendItemizedPaymentReceiptEmailAsync/SendPaymentReceiptEmailAsync with an optional
+    // rewards section (only rendered when pointsEarned.HasValue && > 0) into one email.
+    Task SendPaymentConfirmationEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)>? itemizedBreakdown, string houseNumber, string flatName, DateTime paidAt, decimal? pointsEarned, decimal? newPointsBalance, string? userId = null, bool isPortalUser = false);
     Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear, string? userId = null, bool isPortalUser = false);
     Task SendRentNowEffectiveEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee, string? userId = null, bool isPortalUser = false);
     Task<bool> SendRentChangeReminderEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear);
