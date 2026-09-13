@@ -27,6 +27,7 @@ public interface IEmailService
     Task<bool> SendPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false);
     Task<bool> SendItemizedPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false);
     Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
+    Task<bool> SendPaymentRemindersGroupedEmailAsync(string toEmail, string firstName, List<(string HouseNumber, string FlatName, decimal AmountDue, DateTime DueDate)> items, string? userId = null, bool isPortalUser = false);
     Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
     Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear, string? userId = null, bool isPortalUser = false);
     Task SendRentNowEffectiveEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee, string? userId = null, bool isPortalUser = false);
@@ -49,6 +50,9 @@ public interface IEmailService
     Task SendComplaintOverdueManagementEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false);
     Task SendComplaintOverdueAgentEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false);
     Task SendComplaintOverdueLandlordEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintOverdueManagementGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintOverdueAgentGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintOverdueLandlordGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false);
     Task SendVacateAssignedAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
     Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false);
     Task SendVacateArrearsBlockEmailAsync(string toEmail, string firstName, decimal arrearsAmount, string? userId = null, bool isPortalUser = false);
@@ -68,5 +72,6 @@ public interface IEmailService
     Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string? userId = null, bool isPortalUser = false);
     Task SendSessionReassignedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt, string? userId = null, bool isPortalUser = false);
     Task SendSessionFeedbackPromptEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt, string? userId = null, bool isPortalUser = false);
+    Task SendSessionFeedbackPromptGroupedEmailAsync(string toEmail, string firstName, List<(string HouseNumber, DateTime ScheduledAt)> items, string? userId = null, bool isPortalUser = false);
     Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false);
 }

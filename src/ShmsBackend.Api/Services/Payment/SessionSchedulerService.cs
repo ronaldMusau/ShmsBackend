@@ -66,29 +66,47 @@ public class SessionSchedulerService : BackgroundService
             .Where(s => s.Status == "Accepted" && s.ScheduledAt < now)
             .ToListAsync();
 
+        var explorerIds = acceptedSessions.Select(s => s.ExplorerId).Distinct().ToList();
+        var explorers = await context.Explorers
+            .Where(e => explorerIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, e => e);
+
+        var sessionHouseIds = acceptedSessions.Select(s => s.HouseId).Distinct().ToList();
+        var houseNumbers = await context.Houses
+            .Where(h => sessionHouseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
         foreach (var session in acceptedSessions)
         {
             session.Status = "AwaitingFeedback";
             session.FeedbackPromptSentAt = now;
 
-            var explorer = await context.Explorers.FirstOrDefaultAsync(e => e.Id == session.ExplorerId);
-            var house = await context.Houses.FirstOrDefaultAsync(h => h.Id == session.HouseId);
-            var houseNumber = house?.HouseNumber ?? "";
+            var houseNumber = houseNumbers.GetValueOrDefault(session.HouseId, "");
 
-            if (explorer != null)
-            {
-                try { await emailService.SendSessionFeedbackPromptEmailAsync(explorer.Email, explorer.FirstName, houseNumber, session.ScheduledAt, explorer.Id.ToString(), true); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send feedback prompt email to explorer {ExplorerId}", explorer.Id); }
-
-                try { await notificationService.SendToUserAsync(explorer.Id.ToString(), $"Did your viewing session for house {houseNumber} take place? Please close the session or reschedule.", "property"); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to notify explorer for session feedback {SessionId}", session.Id); }
-            }
+            try { await notificationService.SendToUserAsync(session.ExplorerId.ToString(), $"Did your viewing session for house {houseNumber} take place? Please close the session or reschedule.", "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify explorer for session feedback {SessionId}", session.Id); }
         }
 
         if (acceptedSessions.Count > 0)
         {
             await context.SaveChangesAsync();
             _logger.LogInformation("Transitioned {Count} sessions to AwaitingFeedback", acceptedSessions.Count);
+        }
+
+        // Grouped feedback-prompt emails — one per distinct explorer, containing every session of
+        // theirs that transitioned in this sweep, instead of one email per session.
+        var explorerGroups = acceptedSessions.GroupBy(s => s.ExplorerId);
+        foreach (var group in explorerGroups)
+        {
+            if (!explorers.TryGetValue(group.Key, out var explorer)) continue;
+
+            var items = group.Select(s => (
+                HouseNumber: houseNumbers.GetValueOrDefault(s.HouseId, ""),
+                ScheduledAt: s.ScheduledAt
+            )).ToList();
+
+            try { await emailService.SendSessionFeedbackPromptGroupedEmailAsync(explorer.Email, explorer.FirstName, items, explorer.Id.ToString(), true); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped feedback prompt email to explorer {ExplorerId}", explorer.Id); }
         }
 
         // Pass B — AwaitingFeedback → Forfeited (24hr timeout, silent terminal state)

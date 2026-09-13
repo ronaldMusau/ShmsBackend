@@ -193,28 +193,33 @@ public class PaymentSchedulerService : BackgroundService
                         !p.IsDeleted)
             .ToListAsync();
 
-        foreach (var payment in upcomingPayments)
+        // Group by tenant (mirrors CheckOverduePaymentsAsync's existing grouping pattern) so a tenant
+        // with multiple payments due on the same reminder date gets ONE email, not one per payment row.
+        var groups = upcomingPayments.Where(p => p.Tenant != null).GroupBy(p => p.TenantId);
+
+        var groupCount = 0;
+        foreach (var group in groups)
         {
+            var tenant = group.First().Tenant!;
+            var items = group.Select(p => (
+                HouseNumber: p.House?.HouseNumber ?? "",
+                FlatName: p.House?.Flat?.FlatName ?? "",
+                AmountDue: p.Balance,
+                DueDate: p.DueDate
+            )).ToList();
+
             try
             {
-                if (payment.Tenant != null)
-                {
-                    await emailService.SendPaymentReminderEmailAsync(
-                        payment.Tenant.Email,
-                        payment.Tenant.FirstName,
-                        payment.Balance,
-                        payment.DueDate,
-                        payment.House?.HouseNumber ?? "",
-                        payment.House?.Flat?.FlatName ?? "",
-                        payment.Tenant.Id.ToString(), true);
-                }
+                await emailService.SendPaymentRemindersGroupedEmailAsync(
+                    tenant.Email, tenant.FirstName, items, tenant.Id.ToString(), true);
+                groupCount++;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send reminder for payment {PaymentId}", payment.Id);
+                _logger.LogError(ex, "Failed to send grouped reminder for tenant {TenantId}", tenant.Id);
             }
         }
 
-        _logger.LogInformation("Sent {Count} payment reminders", upcomingPayments.Count);
+        _logger.LogInformation("Sent {GroupCount} grouped payment reminders for {PaymentCount} payments", groupCount, upcomingPayments.Count);
     }
 }

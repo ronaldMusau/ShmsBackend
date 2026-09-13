@@ -240,6 +240,14 @@ public class EmailService : IEmailService
             GetPaymentReminderTemplate(firstName, amountDue, dueDate, houseNumber, flatName));
     }
 
+    public async Task<bool> SendPaymentRemindersGroupedEmailAsync(string toEmail, string firstName, List<(string HouseNumber, string FlatName, decimal AmountDue, DateTime DueDate)> items, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
+        _logger.LogInformation("Sending grouped payment reminder email to: {Email}", toEmail);
+        return await SendEmail(toEmail, "Payment Reminder — Romah Estates",
+            GetPaymentRemindersGroupedTemplate(firstName, items));
+    }
+
     public async Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
@@ -413,6 +421,30 @@ public class EmailService : IEmailService
         _logger.LogInformation("Sending overdue complaint reminder email to landlord: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Awaiting Your Decision — {ticketNumber}",
             GetComplaintOverdueLandlordTemplate(firstName, ticketNumber, daysOpen));
+    }
+
+    public async Task SendComplaintOverdueManagementGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        _logger.LogInformation("Sending grouped overdue complaint reminder email to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"{items.Count} Overdue Complaint(s) Requiring Attention",
+            GetComplaintOverdueManagementGroupedTemplate(firstName, items));
+    }
+
+    public async Task SendComplaintOverdueAgentGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        _logger.LogInformation("Sending grouped overdue complaint reminder email to agent: {Email}", toEmail);
+        await SendEmail(toEmail, $"{items.Count} Overdue Complaint(s) — Action Required",
+            GetComplaintOverdueAgentGroupedTemplate(firstName, items));
+    }
+
+    public async Task SendComplaintOverdueLandlordGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        _logger.LogInformation("Sending grouped overdue complaint reminder email to landlord: {Email}", toEmail);
+        await SendEmail(toEmail, $"{items.Count} Complaint(s) Awaiting Your Decision",
+            GetComplaintOverdueLandlordGroupedTemplate(firstName, items));
     }
 
     // ── Preference gating ────────────────────────────────────────────────────
@@ -997,6 +1029,27 @@ public class EmailService : IEmailService
         return WrapInLayout("Payment Reminder — Romah Estates", inner);
     }
 
+    private string GetPaymentRemindersGroupedTemplate(string firstName, List<(string HouseNumber, string FlatName, decimal AmountDue, DateTime DueDate)> items)
+    {
+        var rows = string.Join("", items.Select(i =>
+            $"<tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 8px 4px 0;'>House {i.HouseNumber} — {i.FlatName}</td>" +
+            $"<td style='color:{ColourTextMuted};font-size:13px;padding:4px 8px;text-align:right;'>{i.DueDate:MMMM dd, yyyy}</td>" +
+            $"<td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;padding:4px 0;'>KES {i.AmountDue:N2}</td></tr>"));
+
+        var inner = $@"
+{H2($"Payment Reminder, {firstName}")}
+{Para($"This is a friendly reminder that the following rent payment{(items.Count == 1 ? " is" : "s are")} due soon.")}
+{GoldBox($@"
+  <table style='width:100%;border-collapse:collapse;'>
+    {rows}
+  </table>
+")}
+{Para("Please ensure your payment is made on time to avoid overdue charges.")}
+{Divider()}
+{SmallNote("Log in to the Romah Estates portal to make your payment.")}";
+        return WrapInLayout("Payment Reminder — Romah Estates", inner);
+    }
+
     private string GetPaymentOverdueTemplate(string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName)
     {
         var rows = string.Join("", breakdown.Select(b =>
@@ -1413,6 +1466,77 @@ public class EmailService : IEmailService
 {SmallNote("This is an automated reminder from the Romah Estates Smart Housing Management System.")}";
 
         return WrapInLayout($"Complaint Awaiting Your Decision — {ticketNumber}", inner);
+    }
+
+    private static string ComplaintGroupedRows(List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items) =>
+        string.Join("", items.Select(i =>
+            $"<tr>" +
+            $"<td style='color:{ColourGold};font-weight:700;font-size:13px;padding:4px 8px 4px 0;font-family:\"Courier New\",monospace;'>{i.TicketNumber}</td>" +
+            $"<td style='color:{ColourTextMuted};font-size:13px;padding:4px 8px;'>{i.TenantName}</td>" +
+            $"<td style='color:{ColourTextMuted};font-size:13px;padding:4px 8px;'>{i.HouseNumber}</td>" +
+            $"<td style='color:#ef4444;font-weight:600;font-size:13px;padding:4px 0;text-align:right;'>{i.DaysOpen} days</td>" +
+            $"</tr>"));
+
+    private static string ComplaintGroupedHeaderRow() => $@"
+    <tr>
+      <td style='color:{ColourTextMuted};font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:0 8px 8px 0;'>Ticket</td>
+      <td style='color:{ColourTextMuted};font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:0 8px 8px;'>Tenant</td>
+      <td style='color:{ColourTextMuted};font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:0 8px 8px;'>Property</td>
+      <td style='color:{ColourTextMuted};font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:0 0 8px;text-align:right;'>Days Open</td>
+    </tr>";
+
+    private string GetComplaintOverdueManagementGroupedTemplate(string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"You have <strong style='color:{ColourGold};'>{items.Count}</strong> complaint{(items.Count == 1 ? "" : "s")} that {(items.Count == 1 ? "has" : "have")} exceeded {(items.Count == 1 ? "its" : "their")} review period and require your attention.")}
+{GoldBox($@"
+  <table style='width:100%;border-collapse:collapse;'>
+    {ComplaintGroupedHeaderRow()}
+    {ComplaintGroupedRows(items)}
+  </table>
+")}
+{Para("Please log in to the management portal to review and action these complaints.")}
+{Divider()}
+{SmallNote("This is an automated reminder from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"{items.Count} Overdue Complaint(s) Requiring Attention", inner);
+    }
+
+    private string GetComplaintOverdueAgentGroupedTemplate(string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"You have <strong style='color:{ColourGold};'>{items.Count}</strong> complaint{(items.Count == 1 ? "" : "s")} assigned to you that {(items.Count == 1 ? "has" : "have")} been open past their review period and require your prompt attention.")}
+{GoldBox($@"
+  <table style='width:100%;border-collapse:collapse;'>
+    {ComplaintGroupedHeaderRow()}
+    {ComplaintGroupedRows(items)}
+  </table>
+")}
+{Para("Please complete your work on these complaints and submit your completion notes and evidence through the Romah Estates agent portal as soon as possible.")}
+{Divider()}
+{SmallNote("This is an automated reminder from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"{items.Count} Overdue Complaint(s) — Action Required", inner);
+    }
+
+    private string GetComplaintOverdueLandlordGroupedTemplate(string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"You have <strong style='color:{ColourGold};'>{items.Count}</strong> complaint{(items.Count == 1 ? "" : "s")} on your propert{(items.Count == 1 ? "y" : "ies")} that {(items.Count == 1 ? "has" : "have")} been awaiting your decision.")}
+{GoldBox($@"
+  <table style='width:100%;border-collapse:collapse;'>
+    {ComplaintGroupedHeaderRow()}
+    {ComplaintGroupedRows(items)}
+  </table>
+")}
+{Para("Please log in to your landlord portal to review these complaints and submit your final decision at your earliest convenience.")}
+{Divider()}
+{SmallNote("This is an automated reminder from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"{items.Count} Complaint(s) Awaiting Your Decision", inner);
     }
 
     public async Task SendVacateAssignedAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
@@ -1924,6 +2048,14 @@ public class EmailService : IEmailService
             GetSessionFeedbackPromptTemplate(firstName, houseNumber, scheduledAt));
     }
 
+    public async Task SendSessionFeedbackPromptGroupedEmailAsync(string toEmail, string firstName, List<(string HouseNumber, DateTime ScheduledAt)> items, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        _logger.LogInformation("Sending grouped session feedback prompt email to explorer: {Email}", toEmail);
+        await SendEmail(toEmail, "How Was Your Viewing?",
+            GetSessionFeedbackPromptGroupedTemplate(firstName, items));
+    }
+
     private string GetSessionFeedbackPromptTemplate(string firstName, string houseNumber, DateTime scheduledAt)
     {
         var inner = $@"
@@ -1944,6 +2076,27 @@ public class EmailService : IEmailService
 {SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
 
         return WrapInLayout($"How Was Your Viewing? — {houseNumber}", inner);
+    }
+
+    private string GetSessionFeedbackPromptGroupedTemplate(string firstName, List<(string HouseNumber, DateTime ScheduledAt)> items)
+    {
+        var rows = string.Join("", items.Select(i =>
+            $"<tr><td style='color:{ColourGold};font-weight:700;font-size:13px;padding:4px 8px 4px 0;font-family:\"Courier New\",monospace;'>{i.HouseNumber}</td>" +
+            $"<td style='color:{ColourTextSec};font-size:13px;padding:4px 0;text-align:right;'>{i.ScheduledAt:dddd, dd MMMM yyyy} at {i.ScheduledAt:HH:mm} UTC</td></tr>"));
+
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"You have <strong style='color:{ColourGold};'>{items.Count}</strong> scheduled viewing session{(items.Count == 1 ? "" : "s")} on the <strong style='color:{ColourGold};'>Romah Estates</strong> system that {(items.Count == 1 ? "was" : "were")} due. Did your viewing{(items.Count == 1 ? "" : "s")} take place?")}
+{GoldBox($@"
+  <table style='width:100%;border-collapse:collapse;'>
+    {rows}
+  </table>
+")}
+{Para("Please log in to the Romah Estates portal and <strong>close each session</strong> if your viewing took place, or <strong>reschedule</strong> if you need a new time. If no action is taken within 24 hours, a session will be automatically forfeited.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout("How Was Your Viewing?", inner);
     }
 
     public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false)
