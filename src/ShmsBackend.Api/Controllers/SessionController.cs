@@ -715,7 +715,8 @@ public class SessionController : ControllerBase
         [FromQuery] DateTime? fromDate,
         [FromQuery] DateTime? toDate,
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
     {
         var query = _context.ListingViewingSessions.AsQueryable();
 
@@ -732,6 +733,22 @@ public class SessionController : ControllerBase
 
         if (toDate.HasValue)
             query = query.Where(s => s.ScheduledAt < toDate.Value.Date.AddDays(1));
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            // ListingViewingSession has scalar HouseId/AgentId/ExplorerId only (no nav properties),
+            // so House/Agent/Explorer matches use correlated Any() subqueries, same pattern as
+            // Vacate/Complaints/Refunds/Deductions search.
+            query = query.Where(s =>
+                _context.Houses.Any(h => h.Id == s.HouseId &&
+                    (h.HouseNumber.Contains(term) || (h.Flat != null && h.Flat.FlatName.Contains(term)))) ||
+                _context.Agents.Any(a => a.Id == s.AgentId &&
+                    (a.FirstName.Contains(term) || a.LastName.Contains(term) || a.Email.Contains(term))) ||
+                _context.Explorers.Any(e => e.Id == s.ExplorerId &&
+                    (e.FirstName.Contains(term) || e.LastName.Contains(term) || e.Email.Contains(term))) ||
+                s.Status.Contains(term));
+        }
 
         var total = await query.CountAsync();
 

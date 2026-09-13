@@ -256,13 +256,17 @@ public class HouseController : ControllerBase
     {
         IQueryable<House> baseQuery = _context.Houses
             .Include(h => h.Flat)
+                .ThenInclude(f => f!.Landlord)
             .Include(h => h.Images)
             .Include(h => h.HouseTypeRef);
 
         if (!string.IsNullOrEmpty(search))
             baseQuery = baseQuery.Where(h =>
                 h.HouseNumber.Contains(search) ||
-                (h.Flat != null && h.Flat.FlatName.Contains(search)));
+                (h.Flat != null && h.Flat.FlatName.Contains(search)) ||
+                (h.HouseTypeRef != null && h.HouseTypeRef.Name.Contains(search)) ||
+                (h.Flat != null && h.Flat.Landlord != null &&
+                    (h.Flat.Landlord.FirstName.Contains(search) || h.Flat.Landlord.LastName.Contains(search))));
         if (!string.IsNullOrEmpty(county))
             baseQuery = baseQuery.Where(h => h.Flat != null && h.Flat.County == county);
         if (!string.IsNullOrEmpty(constituency))
