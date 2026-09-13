@@ -10,6 +10,7 @@ public class ExpenseFilters
 {
     public Guid? FlatId { get; set; }
     public Guid? HouseId { get; set; }
+    public int? Year { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     public decimal? MinAmount { get; set; }
@@ -40,6 +41,7 @@ public class ExpenseQueryService
 
         if (filters.FlatId.HasValue) query = query.Where(x => x.FlatId == filters.FlatId.Value);
         if (filters.HouseId.HasValue) query = query.Where(x => x.HouseId == filters.HouseId.Value);
+        if (filters.Year.HasValue) query = query.Where(x => x.ExpenseDate.Year == filters.Year.Value);
         if (filters.FromDate.HasValue) query = query.Where(x => x.ExpenseDate >= filters.FromDate.Value);
         if (filters.ToDate.HasValue) query = query.Where(x => x.ExpenseDate <= filters.ToDate.Value.Date);
         if (filters.MinAmount.HasValue) query = query.Where(x => x.Amount >= filters.MinAmount.Value);
@@ -51,7 +53,17 @@ public class ExpenseQueryService
             query = query.Where(x =>
                 x.Description.Contains(s) ||
                 (x.FlatId.HasValue && _context.Flats.Any(f => f.Id == x.FlatId.Value && f.FlatName.Contains(s))) ||
-                (x.HouseId.HasValue && _context.Houses.Any(h => h.Id == x.HouseId.Value && h.HouseNumber.Contains(s))));
+                (x.HouseId.HasValue && _context.Houses.Any(h => h.Id == x.HouseId.Value && h.HouseNumber.Contains(s))) ||
+                x.Amount.ToString().Contains(s) ||
+                // Parameterless ToString() is what EF Core's SQL Server provider can actually translate
+                // to SQL (via CONVERT) — a custom format string like "d MMM yyyy" is NOT translatable
+                // and would throw at runtime, so we deliberately don't use one here.
+                x.ExpenseDate.ToString().Contains(s) ||
+                // CreatedByUserId can be either a Landlord (PortalUser) or a staff member (Admin) —
+                // same correlated-subquery shape as the Flat/House checks above, checked against both
+                // base tables since we don't know up front which one a given row's creator belongs to.
+                _context.PortalUsers.Any(u => u.Id == x.CreatedByUserId && (u.FirstName.Contains(s) || u.LastName.Contains(s))) ||
+                _context.Admins.Any(a => a.Id == x.CreatedByUserId && (a.FirstName.Contains(s) || a.LastName.Contains(s))));
         }
 
         return query;

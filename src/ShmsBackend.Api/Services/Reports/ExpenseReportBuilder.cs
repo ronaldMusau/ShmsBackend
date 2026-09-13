@@ -43,15 +43,8 @@ public class ExpenseReportBuilder
 
         // CreatedByUserId can be either a Landlord (self-logged, a PortalUser) or a staff member
         // (SuperAdmin/Admin/Accountant, an Admin) — resolved via both base tables and merged.
-        var creatorIds = expenses.Select(x => x.CreatedByUserId).Distinct().ToList();
-        var portalUserNames = await _context.PortalUsers
-            .Where(u => creatorIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
-        var adminNames = await _context.Admins
-            .Where(a => creatorIds.Contains(a.Id))
-            .ToDictionaryAsync(a => a.Id, a => $"{a.FirstName} {a.LastName}");
-        var creatorNames = new Dictionary<Guid, string>(portalUserNames);
-        foreach (var kv in adminNames) creatorNames[kv.Key] = kv.Value;
+        var creatorNames = await ReportBuilderHelpers.ResolveCreatorNamesAsync(
+            _context, expenses.Select(x => x.CreatedByUserId));
 
         var rows = expenses.Select(x => new Dictionary<string, object?>
         {

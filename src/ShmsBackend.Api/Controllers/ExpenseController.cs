@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Services;
+using ShmsBackend.Api.Services.Reports;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 
@@ -33,6 +36,24 @@ public class ExpenseController : ControllerBase
     {
         var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(claim, out var id) ? id : Guid.Empty;
+    }
+
+    // Expense has scalar FlatId/HouseId only (no nav properties), so Flat/House display names are
+    // resolved via bulk dictionary lookups here, same pattern as ExpenseReportBuilder.
+    private async Task<(Dictionary<Guid, string> Flats, Dictionary<Guid, string> Houses)> ResolveFlatHouseNamesAsync(
+        IEnumerable<Expense> expenses)
+    {
+        var flatIds = expenses.Where(x => x.FlatId.HasValue).Select(x => x.FlatId!.Value).Distinct().ToList();
+        var flats = await _context.Flats
+            .Where(f => flatIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id, f => f.FlatName);
+
+        var houseIds = expenses.Where(x => x.HouseId.HasValue).Select(x => x.HouseId!.Value).Distinct().ToList();
+        var houses = await _context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        return (flats, houses);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -92,11 +113,31 @@ public class ExpenseController : ControllerBase
         var query = _expenseQueryService.BuildFilteredQuery(filters);
         var total = await query.CountAsync();
         var totalAmount = await query.SumAsync(x => x.Amount);
-        var data = await query
+        var expenses = await query
             .OrderByDescending(x => x.ExpenseDate)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+
+        var creatorNames = await ReportBuilderHelpers.ResolveCreatorNamesAsync(
+            _context, expenses.Select(x => x.CreatedByUserId));
+        var (flatNames, houseNumbers) = await ResolveFlatHouseNamesAsync(expenses);
+        var data = expenses.Select(x => new
+        {
+            x.Id,
+            x.LandlordId,
+            x.CreatedByUserId,
+            x.FlatId,
+            x.HouseId,
+            x.Amount,
+            x.Description,
+            x.ExpenseDate,
+            x.CreatedAt,
+            x.UpdatedAt,
+            FlatName = x.FlatId.HasValue ? flatNames.GetValueOrDefault(x.FlatId.Value, "-") : null,
+            HouseNumber = x.HouseId.HasValue ? houseNumbers.GetValueOrDefault(x.HouseId.Value, "-") : null,
+            LoggedByName = creatorNames.GetValueOrDefault(x.CreatedByUserId, "-")
+        });
 
         return Ok(new
         {
@@ -214,11 +255,31 @@ public class ExpenseController : ControllerBase
         var query = _expenseQueryService.BuildFilteredQuery(filters);
         var total = await query.CountAsync();
         var totalAmount = await query.SumAsync(x => x.Amount);
-        var data = await query
+        var expenses = await query
             .OrderByDescending(x => x.ExpenseDate)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+
+        var creatorNames = await ReportBuilderHelpers.ResolveCreatorNamesAsync(
+            _context, expenses.Select(x => x.CreatedByUserId));
+        var (flatNames, houseNumbers) = await ResolveFlatHouseNamesAsync(expenses);
+        var data = expenses.Select(x => new
+        {
+            x.Id,
+            x.LandlordId,
+            x.CreatedByUserId,
+            x.FlatId,
+            x.HouseId,
+            x.Amount,
+            x.Description,
+            x.ExpenseDate,
+            x.CreatedAt,
+            x.UpdatedAt,
+            FlatName = x.FlatId.HasValue ? flatNames.GetValueOrDefault(x.FlatId.Value, "-") : null,
+            HouseNumber = x.HouseId.HasValue ? houseNumbers.GetValueOrDefault(x.HouseId.Value, "-") : null,
+            LoggedByName = creatorNames.GetValueOrDefault(x.CreatedByUserId, "-")
+        });
 
         return Ok(new
         {
