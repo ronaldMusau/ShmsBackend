@@ -275,6 +275,7 @@ public class PortalPaymentController : ControllerBase
         [FromQuery] DateTime? toDate,
         [FromQuery] decimal? minAmount,
         [FromQuery] decimal? maxAmount,
+        [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
@@ -327,6 +328,20 @@ public class PortalPaymentController : ControllerBase
 
         if (maxAmount.HasValue)
             query = query.Where(p => p.Amount <= maxAmount.Value);
+
+        // Free-text search — same convention/field set as PaymentController.GetAllPayments: plain
+        // .Contains(), no .ToLower(). Tenant/House/Flat are already Include()'d above for this query,
+        // so no fresh Include is needed. PaymentStatus is excluded — it's an enum, not a string, and
+        // there's already a dedicated `status` exact-match filter above.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            query = query.Where(p =>
+                (p.Tenant != null && (p.Tenant.FirstName.Contains(s) || p.Tenant.LastName.Contains(s) || p.Tenant.Email.Contains(s))) ||
+                (p.House != null && (p.House.HouseNumber.Contains(s) || (p.House.Flat != null && p.House.Flat.FlatName.Contains(s)))) ||
+                (p.MpesaReceiptNumber != null && p.MpesaReceiptNumber.Contains(s)) ||
+                (p.RedemptionReference != null && p.RedemptionReference.Contains(s)));
+        }
 
         var total = await query.CountAsync();
         var totalCollected = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid).SumAsync(p => p.AmountPaid);
