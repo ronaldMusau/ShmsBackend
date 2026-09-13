@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using ShmsBackend.Api.Validation;
 
 namespace ShmsBackend.Api.Models.DTOs.Tenant;
 
@@ -24,6 +25,7 @@ public class CreateTenantDto
 
     public string? NationalId { get; set; }
 
+    [MinimumAge(18)]
     public DateTime? DateOfBirth { get; set; }
 
     public string? EmergencyContactName { get; set; }

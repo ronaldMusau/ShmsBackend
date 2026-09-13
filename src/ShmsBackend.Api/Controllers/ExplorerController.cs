@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Helpers;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Data.Context;
@@ -93,7 +94,11 @@ public class ExplorerController : ControllerBase
         if (body.TryGetProperty("dateOfBirth", out var dob) && dob.ValueKind == JsonValueKind.String)
         {
             if (DateTime.TryParse(dob.GetString(), out var dobDate))
+            {
+                if (!AgeValidationHelper.IsAtLeast(dobDate, 18))
+                    return BadRequest(new { success = false, message = "Date of birth must indicate an age of at least 18 years." });
                 explorer.DateOfBirth = dobDate;
+            }
         }
 
         explorer.UpdatedAt = DateTime.UtcNow;

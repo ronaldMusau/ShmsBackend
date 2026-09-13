@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using ShmsBackend.Api.Validation;
 
 namespace ShmsBackend.Api.Models.DTOs.Agent;
 
@@ -25,6 +26,7 @@ public class CreateAgentDto
 
     public string? NationalId { get; set; }
 
+    [MinimumAge(18)]
     public DateTime? DateOfBirth { get; set; }
 
     public string? LicenseNumber { get; set; }

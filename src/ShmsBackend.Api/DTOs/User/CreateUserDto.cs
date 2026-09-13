@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using ShmsBackend.Api.Validation;
 using ShmsBackend.Data.Enums;
 
 namespace ShmsBackend.Api.Models.DTOs.User;
@@ -23,6 +24,7 @@ public class CreateUserDto
     [Phone]
     public string? PhoneNumber { get; set; }
 
+    [MinimumAge(18)]
     public DateTime? DateOfBirth { get; set; }
 
     public string? NationalId { get; set; }

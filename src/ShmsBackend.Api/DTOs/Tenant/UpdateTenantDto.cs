@@ -1,4 +1,5 @@
 using System;
+using ShmsBackend.Api.Validation;
 
 namespace ShmsBackend.Api.Models.DTOs.Tenant;
 
@@ -10,6 +11,7 @@ public class UpdateTenantDto
     public string? PhoneNumber { get; set; }
     public bool? IsActive { get; set; }
     public string? NationalId { get; set; }
+    [MinimumAge(18)]
     public DateTime? DateOfBirth { get; set; }
     public string? EmergencyContactName { get; set; }
     public string? EmergencyContactPhone { get; set; }

@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using ShmsBackend.Api.Validation;
 
 namespace ShmsBackend.Api.Models.DTOs.Landlord;
 
@@ -24,5 +25,6 @@ public class CreateLandlordDto
 
     public string? NationalId { get; set; }
 
+    [MinimumAge(18)]
     public DateTime? DateOfBirth { get; set; }
 }
