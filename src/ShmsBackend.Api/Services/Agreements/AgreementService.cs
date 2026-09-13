@@ -361,11 +361,27 @@ public class AgreementService : IAgreementService
 
     // ── Overview ───────────────────────────────────────────────────────────
 
-    public async Task<IReadOnlyList<UserAgreementStatusDto>> GetAllUserAgreementStatusesAsync(int? roleFilter)
+    public async Task<IReadOnlyList<UserAgreementStatusDto>> GetAllUserAgreementStatusesAsync(int? roleFilter, Guid? flatId = null)
     {
         var usersQuery = _context.PortalUsers.AsQueryable();
-        if (roleFilter.HasValue)
+
+        if (flatId.HasValue)
+        {
+            // flatId always implies Tenant-only results, REGARDLESS of whatever roleFilter was
+            // separately passed — Flat only meaningfully applies to Tenant rows (Landlord/Agent
+            // aren't scoped to a single flat), so a flatId filter silently overrides roleFilter
+            // rather than combining with it or erroring on a mismatched combination.
+            var tenantIdsForFlat = await _context.Tenants
+                .Where(t => t.House != null && t.House.Flat != null && t.House.Flat.Id == flatId.Value)
+                .Select(t => t.Id)
+                .ToListAsync();
+
+            usersQuery = usersQuery.Where(u => u.PortalUserType == PortalUserType.Tenant && tenantIdsForFlat.Contains(u.Id));
+        }
+        else if (roleFilter.HasValue)
+        {
             usersQuery = usersQuery.Where(u => (int)u.PortalUserType == roleFilter.Value);
+        }
 
         var users = await usersQuery
             .OrderBy(u => u.FirstName).ThenBy(u => u.LastName)

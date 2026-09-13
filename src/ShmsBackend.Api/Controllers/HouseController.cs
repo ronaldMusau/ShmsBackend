@@ -252,13 +252,20 @@ public class HouseController : ControllerBase
         [FromQuery] string? ward = null,
         [FromQuery] string? sort = null,
         [FromQuery] bool? isHidden = null,
-        [FromQuery] bool? commentsMuted = null)
+        [FromQuery] bool? commentsMuted = null,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] Guid? houseId = null)
     {
         IQueryable<House> baseQuery = _context.Houses
             .Include(h => h.Flat)
                 .ThenInclude(f => f!.Landlord)
             .Include(h => h.Images)
             .Include(h => h.HouseTypeRef);
+
+        if (flatId.HasValue)
+            baseQuery = baseQuery.Where(h => h.FlatId == flatId.Value);
+        if (houseId.HasValue)
+            baseQuery = baseQuery.Where(h => h.Id == houseId.Value);
 
         if (!string.IsNullOrEmpty(search))
             baseQuery = baseQuery.Where(h =>

@@ -21,7 +21,7 @@ public interface IAgreementService
     Task SendReminderAsync(Guid portalUserId, Guid adminId);
 
     // ── Overview (admin) ────────────────────────────────────────────────────
-    Task<IReadOnlyList<UserAgreementStatusDto>> GetAllUserAgreementStatusesAsync(int? roleFilter);
+    Task<IReadOnlyList<UserAgreementStatusDto>> GetAllUserAgreementStatusesAsync(int? roleFilter, Guid? flatId = null);
 
     // ── ID documents ────────────────────────────────────────────────────────
     Task UploadIdDocumentAsync(Guid portalUserId, IFormFile? front, IFormFile? back);

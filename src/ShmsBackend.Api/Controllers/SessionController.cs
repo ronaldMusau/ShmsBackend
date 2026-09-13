@@ -716,7 +716,9 @@ public class SessionController : ControllerBase
         [FromQuery] DateTime? toDate,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? houseId = null,
+        [FromQuery] Guid? flatId = null)
     {
         var query = _context.ListingViewingSessions.AsQueryable();
 
@@ -727,6 +729,14 @@ public class SessionController : ControllerBase
 
         if (agentId.HasValue)
             query = query.Where(s => s.AgentId == agentId.Value);
+
+        if (houseId.HasValue)
+            query = query.Where(s => s.HouseId == houseId.Value);
+
+        if (flatId.HasValue)
+            // ListingViewingSession has no scalar FlatId column, only HouseId — resolved via a
+            // correlated subquery against Houses, same pattern as the search work above.
+            query = query.Where(s => _context.Houses.Any(h => h.Id == s.HouseId && h.FlatId == flatId.Value));
 
         if (fromDate.HasValue)
             query = query.Where(s => s.ScheduledAt >= fromDate.Value.Date);

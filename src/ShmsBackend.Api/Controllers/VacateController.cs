@@ -1722,13 +1722,17 @@ public class VacateController : ControllerBase
         [FromQuery] int? year = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] Guid? houseId = null)
     {
         var query = _context.VacateSettlements
             .Where(s => s.Direction == "ManagementOwes" && !s.IsVoided)
             .AsQueryable();
 
         if (tenantId.HasValue) query = query.Where(s => s.TenantId == tenantId.Value);
+        if (houseId.HasValue) query = query.Where(s => s.HouseId == houseId.Value);
+        if (flatId.HasValue) query = query.Where(s => s.FlatId == flatId.Value);
         if (month.HasValue) query = query.Where(s => s.CreatedAt.Month == month.Value);
         if (year.HasValue) query = query.Where(s => s.CreatedAt.Year == year.Value);
         if (fromDate.HasValue) query = query.Where(s => s.CreatedAt >= fromDate.Value);

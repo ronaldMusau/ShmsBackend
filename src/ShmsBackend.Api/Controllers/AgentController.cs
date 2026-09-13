@@ -261,11 +261,14 @@ public class AgentController : ControllerBase
 
     [HttpGet]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] Guid? flatId = null)
     {
         try
         {
-            var agents = await _agentService.GetAllAsync();
+            var query = _context.Agents.AsQueryable();
+            if (flatId.HasValue)
+                query = query.Where(a => _context.AgentFlats.Any(af => af.AgentId == a.Id && af.FlatId == flatId.Value));
+            var agents = await query.ToListAsync();
             var agentIds = agents.Select(a => a.Id).ToList();
             var ratingAggregates = await _context.ListingViewingSessions
                 .Where(s => agentIds.Contains(s.AgentId) && s.Status == "Closed" && s.AgentRating != null)

@@ -58,7 +58,7 @@ public class AgreementController : ControllerBase
     // role accepts the PortalUserType name the frontend sends ("Landlord", "Agent", "Tenant"),
     // or the numeric value; omitted/blank = all roles.
     [HttpGet("all-statuses")]
-    public async Task<IActionResult> GetAllStatuses([FromQuery] string? role = null)
+    public async Task<IActionResult> GetAllStatuses([FromQuery] string? role = null, [FromQuery] Guid? flatId = null)
     {
         int? roleFilter = null;
         if (!string.IsNullOrWhiteSpace(role))
@@ -69,7 +69,8 @@ public class AgreementController : ControllerBase
             roleFilter = (int)parsedRole;
         }
 
-        return Ok(new { success = true, data = await _agreementService.GetAllUserAgreementStatusesAsync(roleFilter) });
+        // flatId implies Tenant-only results regardless of `role` — see GetAllUserAgreementStatusesAsync.
+        return Ok(new { success = true, data = await _agreementService.GetAllUserAgreementStatusesAsync(roleFilter, flatId) });
     }
 
     // POST /api/agreements/{portalUserId}/verify
