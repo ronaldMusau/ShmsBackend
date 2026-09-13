@@ -84,6 +84,7 @@ public class ShmsDbContext : DbContext
     public DbSet<ComplaintWorkAttempt> ComplaintWorkAttempts { get; set; }
     public DbSet<ComplaintLandlordDecision> ComplaintLandlordDecisions { get; set; }
     public DbSet<Deduction> Deductions { get; set; }
+    public DbSet<Expense> Expenses { get; set; }
 
     // Viewing Sessions
     public DbSet<ListingViewingSession> ListingViewingSessions { get; set; }
@@ -647,6 +648,15 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
         });
 
+        // ── Expense Configuration ────────────────────────────────────────────
+        modelBuilder.Entity<Expense>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+            entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
         // ── TenantWarning Configuration ──────────────────────────────────────
         modelBuilder.Entity<TenantWarning>(entity =>
         {
@@ -801,5 +811,6 @@ public class ShmsDbContext : DbContext
         modelBuilder.Entity<HouseType>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<ComplaintType>().HasQueryFilter(e => !e.IsDeleted);
         modelBuilder.Entity<Complaint>().HasQueryFilter(e => !e.IsDeleted);
+        modelBuilder.Entity<Expense>().HasQueryFilter(e => !e.IsDeleted);
     }
 }

@@ -86,6 +86,7 @@ builder.Services.AddScoped<ServiceChargeQueryService>();
 builder.Services.AddScoped<RefundQueryService>();
 builder.Services.AddScoped<DeductionQueryService>();
 builder.Services.AddScoped<ForfeitedAdvanceQueryService>();
+builder.Services.AddScoped<ExpenseQueryService>();
 builder.Services.AddScoped<ListingViewingSessionQueryService>();
 builder.Services.AddScoped<IReportRenderer, ReportRenderer>();
 builder.Services.AddScoped<IReceiptRenderer, ReceiptRenderer>();
