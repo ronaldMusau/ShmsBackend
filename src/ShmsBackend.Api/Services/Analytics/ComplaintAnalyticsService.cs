@@ -24,7 +24,7 @@ public class ComplaintAnalyticsService
     {
         var baseQuery = _complaintQueryService.BuildFilteredQuery(filters);
 
-        var items = await baseQuery
+        var grouped = await baseQuery
             .GroupBy(c => c.Status)
             .Select(g => new AnalyticsCategoryItem
             {
@@ -33,6 +33,17 @@ public class ComplaintAnalyticsService
                 Amount = g.Where(c => c.IsBillable == true).Sum(c => (decimal?)c.BillableAmount) ?? 0m
             })
             .ToListAsync();
+
+        // Zero-fill every known Complaint.Status value (confirmed exhaustive: "Open", "UnderReview",
+        // "Approved", "Rejected", "Closed") so the breakdown is dense, not sparse — a status with zero
+        // matching rows in this filter still appears with Count = 0, Amount = 0, matching
+        // RefundAnalyticsService.GetStatusBreakdownAsync's fixed-bucket convention rather than
+        // silently omitting it.
+        string[] allStatuses = { "Open", "UnderReview", "Approved", "Rejected", "Closed" };
+        var items = allStatuses
+            .Select(status => grouped.FirstOrDefault(i => i.Label == status)
+                ?? new AnalyticsCategoryItem { Label = status, Count = 0, Amount = 0m })
+            .ToList();
 
         // TotalAmount is the billable total across the WHOLE filtered set, not a sum of the
         // per-status Amounts above (those already sum to the same thing, but computed independently

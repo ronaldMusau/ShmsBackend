@@ -31,7 +31,7 @@ public class ServiceChargeAnalyticsService
     {
         var baseQuery = BaseQuery(filters);
 
-        var items = await baseQuery
+        var grouped = await baseQuery
             .GroupBy(p => p.PaymentStatus)
             .Select(g => new AnalyticsCategoryItem
             {
@@ -40,6 +40,18 @@ public class ServiceChargeAnalyticsService
                 Amount = g.Sum(p => p.ServiceChargeAmount ?? 0m)
             })
             .ToListAsync();
+
+        // Zero-fill only the 3 statuses actually reachable here: PaymentQueryService.BuildFilteredQuery
+        // (which BaseQuery wraps) already restricts to Paid/PartiallyPaid/Overdue by default whenever
+        // no explicit Status filter is supplied — Pending/Processing/Failed/Cancelled are excluded
+        // upstream before this GroupBy ever runs. Zero-filling all 7 PaymentTransactionStatus values
+        // would add 4 categories that can never appear under the default call pattern, misleadingly
+        // implying they're possible outcomes here.
+        string[] reachableStatuses = { "Paid", "PartiallyPaid", "Overdue" };
+        var items = reachableStatuses
+            .Select(status => grouped.FirstOrDefault(i => i.Label == status)
+                ?? new AnalyticsCategoryItem { Label = status, Count = 0, Amount = 0m })
+            .ToList();
 
         var totalAmount = await baseQuery.SumAsync(p => p.ServiceChargeAmount ?? 0m);
 
