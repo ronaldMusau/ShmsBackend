@@ -461,13 +461,14 @@ public class AnalyticsController : ControllerBase
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Bookings (Sessions) — admin-wide (roles match ReportsController's sessions/preview,export
-    // actions exactly — note: no Accountant here, unlike Refunds/Deductions/Rewards/Service Charges)
+    // Bookings (Sessions) — admin-wide. Deliberately SuperAdmin,Admin,Accountant — Analytics' own
+    // access boundary, NOT SessionController's broader Secretary/Manager-inclusive role set (that
+    // controller does record management, not analytics viewing, so its role set doesn't apply here).
     // ═══════════════════════════════════════════════════════════════════
 
     // GET /api/analytics/bookings/breakdown
     [HttpGet("bookings/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
     public async Task<IActionResult> GetBookingsBreakdown([FromQuery] SessionFilters filters)
     {
         filters.LandlordId = null;
@@ -478,7 +479,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/bookings/trend
     [HttpGet("bookings/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
     public async Task<IActionResult> GetBookingsTrend([FromQuery] SessionFilters filters)
     {
         filters.LandlordId = null;
@@ -631,14 +632,16 @@ public class AnalyticsController : ControllerBase
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // Agreements — Management-only (roles match AgreementController's exact class-level restriction:
-    // SuperAdmin,Admin ONLY, no Secretary/Manager/Accountant). No landlord-scoped version — confirmed
-    // no landlord-facing precedent for agreement status data exists anywhere in the codebase.
+    // Agreements — Management-only. Deliberately SuperAdmin,Admin,Accountant — Analytics' own access
+    // boundary, NOT AgreementController's narrower class-level SuperAdmin,Admin restriction (that
+    // controller does record management — template uploads, verify/reject — not analytics viewing,
+    // so its role set doesn't apply here). No landlord-scoped version — confirmed no landlord-facing
+    // precedent for agreement status data exists anywhere in the codebase.
     // ═══════════════════════════════════════════════════════════════════
 
     // GET /api/analytics/agreements/status-breakdown
     [HttpGet("agreements/status-breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
     public async Task<IActionResult> GetAgreementsStatusBreakdown([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
@@ -648,7 +651,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/agreements/role-breakdown
     [HttpGet("agreements/role-breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
     public async Task<IActionResult> GetAgreementsRoleBreakdown([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
@@ -658,7 +661,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/agreements/trend
     [HttpGet("agreements/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
     public async Task<IActionResult> GetAgreementsTrend([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
