@@ -17,19 +17,34 @@ public class AnalyticsController : ControllerBase
     private readonly RefundAnalyticsService _refundAnalyticsService;
     private readonly DeductionAnalyticsService _deductionAnalyticsService;
     private readonly ServiceChargeAnalyticsService _serviceChargeAnalyticsService;
+    private readonly ExpenseAnalyticsService _expenseAnalyticsService;
+    private readonly SessionAnalyticsService _sessionAnalyticsService;
+    private readonly RewardAnalyticsService _rewardAnalyticsService;
+    private readonly ForfeitedAdvanceAnalyticsService _forfeitedAdvanceAnalyticsService;
+    private readonly AgreementAnalyticsService _agreementAnalyticsService;
 
     public AnalyticsController(
         ComplaintAnalyticsService complaintAnalyticsService,
         FinancialStandingService financialStandingService,
         RefundAnalyticsService refundAnalyticsService,
         DeductionAnalyticsService deductionAnalyticsService,
-        ServiceChargeAnalyticsService serviceChargeAnalyticsService)
+        ServiceChargeAnalyticsService serviceChargeAnalyticsService,
+        ExpenseAnalyticsService expenseAnalyticsService,
+        SessionAnalyticsService sessionAnalyticsService,
+        RewardAnalyticsService rewardAnalyticsService,
+        ForfeitedAdvanceAnalyticsService forfeitedAdvanceAnalyticsService,
+        AgreementAnalyticsService agreementAnalyticsService)
     {
         _complaintAnalyticsService = complaintAnalyticsService;
         _financialStandingService = financialStandingService;
         _refundAnalyticsService = refundAnalyticsService;
         _deductionAnalyticsService = deductionAnalyticsService;
         _serviceChargeAnalyticsService = serviceChargeAnalyticsService;
+        _expenseAnalyticsService = expenseAnalyticsService;
+        _sessionAnalyticsService = sessionAnalyticsService;
+        _rewardAnalyticsService = rewardAnalyticsService;
+        _forfeitedAdvanceAnalyticsService = forfeitedAdvanceAnalyticsService;
+        _agreementAnalyticsService = agreementAnalyticsService;
     }
 
     private Guid? GetLandlordId()
@@ -88,6 +103,55 @@ public class AnalyticsController : ControllerBase
             filters.FromDate = new DateTime(now.Year, now.Month, 1);
             filters.ToDate = now;
         }
+    }
+
+    private static void ApplyDefaultDateRange(ExpenseFilters filters)
+    {
+        if (!filters.FromDate.HasValue && !filters.ToDate.HasValue)
+        {
+            var now = DateTime.UtcNow;
+            filters.FromDate = new DateTime(now.Year, now.Month, 1);
+            filters.ToDate = now;
+        }
+    }
+
+    private static void ApplyDefaultDateRange(SessionFilters filters)
+    {
+        if (!filters.FromDate.HasValue && !filters.ToDate.HasValue)
+        {
+            var now = DateTime.UtcNow;
+            filters.FromDate = new DateTime(now.Year, now.Month, 1);
+            filters.ToDate = now;
+        }
+    }
+
+    private static void ApplyDefaultDateRange(RewardTransactionFilters filters)
+    {
+        if (!filters.FromDate.HasValue && !filters.ToDate.HasValue)
+        {
+            var now = DateTime.UtcNow;
+            filters.FromDate = new DateTime(now.Year, now.Month, 1);
+            filters.ToDate = now;
+        }
+    }
+
+    private static void ApplyDefaultDateRange(ForfeitedAdvanceFilters filters)
+    {
+        if (!filters.FromDate.HasValue && !filters.ToDate.HasValue)
+        {
+            var now = DateTime.UtcNow;
+            filters.FromDate = new DateTime(now.Year, now.Month, 1);
+            filters.ToDate = now;
+        }
+    }
+
+    private static (DateTime FromDate, DateTime ToDate) ApplyDefaultDateRange(DateTime? fromDate, DateTime? toDate)
+    {
+        if (fromDate.HasValue || toDate.HasValue)
+            return (fromDate ?? toDate!.Value, toDate ?? fromDate!.Value);
+
+        var now = DateTime.UtcNow;
+        return (new DateTime(now.Year, now.Month, 1), now);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -337,6 +401,268 @@ public class AnalyticsController : ControllerBase
         filters.LandlordId = null;
         ApplyDefaultDateRange(filters);
         var data = await _serviceChargeAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Expenses — admin-wide (roles match ReportsController's expenses/preview,export actions exactly)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/expenses/by-flat
+    [HttpGet("expenses/by-flat")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetExpensesByFlat([FromQuery] ExpenseFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _expenseAnalyticsService.GetByFlatAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/expenses/trend
+    [HttpGet("expenses/trend")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetExpensesTrend([FromQuery] ExpenseFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _expenseAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Expenses — landlord-scoped
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/landlord/expenses/by-flat
+    [HttpGet("landlord/expenses/by-flat")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordExpensesByFlat([FromQuery] ExpenseFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _expenseAnalyticsService.GetByFlatAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlord/expenses/trend
+    [HttpGet("landlord/expenses/trend")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordExpensesTrend([FromQuery] ExpenseFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _expenseAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Bookings (Sessions) — admin-wide (roles match ReportsController's sessions/preview,export
+    // actions exactly — note: no Accountant here, unlike Refunds/Deductions/Rewards/Service Charges)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/bookings/breakdown
+    [HttpGet("bookings/breakdown")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetBookingsBreakdown([FromQuery] SessionFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _sessionAnalyticsService.GetStatusBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/bookings/trend
+    [HttpGet("bookings/trend")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> GetBookingsTrend([FromQuery] SessionFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _sessionAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Bookings (Sessions) — landlord-scoped
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/landlord/bookings/breakdown
+    [HttpGet("landlord/bookings/breakdown")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordBookingsBreakdown([FromQuery] SessionFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _sessionAnalyticsService.GetStatusBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlord/bookings/trend
+    [HttpGet("landlord/bookings/trend")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordBookingsTrend([FromQuery] SessionFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _sessionAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Rewards — admin-wide (roles match ReportsController's rewards/preview,export actions exactly)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/rewards/by-type
+    [HttpGet("rewards/by-type")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetRewardsByType([FromQuery] RewardTransactionFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _rewardAnalyticsService.GetTypeBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/rewards/trend
+    [HttpGet("rewards/trend")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetRewardsTrend([FromQuery] RewardTransactionFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _rewardAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Rewards — landlord-scoped
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/landlord/rewards/by-type
+    [HttpGet("landlord/rewards/by-type")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordRewardsByType([FromQuery] RewardTransactionFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _rewardAnalyticsService.GetTypeBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlord/rewards/trend
+    [HttpGet("landlord/rewards/trend")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordRewardsTrend([FromQuery] RewardTransactionFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _rewardAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Forfeited Advances — admin-wide (roles match ReportsController's forfeited-advance/preview,export
+    // actions exactly)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/forfeited-advances/breakdown
+    [HttpGet("forfeited-advances/breakdown")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetForfeitedAdvancesBreakdown([FromQuery] ForfeitedAdvanceFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _forfeitedAdvanceAnalyticsService.GetBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/forfeited-advances/trend
+    [HttpGet("forfeited-advances/trend")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetForfeitedAdvancesTrend([FromQuery] ForfeitedAdvanceFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _forfeitedAdvanceAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Forfeited Advances — landlord-scoped
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/landlord/forfeited-advances/breakdown
+    [HttpGet("landlord/forfeited-advances/breakdown")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordForfeitedAdvancesBreakdown([FromQuery] ForfeitedAdvanceFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _forfeitedAdvanceAnalyticsService.GetBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlord/forfeited-advances/trend
+    [HttpGet("landlord/forfeited-advances/trend")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordForfeitedAdvancesTrend([FromQuery] ForfeitedAdvanceFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _forfeitedAdvanceAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Agreements — Management-only (roles match AgreementController's exact class-level restriction:
+    // SuperAdmin,Admin ONLY, no Secretary/Manager/Accountant). No landlord-scoped version — confirmed
+    // no landlord-facing precedent for agreement status data exists anywhere in the codebase.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/agreements/status-breakdown
+    [HttpGet("agreements/status-breakdown")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> GetAgreementsStatusBreakdown([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _agreementAnalyticsService.GetStatusBreakdownAsync(from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/agreements/role-breakdown
+    [HttpGet("agreements/role-breakdown")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> GetAgreementsRoleBreakdown([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _agreementAnalyticsService.GetRoleBreakdownAsync(from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/agreements/trend
+    [HttpGet("agreements/trend")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> GetAgreementsTrend([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _agreementAnalyticsService.GetTrendAsync(from, to);
         return Ok(new { success = true, data });
     }
 }

@@ -14,6 +14,7 @@ public class ForfeitedAdvanceFilters
     public DateTime? ToDate { get; set; }
     public decimal? MinAmount { get; set; }
     public decimal? MaxAmount { get; set; }
+    public Guid? LandlordId { get; set; }
 }
 
 /// <summary>
@@ -34,6 +35,7 @@ public class ForfeitedAdvanceQueryService
     {
         var query = _context.VacateForfeitedAdvances.Where(f => !f.IsVoided).AsQueryable();
 
+        if (filters.LandlordId.HasValue) query = query.Where(f => f.LandlordId == filters.LandlordId.Value);
         if (filters.TenantId.HasValue) query = query.Where(f => f.TenantId == filters.TenantId.Value);
         if (filters.HouseId.HasValue) query = query.Where(f => f.HouseId == filters.HouseId.Value);
         if (filters.FromDate.HasValue) query = query.Where(f => f.CreatedAt >= filters.FromDate.Value);

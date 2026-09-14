@@ -109,6 +109,11 @@ builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.FinancialStandingS
 builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.RefundAnalyticsService>();
 builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.DeductionAnalyticsService>();
 builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.ServiceChargeAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.ExpenseAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.SessionAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.RewardAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.ForfeitedAdvanceAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.AgreementAnalyticsService>();
 builder.Services.AddScoped<ListingReportBuilder>();
 builder.Services.AddScoped<SessionReportBuilder>();
 builder.Services.AddScoped<AgreementReportBuilder>();

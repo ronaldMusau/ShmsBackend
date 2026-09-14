@@ -13,6 +13,7 @@ public class SessionFilters
     public Guid? FlatId { get; set; }   // resolved via a House-id subquery, no direct column
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
+    public Guid? LandlordId { get; set; }   // resolved via the same House-id subquery, one hop further to Flat.LandlordId
 }
 
 /// <summary>
@@ -45,6 +46,14 @@ public class ListingViewingSessionQueryService
                 .Where(h => h.FlatId == filters.FlatId.Value)
                 .Select(h => h.Id);
             query = query.Where(s => houseIdsInFlat.Contains(s.HouseId));
+        }
+
+        if (filters.LandlordId.HasValue)
+        {
+            var houseIdsForLandlord = _context.Houses
+                .Where(h => h.Flat != null && h.Flat.LandlordId == filters.LandlordId.Value)
+                .Select(h => h.Id);
+            query = query.Where(s => houseIdsForLandlord.Contains(s.HouseId));
         }
 
         if (filters.FromDate.HasValue)

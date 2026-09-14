@@ -17,6 +17,7 @@ public class RewardTransactionFilters
     public decimal? MinPoints { get; set; }
     public decimal? MaxPoints { get; set; }
     public string? Search { get; set; }
+    public Guid? LandlordId { get; set; }
 }
 
 /// <summary>
@@ -49,6 +50,10 @@ public class RewardTransactionQueryService
 
         if (filters.HouseId.HasValue)
             query = query.Where(t => t.Tenant != null && t.Tenant.HouseId == filters.HouseId.Value);
+
+        if (filters.LandlordId.HasValue)
+            query = query.Where(t => t.Tenant != null && t.Tenant.House != null && t.Tenant.House.Flat != null
+                && t.Tenant.House.Flat.LandlordId == filters.LandlordId.Value);
 
         if (!string.IsNullOrEmpty(filters.TransactionType))
             query = query.Where(t => t.TransactionType == filters.TransactionType);
