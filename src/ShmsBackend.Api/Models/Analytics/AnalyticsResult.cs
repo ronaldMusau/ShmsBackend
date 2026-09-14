@@ -20,5 +20,8 @@ public class AnalyticsTrendResult
 {
     public List<string> Labels { get; set; } = new();
     public List<int> Values { get; set; } = new();
+    // Populated instead of Values for money-summed trends (Refunds/Deductions/Service Charges) —
+    // Values stays int-only (Complaint-count trends), so a decimal amount is never truncated into it.
+    public List<decimal>? AmountValues { get; set; }
     public string Granularity { get; set; } = ""; // "weekly" or "monthly"
 }
