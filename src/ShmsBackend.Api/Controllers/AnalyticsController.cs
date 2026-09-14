@@ -488,35 +488,9 @@ public class AnalyticsController : ControllerBase
         return Ok(new { success = true, data });
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // Bookings (Sessions) — landlord-scoped
-    // ═══════════════════════════════════════════════════════════════════
-
-    // GET /api/analytics/landlord/bookings/breakdown
-    [HttpGet("landlord/bookings/breakdown")]
-    [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordBookingsBreakdown([FromQuery] SessionFilters filters)
-    {
-        var landlordId = GetLandlordId();
-        if (landlordId == null) return Unauthorized();
-        filters.LandlordId = landlordId;
-        ApplyDefaultDateRange(filters);
-        var data = await _sessionAnalyticsService.GetStatusBreakdownAsync(filters);
-        return Ok(new { success = true, data });
-    }
-
-    // GET /api/analytics/landlord/bookings/trend
-    [HttpGet("landlord/bookings/trend")]
-    [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordBookingsTrend([FromQuery] SessionFilters filters)
-    {
-        var landlordId = GetLandlordId();
-        if (landlordId == null) return Unauthorized();
-        filters.LandlordId = landlordId;
-        ApplyDefaultDateRange(filters);
-        var data = await _sessionAnalyticsService.GetTrendAsync(filters);
-        return Ok(new { success = true, data });
-    }
+    // Bookings has no landlord-scoped endpoint by design — session/viewing activity is an
+    // operational, Agent-driven concern Management runs, not something a Landlord has a direct
+    // stake in or currently sees anywhere else in the portal.
 
     // ═══════════════════════════════════════════════════════════════════
     // Rewards — admin-wide (roles match ReportsController's rewards/preview,export actions exactly)
@@ -544,35 +518,8 @@ public class AnalyticsController : ControllerBase
         return Ok(new { success = true, data });
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // Rewards — landlord-scoped
-    // ═══════════════════════════════════════════════════════════════════
-
-    // GET /api/analytics/landlord/rewards/by-type
-    [HttpGet("landlord/rewards/by-type")]
-    [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordRewardsByType([FromQuery] RewardTransactionFilters filters)
-    {
-        var landlordId = GetLandlordId();
-        if (landlordId == null) return Unauthorized();
-        filters.LandlordId = landlordId;
-        ApplyDefaultDateRange(filters);
-        var data = await _rewardAnalyticsService.GetTypeBreakdownAsync(filters);
-        return Ok(new { success = true, data });
-    }
-
-    // GET /api/analytics/landlord/rewards/trend
-    [HttpGet("landlord/rewards/trend")]
-    [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordRewardsTrend([FromQuery] RewardTransactionFilters filters)
-    {
-        var landlordId = GetLandlordId();
-        if (landlordId == null) return Unauthorized();
-        filters.LandlordId = landlordId;
-        ApplyDefaultDateRange(filters);
-        var data = await _rewardAnalyticsService.GetTrendAsync(filters);
-        return Ok(new { success = true, data });
-    }
+    // Rewards has no landlord-scoped endpoint by design — reward points are a cost Management funds
+    // and controls (earn rates, redemption rates, global enable/disable), not a Landlord-facing figure.
 
     // ═══════════════════════════════════════════════════════════════════
     // Forfeited Advances — admin-wide (roles match ReportsController's forfeited-advance/preview,export
@@ -601,35 +548,9 @@ public class AnalyticsController : ControllerBase
         return Ok(new { success = true, data });
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // Forfeited Advances — landlord-scoped
-    // ═══════════════════════════════════════════════════════════════════
-
-    // GET /api/analytics/landlord/forfeited-advances/breakdown
-    [HttpGet("landlord/forfeited-advances/breakdown")]
-    [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordForfeitedAdvancesBreakdown([FromQuery] ForfeitedAdvanceFilters filters)
-    {
-        var landlordId = GetLandlordId();
-        if (landlordId == null) return Unauthorized();
-        filters.LandlordId = landlordId;
-        ApplyDefaultDateRange(filters);
-        var data = await _forfeitedAdvanceAnalyticsService.GetBreakdownAsync(filters);
-        return Ok(new { success = true, data });
-    }
-
-    // GET /api/analytics/landlord/forfeited-advances/trend
-    [HttpGet("landlord/forfeited-advances/trend")]
-    [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordForfeitedAdvancesTrend([FromQuery] ForfeitedAdvanceFilters filters)
-    {
-        var landlordId = GetLandlordId();
-        if (landlordId == null) return Unauthorized();
-        filters.LandlordId = landlordId;
-        ApplyDefaultDateRange(filters);
-        var data = await _forfeitedAdvanceAnalyticsService.GetTrendAsync(filters);
-        return Ok(new { success = true, data });
-    }
+    // Forfeited Advances has no landlord-scoped endpoint by design — these are funds Management
+    // holds and forfeits (applied to damages or retained unused), not money the Landlord ever
+    // directly touches or has a claim on.
 
     // ═══════════════════════════════════════════════════════════════════
     // Agreements — Management-only. Deliberately SuperAdmin,Admin,Accountant — Analytics' own access
