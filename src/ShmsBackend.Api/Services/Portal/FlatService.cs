@@ -53,6 +53,7 @@ public class FlatService
             VacateNoticeDeadlineDay = dto.VacateNoticeDeadlineDay,
             SitDeposit = dto.SitDeposit,
             RewardEnabled = dto.RewardEnabled,
+            ManagementFeePercentage = dto.ManagementFeePercentage,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -292,6 +293,7 @@ public class FlatService
             flat.VacateNoticeDeadlineDay,
             flat.SitDeposit,
             flat.RewardEnabled,
+            flat.ManagementFeePercentage,
             flat.LandlordId,
             Landlord = flat.Landlord == null ? null : new
             {
@@ -362,6 +364,7 @@ public class FlatService
         flat.VacateNoticeDeadlineDay = dto.VacateNoticeDeadlineDay;
         flat.SitDeposit = dto.SitDeposit;
         if (dto.RewardEnabled.HasValue) flat.RewardEnabled = dto.RewardEnabled.Value;
+        if (dto.ManagementFeePercentage.HasValue) flat.ManagementFeePercentage = dto.ManagementFeePercentage.Value;
 
         flat.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();

@@ -238,6 +238,7 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.County).HasMaxLength(100);
             entity.Property(e => e.Constituency).HasMaxLength(100);
             entity.Property(e => e.Ward).HasMaxLength(100);
+            entity.Property(e => e.ManagementFeePercentage).HasColumnType("decimal(18,4)");
             entity.HasOne(e => e.Landlord)
                   .WithMany()
                   .HasForeignKey(e => e.LandlordId)

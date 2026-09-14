@@ -272,6 +272,7 @@ public class PortalFlatController : ControllerBase
                 landlordFlat.Ward,
                 landlordFlat.LandlordId,
                 landlordFlat.RewardEnabled,
+                landlordFlat.ManagementFeePercentage,
                 HouseCount = landlordFlat.Houses.Count,
                 VacantCount = landlordFlat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
                 OccupiedCount = landlordFlat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),

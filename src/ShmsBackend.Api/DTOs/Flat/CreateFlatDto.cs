@@ -47,6 +47,7 @@ public class CreateFlatDto
     public int VacateNoticeDeadlineDay { get; set; } = 15;
     public bool SitDeposit { get; set; } = false;
     public bool RewardEnabled { get; set; } = false;
+    public decimal? ManagementFeePercentage { get; set; }
 
     public List<HouseGroupDto> Houses { get; set; } = new();
 }

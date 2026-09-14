@@ -17,6 +17,7 @@ public class Flat : ISoftDelete
     public int VacateNoticeDeadlineDay { get; set; } = 15;
     public bool SitDeposit { get; set; } = false;
     public bool RewardEnabled { get; set; } = false;
+    public decimal? ManagementFeePercentage { get; set; }  // % of collected rent retained by Management; null = not set
     public Guid LandlordId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
