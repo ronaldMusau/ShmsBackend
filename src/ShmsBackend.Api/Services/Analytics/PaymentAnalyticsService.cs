@@ -42,11 +42,17 @@ public class PaymentAnalyticsService
             };
         }).ToList();
 
+        // Balance = Math.Max(0, Amount - AmountPaid), already 0 on fully-Paid rows, so this sum across
+        // the full filtered set naturally reflects only what's genuinely still owed (Pending/Processing/
+        // PartiallyPaid/Overdue balances) — same figure OverdueReportBuilder/PaymentController use.
+        var totalOutstanding = await baseQuery.SumAsync(p => p.Balance);
+
         return new AnalyticsBreakdownResult
         {
             Items = items,
             TotalCount = items.Sum(i => i.Count),
-            TotalAmount = items.Sum(i => i.Amount ?? 0m)
+            TotalAmount = items.Sum(i => i.Amount ?? 0m),
+            TotalOutstanding = totalOutstanding
         };
     }
 

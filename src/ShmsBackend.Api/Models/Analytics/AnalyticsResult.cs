@@ -14,6 +14,9 @@ public class AnalyticsBreakdownResult
     public List<AnalyticsCategoryItem> Items { get; set; } = new();
     public int TotalCount { get; set; }
     public decimal? TotalAmount { get; set; }
+    // Only populated by breakdowns backed by a genuine outstanding-balance figure (e.g. Payment status
+    // breakdown's Balance sum). Null for every other domain's breakdown.
+    public decimal? TotalOutstanding { get; set; }
 }
 
 public class AnalyticsTrendResult
