@@ -17,6 +17,7 @@ public class FlatEditRequest
     public int? ProposedVacateNoticeDeadlineDay { get; set; }
     public bool? ProposedSitDeposit { get; set; }
     public bool? ProposedRewardEnabled { get; set; }
+    public decimal? ProposedManagementFeePercentage { get; set; }
     public string? ProposedGoogleMapsLink { get; set; }
     public Guid? ProposedAgentId { get; set; }
     public bool ClearAgent { get; set; } = false;

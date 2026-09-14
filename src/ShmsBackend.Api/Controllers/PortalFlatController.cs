@@ -402,6 +402,7 @@ public class PortalFlatController : ControllerBase
             if (request.ProposedVacateNoticeDeadlineDay.HasValue) flat.VacateNoticeDeadlineDay = request.ProposedVacateNoticeDeadlineDay.Value;
             if (request.ProposedSitDeposit.HasValue) flat.SitDeposit = request.ProposedSitDeposit.Value;
             if (request.ProposedRewardEnabled.HasValue) flat.RewardEnabled = request.ProposedRewardEnabled.Value;
+            if (request.ProposedManagementFeePercentage.HasValue) flat.ManagementFeePercentage = request.ProposedManagementFeePercentage.Value;
             if (request.ProposedGoogleMapsLink != null) flat.GoogleMapsLink = request.ProposedGoogleMapsLink;
             flat.UpdatedAt = DateTime.UtcNow;
 
@@ -616,6 +617,8 @@ public class PortalFlatController : ControllerBase
             CurrentSitDeposit = r.Flat.SitDeposit,
             CurrentRewardEnabled = r.Flat.RewardEnabled,
             ProposedRewardEnabled = r.ProposedRewardEnabled,
+            r.ProposedManagementFeePercentage,
+            CurrentManagementFeePercentage = r.Flat.ManagementFeePercentage,
             CurrentGoogleMapsLink = r.Flat.GoogleMapsLink,
             CurrentAgentName = currentAgentByFlat.GetValueOrDefault(r.FlatId),
             ProposedAgentName = r.ProposedAgentId.HasValue ? proposedAgents.GetValueOrDefault(r.ProposedAgentId.Value) : null,

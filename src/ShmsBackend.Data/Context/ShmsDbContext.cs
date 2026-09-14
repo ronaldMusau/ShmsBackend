@@ -326,6 +326,7 @@ public class ShmsDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.ProposedManagementFeePercentage).HasColumnType("decimal(18,4)");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.HasOne(e => e.Flat)
