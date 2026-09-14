@@ -13,10 +13,12 @@ namespace ShmsBackend.Api.Controllers;
 public class AnalyticsController : ControllerBase
 {
     private readonly ComplaintAnalyticsService _complaintAnalyticsService;
+    private readonly FinancialStandingService _financialStandingService;
 
-    public AnalyticsController(ComplaintAnalyticsService complaintAnalyticsService)
+    public AnalyticsController(ComplaintAnalyticsService complaintAnalyticsService, FinancialStandingService financialStandingService)
     {
         _complaintAnalyticsService = complaintAnalyticsService;
+        _financialStandingService = financialStandingService;
     }
 
     private Guid? GetLandlordId()
@@ -28,6 +30,16 @@ public class AnalyticsController : ControllerBase
     // Never run these queries with a genuinely unbounded date range by accident — default to the
     // current month when the caller supplied neither bound.
     private static void ApplyDefaultDateRange(ComplaintFilters filters)
+    {
+        if (!filters.FromDate.HasValue && !filters.ToDate.HasValue)
+        {
+            var now = DateTime.UtcNow;
+            filters.FromDate = new DateTime(now.Year, now.Month, 1);
+            filters.ToDate = now;
+        }
+    }
+
+    private static void ApplyDefaultDateRange(FinancialStandingFilters filters)
     {
         if (!filters.FromDate.HasValue && !filters.ToDate.HasValue)
         {
@@ -114,6 +126,34 @@ public class AnalyticsController : ControllerBase
         filters.LandlordId = landlordId;
         ApplyDefaultDateRange(filters);
         var data = await _complaintAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Financial Standing
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/financial-standing — admin-wide (LandlordId never bound; null = whole portfolio)
+    [HttpGet("financial-standing")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetFinancialStanding([FromQuery] FinancialStandingFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _financialStandingService.GetFinancialStandingAsync(filters, includeManagementOnlyFigures: true);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlord/financial-standing
+    [HttpGet("landlord/financial-standing")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordFinancialStanding([FromQuery] FinancialStandingFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _financialStandingService.GetFinancialStandingAsync(filters, includeManagementOnlyFigures: false);
         return Ok(new { success = true, data });
     }
 }

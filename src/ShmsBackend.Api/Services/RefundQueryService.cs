@@ -15,6 +15,7 @@ public class RefundFilters
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     public bool? IsPaid { get; set; }   // true = PaidAt != null, false = still refundable
+    public Guid? LandlordId { get; set; }
 }
 
 /// <summary>
@@ -37,6 +38,7 @@ public class RefundQueryService
             .Where(s => s.Direction == "ManagementOwes" && !s.IsVoided)
             .AsQueryable();
 
+        if (filters.LandlordId.HasValue) query = query.Where(s => s.LandlordId == filters.LandlordId.Value);
         if (filters.TenantId.HasValue) query = query.Where(s => s.TenantId == filters.TenantId.Value);
         if (filters.FlatId.HasValue) query = query.Where(s => s.FlatId == filters.FlatId.Value);
         if (filters.Month.HasValue) query = query.Where(s => s.CreatedAt.Month == filters.Month.Value);

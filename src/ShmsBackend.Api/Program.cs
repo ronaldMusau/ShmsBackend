@@ -105,6 +105,7 @@ builder.Services.AddScoped<DeductionReportBuilder>();
 builder.Services.AddScoped<ForfeitedAdvanceReportBuilder>();
 builder.Services.AddScoped<ExpenseReportBuilder>();
 builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.ComplaintAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.FinancialStandingService>();
 builder.Services.AddScoped<ListingReportBuilder>();
 builder.Services.AddScoped<SessionReportBuilder>();
 builder.Services.AddScoped<AgreementReportBuilder>();
