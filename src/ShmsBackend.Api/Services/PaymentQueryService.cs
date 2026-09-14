@@ -24,6 +24,7 @@ public class PaymentFilters
     public bool? IsInitialPayment { get; set; }
     public Guid? LandlordId { get; set; }   // set server-side only, never bound from a client filter param
     public int? TenancyCycle { get; set; }  // set server-side only for tenant-scoped actions, never bound from a client filter param
+    public bool IncludeAllStatuses { get; set; } = false;  // opt-in bypass of the default Paid/PartiallyPaid/Overdue restriction below; existing callers never set this, so their behavior is unchanged
 }
 
 /// <summary>
@@ -68,7 +69,7 @@ public class PaymentQueryService
         // "settled or overdue" statuses show, hiding Pending/Processing/Failed/Cancelled noise.
         if (!string.IsNullOrEmpty(filters.Status) && Enum.TryParse<PaymentTransactionStatus>(filters.Status, true, out var ps))
             query = query.Where(p => p.PaymentStatus == ps);
-        else
+        else if (!filters.IncludeAllStatuses)
             query = query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid
                                   || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid
                                   || p.PaymentStatus == PaymentTransactionStatus.Overdue);

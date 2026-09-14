@@ -114,6 +114,12 @@ builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.SessionAnalyticsSe
 builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.RewardAnalyticsService>();
 builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.ForfeitedAdvanceAnalyticsService>();
 builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.AgreementAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.PaymentAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.OverdueAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.AgentAnalyticsService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Analytics.LandlordAnalyticsService>();
+// RentCollectionHelper is a static class (pure functions over an IQueryable<Payment> passed in) —
+// no DI registration needed or possible.
 builder.Services.AddScoped<ListingReportBuilder>();
 builder.Services.AddScoped<SessionReportBuilder>();
 builder.Services.AddScoped<AgreementReportBuilder>();

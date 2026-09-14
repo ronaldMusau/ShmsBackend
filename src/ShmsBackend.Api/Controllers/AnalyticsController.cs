@@ -22,6 +22,10 @@ public class AnalyticsController : ControllerBase
     private readonly RewardAnalyticsService _rewardAnalyticsService;
     private readonly ForfeitedAdvanceAnalyticsService _forfeitedAdvanceAnalyticsService;
     private readonly AgreementAnalyticsService _agreementAnalyticsService;
+    private readonly PaymentAnalyticsService _paymentAnalyticsService;
+    private readonly OverdueAnalyticsService _overdueAnalyticsService;
+    private readonly AgentAnalyticsService _agentAnalyticsService;
+    private readonly LandlordAnalyticsService _landlordAnalyticsService;
 
     public AnalyticsController(
         ComplaintAnalyticsService complaintAnalyticsService,
@@ -33,7 +37,11 @@ public class AnalyticsController : ControllerBase
         SessionAnalyticsService sessionAnalyticsService,
         RewardAnalyticsService rewardAnalyticsService,
         ForfeitedAdvanceAnalyticsService forfeitedAdvanceAnalyticsService,
-        AgreementAnalyticsService agreementAnalyticsService)
+        AgreementAnalyticsService agreementAnalyticsService,
+        PaymentAnalyticsService paymentAnalyticsService,
+        OverdueAnalyticsService overdueAnalyticsService,
+        AgentAnalyticsService agentAnalyticsService,
+        LandlordAnalyticsService landlordAnalyticsService)
     {
         _complaintAnalyticsService = complaintAnalyticsService;
         _financialStandingService = financialStandingService;
@@ -43,6 +51,10 @@ public class AnalyticsController : ControllerBase
         _expenseAnalyticsService = expenseAnalyticsService;
         _sessionAnalyticsService = sessionAnalyticsService;
         _rewardAnalyticsService = rewardAnalyticsService;
+        _paymentAnalyticsService = paymentAnalyticsService;
+        _overdueAnalyticsService = overdueAnalyticsService;
+        _agentAnalyticsService = agentAnalyticsService;
+        _landlordAnalyticsService = landlordAnalyticsService;
         _forfeitedAdvanceAnalyticsService = forfeitedAdvanceAnalyticsService;
         _agreementAnalyticsService = agreementAnalyticsService;
     }
@@ -587,6 +599,164 @@ public class AnalyticsController : ControllerBase
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
         var data = await _agreementAnalyticsService.GetTrendAsync(from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Rent Payments — admin-wide (matches Complaints/Refunds/Deductions/Expenses precedent)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/payments/breakdown
+    [HttpGet("payments/breakdown")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetPaymentsBreakdown([FromQuery] PaymentFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _paymentAnalyticsService.GetStatusBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/payments/trend
+    [HttpGet("payments/trend")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetPaymentsTrend([FromQuery] PaymentFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _paymentAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Rent Payments — landlord-scoped
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/landlord/payments/breakdown
+    [HttpGet("landlord/payments/breakdown")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordPaymentsBreakdown([FromQuery] PaymentFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _paymentAnalyticsService.GetStatusBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlord/payments/trend
+    [HttpGet("landlord/payments/trend")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordPaymentsTrend([FromQuery] PaymentFilters filters)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        filters.LandlordId = landlordId;
+        ApplyDefaultDateRange(filters);
+        var data = await _paymentAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Overdue — admin-wide. No dedicated entity/filters class (mirrors OverdueReportBuilder's own
+    // shape) — plain query params instead of a bound filters object.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/overdue/breakdown
+    [HttpGet("overdue/breakdown")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetOverdueBreakdown([FromQuery] Guid? flatId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _overdueAnalyticsService.GetWarningStageBreakdownAsync(flatId, null, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/overdue/trend
+    [HttpGet("overdue/trend")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetOverdueTrend([FromQuery] Guid? flatId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _overdueAnalyticsService.GetTrendAsync(flatId, null, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Overdue — landlord-scoped
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/landlord/overdue/breakdown
+    [HttpGet("landlord/overdue/breakdown")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordOverdueBreakdown([FromQuery] Guid? flatId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _overdueAnalyticsService.GetWarningStageBreakdownAsync(flatId, landlordId, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlord/overdue/trend
+    [HttpGet("landlord/overdue/trend")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetLandlordOverdueTrend([FromQuery] Guid? flatId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _overdueAnalyticsService.GetTrendAsync(flatId, landlordId, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Agent performance — admin-wide ONLY (confirmed no landlord-facing precedent exists anywhere)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/agents/performance?agentId=... (optional — omit for portfolio-wide)
+    [HttpGet("agents/performance")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetAgentPerformance([FromQuery] Guid? agentId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _agentAnalyticsService.GetPerformanceAsync(agentId, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/agents/sessions-trend?agentId=... (optional — omit for portfolio-wide)
+    [HttpGet("agents/sessions-trend")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetAgentSessionsTrend([FromQuery] Guid? agentId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _agentAnalyticsService.GetSessionsTrendAsync(agentId, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Landlord portfolio — admin-wide ONLY (confirmed no landlord-facing precedent exists anywhere —
+    // this is Management viewing a landlord's portfolio, not the landlord viewing their own)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/landlords/portfolio?landlordId=... (optional — omit for portfolio-wide)
+    [HttpGet("landlords/portfolio")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetLandlordPortfolio([FromQuery] Guid? landlordId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _landlordAnalyticsService.GetPortfolioAsync(landlordId, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlords/collection-trend?landlordId=... (optional — omit for portfolio-wide)
+    [HttpGet("landlords/collection-trend")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetLandlordCollectionTrend([FromQuery] Guid? landlordId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _landlordAnalyticsService.GetCollectionTrendAsync(landlordId, from, to);
         return Ok(new { success = true, data });
     }
 }

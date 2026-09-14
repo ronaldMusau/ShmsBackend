@@ -53,20 +53,11 @@ public class FinancialStandingService
             LandlordId = filters.LandlordId
         };
 
-        var perFlatRows = await _paymentQueryService.BuildFilteredQuery(paymentFilters)
-            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid)
-            .Where(p => p.Amount > 0)
-            .GroupBy(p => p.FlatId)
-            .Select(g => new
-            {
-                FlatId = g.Key,
-                // RentAmount/ServiceChargeAmount are nullable — coalesced to 0 before dividing so a
-                // row missing one component contributes $0 for it rather than making the whole Sum
-                // nullable (SQL SUM() returns NULL, not 0, when every input row is NULL).
-                RentCollected = g.Sum(p => (p.RentAmount ?? 0m) / p.Amount * p.AmountPaid),
-                ServiceChargeCollected = g.Sum(p => (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid)
-            })
-            .ToListAsync();
+        // Extracted verbatim into RentCollectionHelper.GetCollectedByFlatAsync — same filter chain,
+        // same GroupBy(FlatId), same Select expression as before, just relocated so PaymentAnalyticsService
+        // and LandlordAnalyticsService can reuse the identical "actual cash collected" computation.
+        var perFlatRows = await RentCollectionHelper.GetCollectedByFlatAsync(
+            _paymentQueryService.BuildFilteredQuery(paymentFilters));
 
         // ── Step 2: apply each flat's own ManagementFeePercentage (in C#, after materialization) ──
         var flatIds = perFlatRows.Select(r => r.FlatId).ToList();
