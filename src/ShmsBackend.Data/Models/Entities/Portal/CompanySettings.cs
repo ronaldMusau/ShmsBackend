@@ -12,6 +12,10 @@ namespace ShmsBackend.Data.Models.Entities.Portal
         public string? Website { get; set; }
         public string? RegistrationNumber { get; set; }
         public string? LogoPath { get; set; }
+        public string? WhatsappUrl { get; set; }
+        public string? FacebookUrl { get; set; }
+        public string? TwitterUrl { get; set; }
+        public string? InstagramUrl { get; set; }
         public Guid? UpdatedByUserId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

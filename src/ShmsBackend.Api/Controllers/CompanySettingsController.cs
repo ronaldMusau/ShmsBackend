@@ -47,6 +47,10 @@ public class CompanySettingsController : ControllerBase
                 Website = null,
                 RegistrationNumber = null,
                 LogoPath = null,
+                WhatsappUrl = null,
+                FacebookUrl = null,
+                TwitterUrl = null,
+                InstagramUrl = null,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -67,6 +71,10 @@ public class CompanySettingsController : ControllerBase
                 settings.Website,
                 settings.RegistrationNumber,
                 settings.LogoPath,
+                settings.WhatsappUrl,
+                settings.FacebookUrl,
+                settings.TwitterUrl,
+                settings.InstagramUrl,
                 settings.UpdatedByUserId,
                 settings.CreatedAt,
                 settings.UpdatedAt
@@ -92,6 +100,10 @@ public class CompanySettingsController : ControllerBase
         settings.Phone = dto.Phone;
         settings.Website = dto.Website;
         settings.RegistrationNumber = dto.RegistrationNumber;
+        settings.WhatsappUrl = dto.WhatsappUrl;
+        settings.FacebookUrl = dto.FacebookUrl;
+        settings.TwitterUrl = dto.TwitterUrl;
+        settings.InstagramUrl = dto.InstagramUrl;
         settings.UpdatedByUserId = GetUserId();
         settings.UpdatedAt = DateTime.UtcNow;
 
@@ -110,6 +122,10 @@ public class CompanySettingsController : ControllerBase
                 settings.Website,
                 settings.RegistrationNumber,
                 settings.LogoPath,
+                settings.WhatsappUrl,
+                settings.FacebookUrl,
+                settings.TwitterUrl,
+                settings.InstagramUrl,
                 settings.UpdatedByUserId,
                 settings.CreatedAt,
                 settings.UpdatedAt
@@ -248,4 +264,8 @@ public class UpdateCompanySettingsDto
     public string? Phone { get; set; }
     public string? Website { get; set; }
     public string? RegistrationNumber { get; set; }
+    public string? WhatsappUrl { get; set; }
+    public string? FacebookUrl { get; set; }
+    public string? TwitterUrl { get; set; }
+    public string? InstagramUrl { get; set; }
 }
