@@ -82,6 +82,53 @@ public class CompanySettingsController : ControllerBase
         });
     }
 
+    // GET /api/companysettings/public
+    [HttpGet("public")]
+    public async Task<IActionResult> GetPublicSettings()
+    {
+        var settings = await _context.CompanySettings.FirstOrDefaultAsync();
+        if (settings == null)
+        {
+            settings = new CompanySettings
+            {
+                Id = Guid.NewGuid(),
+                CompanyName = null,
+                Address = null,
+                Email = null,
+                Phone = null,
+                Website = null,
+                RegistrationNumber = null,
+                LogoPath = null,
+                WhatsappUrl = null,
+                FacebookUrl = null,
+                TwitterUrl = null,
+                InstagramUrl = null,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _context.CompanySettings.Add(settings);
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                settings.CompanyName,
+                settings.Address,
+                settings.Email,
+                settings.Phone,
+                settings.Website,
+                settings.LogoPath,
+                settings.WhatsappUrl,
+                settings.FacebookUrl,
+                settings.TwitterUrl,
+                settings.InstagramUrl
+            }
+        });
+    }
+
     // PUT /api/companysettings
     [HttpPut]
     [Authorize(Roles = "SuperAdmin,Admin")]
@@ -182,6 +229,18 @@ public class CompanySettingsController : ControllerBase
     [HttpGet("logo")]
     [Authorize]
     public async Task<IActionResult> GetLogo()
+    {
+        var settings = await _context.CompanySettings.FirstOrDefaultAsync();
+        var result = await ReadPrivateFileAsync(settings?.LogoPath);
+        if (result == null)
+            return NotFound(new { success = false, message = "No company logo has been uploaded." });
+
+        return File(result.Value.Bytes, result.Value.ContentType);
+    }
+
+    // GET /api/companysettings/public/logo
+    [HttpGet("public/logo")]
+    public async Task<IActionResult> GetPublicLogo()
     {
         var settings = await _context.CompanySettings.FirstOrDefaultAsync();
         var result = await ReadPrivateFileAsync(settings?.LogoPath);
