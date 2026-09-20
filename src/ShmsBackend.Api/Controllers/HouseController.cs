@@ -112,6 +112,18 @@ public class HouseController : ControllerBase
         return Ok(new { success = true, data = numbers });
     }
 
+    [HttpGet("flat/{flatId:guid}/type/{houseTypeId:guid}/images")]
+    [Authorize]
+    public async Task<IActionResult> GetHouseTypeImagesForFlatAndType(Guid flatId, Guid houseTypeId)
+    {
+        var images = await _context.HouseTypeImages
+            .Where(hti => hti.FlatId == flatId && hti.HouseTypeId == houseTypeId)
+            .OrderBy(hti => hti.SortOrder)
+            .Select(hti => new { hti.Id, hti.ImagePath })
+            .ToListAsync();
+        return Ok(new { success = true, data = images });
+    }
+
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateHouseDto dto)
@@ -174,16 +186,15 @@ public class HouseController : ControllerBase
     [HttpPost("upload-images")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Agent")]
     [RequestSizeLimit(20_000_000)]
-    public async Task<IActionResult> UploadImages([FromForm] List<Guid> houseIds, [FromForm] List<IFormFile> files)
+    public async Task<IActionResult> UploadImages([FromForm] Guid flatId, [FromForm] Guid houseTypeId, [FromForm] List<IFormFile> files)
     {
-        if (houseIds == null || houseIds.Count == 0)
-            return BadRequest(new { success = false, message = "At least one house ID is required." });
         if (files == null || files.Count == 0)
             return BadRequest(new { success = false, message = "At least one image file is required." });
 
-        var existingCount = await _context.HouseImages.CountAsync(hi => hi.HouseId == houseIds[0]);
+        var existingCount = await _context.HouseTypeImages
+            .CountAsync(hti => hti.FlatId == flatId && hti.HouseTypeId == houseTypeId);
         if (existingCount + files.Count > 5)
-            return BadRequest(new { success = false, message = $"Maximum 5 images per house. This house already has {existingCount}." });
+            return BadRequest(new { success = false, message = $"Maximum 5 images per house type. This group already has {existingCount}." });
 
         var savedPaths = new List<string>();
         var uploadsRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "house-images");
@@ -205,19 +216,17 @@ public class HouseController : ControllerBase
         }
 
         int sortOrder = existingCount;
-        foreach (var houseId in houseIds)
+        foreach (var path in savedPaths)
         {
-            foreach (var path in savedPaths)
+            _context.HouseTypeImages.Add(new HouseTypeImage
             {
-                _context.HouseImages.Add(new HouseImage
-                {
-                    Id = Guid.NewGuid(),
-                    HouseId = houseId,
-                    ImagePath = path,
-                    SortOrder = sortOrder,
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
+                Id = Guid.NewGuid(),
+                FlatId = flatId,
+                HouseTypeId = houseTypeId,
+                ImagePath = path,
+                SortOrder = sortOrder,
+                CreatedAt = DateTime.UtcNow
+            });
             sortOrder++;
         }
 
@@ -626,7 +635,7 @@ public class HouseController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Agent")]
     public async Task<IActionResult> DeleteImage(Guid imageId)
     {
-        var image = await _context.HouseImages.FindAsync(imageId);
+        var image = await _context.HouseTypeImages.FindAsync(imageId);
         if (image == null)
             return NotFound(new { success = false, message = "Image not found." });
 
@@ -634,7 +643,7 @@ public class HouseController : ControllerBase
         if (System.IO.File.Exists(filePath))
             System.IO.File.Delete(filePath);
 
-        _context.HouseImages.Remove(image);
+        _context.HouseTypeImages.Remove(image);
         await _context.SaveChangesAsync();
         return Ok(new { success = true, message = "Image deleted." });
     }
