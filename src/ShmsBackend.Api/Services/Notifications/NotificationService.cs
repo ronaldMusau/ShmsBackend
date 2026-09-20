@@ -48,13 +48,28 @@ public class NotificationService : INotificationService
         var group = ResolvePreferenceGroup(category, entityType, isPortalUser);
         var parsedEntityId = string.IsNullOrEmpty(entityId) ? (Guid?)null : Guid.Parse(entityId);
 
-        // Preferences are per-user even for a role broadcast — evaluate each recipient individually.
+        // Preferences are per-user even for a role broadcast, but fetched once for every recipient
+        // up front instead of once per recipient per channel — was up to 2 queries × N recipients here.
+        var recipientGuids = userIds
+            .Select(id => Guid.TryParse(id, out var g) ? g : (Guid?)null)
+            .Where(g => g.HasValue)
+            .Select(g => g!.Value)
+            .Distinct()
+            .ToList();
+
+        var prefsByUser = (await _context.NotificationPreferences.AsNoTracking()
+                .Where(p => recipientGuids.Contains(p.UserId) && p.IsPortalUser == isPortalUser)
+                .ToListAsync())
+            .ToDictionary(p => p.UserId);
+
         var createdNotifications = new List<Notification>();
         var pushRecipients = new List<string>();
 
         foreach (var userId in userIds)
         {
-            if (await ShouldDeliverAsync(userId, isPortalUser, group, "InApp"))
+            var pref = Guid.TryParse(userId, out var uid) && prefsByUser.TryGetValue(uid, out var p) ? p : null;
+
+            if (ShouldDeliver(pref, group, "InApp"))
             {
                 createdNotifications.Add(new Notification
                 {
@@ -70,7 +85,7 @@ public class NotificationService : INotificationService
                 });
             }
 
-            if (await ShouldDeliverAsync(userId, isPortalUser, group, "Push"))
+            if (ShouldDeliver(pref, group, "Push"))
                 pushRecipients.Add(userId);
         }
 
@@ -94,10 +109,7 @@ public class NotificationService : INotificationService
             }
         }
 
-        foreach (var userId in pushRecipients)
-        {
-            await SendWebPushAsync(userId, isPortalUser, message);
-        }
+        await SendWebPushBatchAsync(pushRecipients, isPortalUser, message);
 
         _logger.LogInformation("Notification sent to {Count}/{Total} users of role {Audience}: {Message}",
             createdNotifications.Count, userIds.Count, audience, message);
@@ -243,7 +255,7 @@ public class NotificationService : INotificationService
     // and group. No preference row => opt-out model default of all-true (matches GetOrCreateAsync).
     private async Task<bool> ShouldDeliverAsync(string userId, bool isPortalUser, string group, string channel)
     {
-        _logger.LogInformation("PUSH-DEBUG: Checking delivery for user {UserId}, group {Group}, channel {Channel}", userId, group, channel);
+        _logger.LogDebug("PUSH-DEBUG: Checking delivery for user {UserId}, group {Group}, channel {Channel}", userId, group, channel);
 
         if (!Guid.TryParse(userId, out var uid))
             return true;
@@ -251,6 +263,13 @@ public class NotificationService : INotificationService
         var pref = await _context.NotificationPreferences.AsNoTracking()
             .FirstOrDefaultAsync(p => p.UserId == uid && p.IsPortalUser == isPortalUser);
 
+        return ShouldDeliver(pref, group, channel);
+    }
+
+    // Same delivery rule as above, evaluated against an already-fetched preference row (or null)
+    // instead of querying — lets a batch caller fetch every recipient's preference once up front.
+    private static bool ShouldDeliver(NotificationPreference? pref, string group, string channel)
+    {
         if (pref == null)
             return true;
 
@@ -279,7 +298,7 @@ public class NotificationService : INotificationService
             .Where(s => s.UserId == uid && s.IsPortalUser == isPortalUser)
             .ToListAsync();
 
-        _logger.LogInformation("PUSH-DEBUG: Found {Count} push subscription(s) for user {UserId} (isPortalUser={IsPortalUser})", subscriptions.Count, userId, isPortalUser);
+        _logger.LogDebug("PUSH-DEBUG: Found {Count} push subscription(s) for user {UserId} (isPortalUser={IsPortalUser})", subscriptions.Count, userId, isPortalUser);
 
         if (subscriptions.Count == 0)
             return;
@@ -294,10 +313,10 @@ public class NotificationService : INotificationService
         {
             try
             {
-                _logger.LogInformation("PUSH-DEBUG: Attempting to send push to subscription {SubId}, endpoint starting {EndpointPrefix}", sub.Id, sub.Endpoint.Substring(0, Math.Min(50, sub.Endpoint.Length)));
+                _logger.LogDebug("PUSH-DEBUG: Attempting to send push to subscription {SubId}, endpoint starting {EndpointPrefix}", sub.Id, sub.Endpoint.Substring(0, Math.Min(50, sub.Endpoint.Length)));
                 var target = new WebPush.PushSubscription(sub.Endpoint, sub.P256dh, sub.Auth);
                 await client.SendNotificationAsync(target, payload, vapidDetails);
-                _logger.LogInformation("PUSH-DEBUG: Successfully sent push to subscription {SubId}", sub.Id);
+                _logger.LogDebug("PUSH-DEBUG: Successfully sent push to subscription {SubId}", sub.Id);
             }
             catch (WebPush.WebPushException ex)
                 when (ex.StatusCode == HttpStatusCode.NotFound || ex.StatusCode == HttpStatusCode.Gone)
@@ -311,6 +330,80 @@ public class NotificationService : INotificationService
             {
                 _logger.LogWarning(ex,
                     "Failed to deliver web push to subscription {SubscriptionId} for user {UserId}", sub.Id, userId);
+            }
+        }
+
+        if (stale.Count > 0)
+        {
+            _context.PushSubscriptions.RemoveRange(stale);
+            await _context.SaveChangesAsync();
+        }
+    }
+
+    // Same delivery as SendWebPushAsync, but for a whole role-broadcast recipient list at once:
+    // one PushSubscriptions query for every recipient instead of one query per recipient.
+    private async Task SendWebPushBatchAsync(List<string> userIds, bool isPortalUser, string message)
+    {
+        if (userIds.Count == 0)
+            return;
+
+        var publicKey = _configuration["WebPush:VapidPublicKey"];
+        var privateKey = _configuration["WebPush:VapidPrivateKey"];
+        var subject = _configuration["WebPush:VapidSubject"];
+
+        if (string.IsNullOrEmpty(publicKey) || string.IsNullOrEmpty(privateKey) || string.IsNullOrEmpty(subject))
+        {
+            _logger.LogWarning("WebPush VAPID configuration missing; skipping web push for {Count} users", userIds.Count);
+            return;
+        }
+
+        var recipientGuids = userIds
+            .Select(id => Guid.TryParse(id, out var g) ? g : (Guid?)null)
+            .Where(g => g.HasValue)
+            .Select(g => g!.Value)
+            .Distinct()
+            .ToList();
+
+        if (recipientGuids.Count == 0)
+            return;
+
+        var subscriptions = await _context.PushSubscriptions
+            .Where(s => recipientGuids.Contains(s.UserId) && s.IsPortalUser == isPortalUser)
+            .ToListAsync();
+
+        _logger.LogDebug("PUSH-DEBUG: Found {Count} push subscription(s) across {UserCount} user(s) (isPortalUser={IsPortalUser})",
+            subscriptions.Count, recipientGuids.Count, isPortalUser);
+
+        if (subscriptions.Count == 0)
+            return;
+
+        var vapidDetails = new WebPush.VapidDetails(subject, publicKey, privateKey);
+        using var client = new WebPush.WebPushClient();
+        var payload = JsonSerializer.Serialize(new { title = "Romah Estates", body = message });
+
+        var stale = new List<PushSubscription>();
+
+        foreach (var sub in subscriptions)
+        {
+            try
+            {
+                _logger.LogDebug("PUSH-DEBUG: Attempting to send push to subscription {SubId}, endpoint starting {EndpointPrefix}", sub.Id, sub.Endpoint.Substring(0, Math.Min(50, sub.Endpoint.Length)));
+                var target = new WebPush.PushSubscription(sub.Endpoint, sub.P256dh, sub.Auth);
+                await client.SendNotificationAsync(target, payload, vapidDetails);
+                _logger.LogDebug("PUSH-DEBUG: Successfully sent push to subscription {SubId}", sub.Id);
+            }
+            catch (WebPush.WebPushException ex)
+                when (ex.StatusCode == HttpStatusCode.NotFound || ex.StatusCode == HttpStatusCode.Gone)
+            {
+                _logger.LogInformation(
+                    "Push subscription {SubscriptionId} for user {UserId} is gone ({Status}); removing it.",
+                    sub.Id, sub.UserId, (int)ex.StatusCode);
+                stale.Add(sub);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to deliver web push to subscription {SubscriptionId} for user {UserId}", sub.Id, sub.UserId);
             }
         }
 
