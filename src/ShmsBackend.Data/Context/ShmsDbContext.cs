@@ -276,6 +276,9 @@ public class ShmsDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(h => h.HouseTypeId)
                   .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(h => new { h.FlatId, h.HouseTypeId, h.HouseNumber })
+                  .IsUnique()
+                  .HasFilter("[IsDeleted] = 0");
         });
 
         // ── HouseImage Configuration ─────────────────────────────────────────

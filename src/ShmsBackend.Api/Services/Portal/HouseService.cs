@@ -36,7 +36,7 @@ public class HouseService
             throw new InvalidOperationException("Flat not found.");
 
         var duplicate = await _context.Houses
-            .AnyAsync(h => h.FlatId == dto.FlatId && h.HouseNumber == dto.HouseNumber);
+            .AnyAsync(h => h.FlatId == dto.FlatId && h.HouseTypeId == dto.HouseTypeId && h.HouseNumber == dto.HouseNumber && !h.IsDeleted);
         if (duplicate)
             throw new InvalidOperationException($"House number '{dto.HouseNumber}' already exists in this flat.");
 
@@ -167,8 +167,9 @@ public class HouseService
 
         if (dto.HouseNumber != null)
         {
+            var effectiveHouseTypeId = dto.HouseTypeId ?? house.HouseTypeId;
             var duplicate = await _context.Houses
-                .AnyAsync(h => h.FlatId == house.FlatId && h.HouseNumber == dto.HouseNumber && h.Id != id);
+                .AnyAsync(h => h.FlatId == house.FlatId && h.HouseTypeId == effectiveHouseTypeId && h.HouseNumber == dto.HouseNumber && h.Id != id && !h.IsDeleted);
             if (duplicate)
                 throw new InvalidOperationException($"House number '{dto.HouseNumber}' already exists in this flat.");
             house.HouseNumber = dto.HouseNumber;

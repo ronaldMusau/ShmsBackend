@@ -101,6 +101,17 @@ public class HouseController : ControllerBase
         return Ok(new { success = true, data = result });
     }
 
+    [HttpGet("flat/{flatId:guid}/type/{houseTypeId:guid}/numbers")]
+    [Authorize]
+    public async Task<IActionResult> GetHouseNumbersForFlatAndType(Guid flatId, Guid houseTypeId)
+    {
+        var numbers = await _context.Houses
+            .Where(h => h.FlatId == flatId && h.HouseTypeId == houseTypeId && !h.IsDeleted)
+            .Select(h => h.HouseNumber)
+            .ToListAsync();
+        return Ok(new { success = true, data = numbers });
+    }
+
     [HttpPut("{id:guid}")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> Update(Guid id, [FromBody] UpdateHouseDto dto)
