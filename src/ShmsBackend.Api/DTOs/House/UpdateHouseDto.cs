@@ -8,4 +8,6 @@ public class UpdateHouseDto
     public decimal? DepositFee { get; set; }
     public string? OccupancyStatus { get; set; }
     public string? PaymentStatus { get; set; }
+    public string? Description { get; set; }
+    public string? Amenities { get; set; }
 }

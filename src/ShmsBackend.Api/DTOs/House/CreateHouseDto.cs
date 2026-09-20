@@ -21,4 +21,7 @@ public class CreateHouseDto
 
     [Required]
     public Guid FlatId { get; set; }
+
+    public string? Description { get; set; }
+    public string? Amenities { get; set; }
 }

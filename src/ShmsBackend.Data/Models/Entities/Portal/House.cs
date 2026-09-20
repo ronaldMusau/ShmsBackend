@@ -37,6 +37,8 @@ public class House : ISoftDelete
     public HouseType? HouseTypeRef { get; set; }
     public decimal RentFee { get; set; }
     public decimal DepositFee { get; set; }
+    public string? Description { get; set; }
+    public string? Amenities { get; set; }
     public OccupancyStatus OccupancyStatus { get; set; } = OccupancyStatus.Vacant;
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.NotPaid;
     public Guid FlatId { get; set; }

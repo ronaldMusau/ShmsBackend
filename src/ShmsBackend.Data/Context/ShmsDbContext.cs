@@ -263,6 +263,8 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.HouseNumber).IsRequired().HasMaxLength(20);
             entity.Property(e => e.RentFee).HasColumnType("decimal(10,2)");
             entity.Property(e => e.DepositFee).HasColumnType("decimal(10,2)");
+            entity.Property(e => e.Description).HasMaxLength(2000);
+            entity.Property(e => e.Amenities).HasMaxLength(500);
             entity.Property(e => e.OccupancyStatus)
                   .HasConversion<string>()
                   .HasDefaultValue(OccupancyStatus.Vacant);

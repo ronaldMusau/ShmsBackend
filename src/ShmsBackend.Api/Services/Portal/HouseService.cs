@@ -47,6 +47,8 @@ public class HouseService
             HouseTypeId = dto.HouseTypeId,
             RentFee = dto.RentFee,
             DepositFee = dto.DepositFee,
+            Description = dto.Description,
+            Amenities = dto.Amenities,
             OccupancyStatus = OccupancyStatus.Vacant,
             PaymentStatus = PaymentStatus.NotPaid,
             FlatId = dto.FlatId,
@@ -105,6 +107,8 @@ public class HouseService
                 HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,
+                h.Description,
+                h.Amenities,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.FlatId,
@@ -141,6 +145,8 @@ public class HouseService
                 HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
                 h.RentFee,
                 h.DepositFee,
+                h.Description,
+                h.Amenities,
                 OccupancyStatus = h.OccupancyStatus.ToString(),
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.FlatId,
@@ -178,6 +184,8 @@ public class HouseService
 
         if (dto.RentFee.HasValue) house.RentFee = dto.RentFee.Value;
         if (dto.DepositFee.HasValue) house.DepositFee = dto.DepositFee.Value;
+        if (dto.Description != null) house.Description = dto.Description;
+        if (dto.Amenities != null) house.Amenities = dto.Amenities;
 
         if (dto.OccupancyStatus != null)
         {
@@ -276,6 +284,8 @@ public class HouseService
         HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
         h.RentFee,
         h.DepositFee,
+        h.Description,
+        h.Amenities,
         OccupancyStatus = h.OccupancyStatus.ToString(),
         PaymentStatus = h.PaymentStatus.ToString(),
         h.FlatId,
