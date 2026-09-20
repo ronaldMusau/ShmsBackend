@@ -67,6 +67,7 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.Configuration = builder.Configuration["RedisOptions:Configuration"];
     options.InstanceName = builder.Configuration["RedisOptions:InstanceName"];
 });
+builder.Services.AddScoped<ICacheHelper, CacheHelper>();
 
 // Add Repositories
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();

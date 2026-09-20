@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 using System.Security.Claims;
@@ -12,21 +13,29 @@ namespace ShmsBackend.Api.Controllers;
 [Authorize]
 public class ComplaintTypeController : ControllerBase
 {
-    private readonly ShmsDbContext _context;
+    // Same endpoint also serves the tenant-facing "raise a complaint" form (RomahClientPortal's
+    // portal-data.service.ts calls this exact GET /api/complainttype) — one cache entry covers both.
+    private const string CacheKey = "complainttypes:all";
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(1);
 
-    public ComplaintTypeController(ShmsDbContext context)
+    private readonly ShmsDbContext _context;
+    private readonly ICacheHelper _cacheHelper;
+
+    public ComplaintTypeController(ShmsDbContext context, ICacheHelper cacheHelper)
     {
         _context = context;
+        _cacheHelper = cacheHelper;
     }
 
     // GET /api/complainttype
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var types = await _context.ComplaintTypes
-            .Where(t => t.IsActive)
-            .OrderBy(t => t.Name)
-            .ToListAsync();
+        var types = await _cacheHelper.GetOrSetAsync(CacheKey, CacheTtl, () =>
+            _context.ComplaintTypes
+                .Where(t => t.IsActive)
+                .OrderBy(t => t.Name)
+                .ToListAsync());
         return Ok(new { success = true, data = types });
     }
 
@@ -50,6 +59,7 @@ public class ComplaintTypeController : ControllerBase
         };
         await _context.ComplaintTypes.AddAsync(type);
         await _context.SaveChangesAsync();
+        await _cacheHelper.RemoveAsync(CacheKey);
         return Ok(new { success = true, data = type });
     }
 
@@ -66,6 +76,7 @@ public class ComplaintTypeController : ControllerBase
         type.ReminderDays = dto.ReminderDays;
         type.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _cacheHelper.RemoveAsync(CacheKey);
         return Ok(new { success = true, data = type });
     }
 
@@ -81,6 +92,7 @@ public class ComplaintTypeController : ControllerBase
         type.DeletedAt = DateTime.UtcNow;
         type.IsActive = false;
         await _context.SaveChangesAsync();
+        await _cacheHelper.RemoveAsync(CacheKey);
         return Ok(new { success = true, message = "Complaint type deleted." });
     }
 }

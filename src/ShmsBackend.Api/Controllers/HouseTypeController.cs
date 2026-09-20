@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 using System.Security.Claims;
@@ -12,21 +13,27 @@ namespace ShmsBackend.Api.Controllers;
 [Authorize]
 public class HouseTypeController : ControllerBase
 {
-    private readonly ShmsDbContext _context;
+    private const string CacheKey = "housetypes:all";
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(1);
 
-    public HouseTypeController(ShmsDbContext context)
+    private readonly ShmsDbContext _context;
+    private readonly ICacheHelper _cacheHelper;
+
+    public HouseTypeController(ShmsDbContext context, ICacheHelper cacheHelper)
     {
         _context = context;
+        _cacheHelper = cacheHelper;
     }
 
     // GET /api/housetype
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var types = await _context.HouseTypes
-            .Where(t => t.IsActive)
-            .OrderBy(t => t.Name)
-            .ToListAsync();
+        var types = await _cacheHelper.GetOrSetAsync(CacheKey, CacheTtl, () =>
+            _context.HouseTypes
+                .Where(t => t.IsActive)
+                .OrderBy(t => t.Name)
+                .ToListAsync());
         return Ok(new { success = true, data = types });
     }
 
@@ -49,6 +56,7 @@ public class HouseTypeController : ControllerBase
         };
         await _context.HouseTypes.AddAsync(type);
         await _context.SaveChangesAsync();
+        await _cacheHelper.RemoveAsync(CacheKey);
         return Ok(new { success = true, data = type });
     }
 
@@ -64,6 +72,7 @@ public class HouseTypeController : ControllerBase
         type.Description = dto.Description;
         type.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _cacheHelper.RemoveAsync(CacheKey);
         return Ok(new { success = true, data = type });
     }
 
@@ -79,6 +88,7 @@ public class HouseTypeController : ControllerBase
         type.DeletedAt = DateTime.UtcNow;
         type.IsActive = false;
         await _context.SaveChangesAsync();
+        await _cacheHelper.RemoveAsync(CacheKey);
         return Ok(new { success = true, message = "House type deleted." });
     }
 }
