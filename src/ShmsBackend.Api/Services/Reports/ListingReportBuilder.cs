@@ -68,6 +68,14 @@ public class ListingReportBuilder
             .GroupBy(af => af.FlatId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
 
+        var typeImageGroupKeys = houses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+        var typeImagesFlat = await _context.HouseTypeImages
+            .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+            .ToListAsync();
+        var typeHasImagesDict = typeImageGroupKeys.ToDictionary(
+            k => (k.FlatId, k.HouseTypeId),
+            k => typeImagesFlat.Any(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId));
+
         var rows = houses.Select(h =>
         {
             likeDict.TryGetValue(h.Id, out var likeCount);
@@ -78,7 +86,7 @@ public class ListingReportBuilder
 
             var isPubliclyVisible = h.OccupancyStatus == OccupancyStatus.Vacant
                                   && !h.IsListingHidden
-                                  && h.Images.Any();
+                                  && typeHasImagesDict.GetValueOrDefault((h.FlatId, h.HouseTypeId));
 
             return new Dictionary<string, object?>
             {

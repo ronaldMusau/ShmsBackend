@@ -47,7 +47,6 @@ public class HouseQueryService
         var query = _context.Houses
             .Include(h => h.Flat)
             .Include(h => h.HouseTypeRef)
-            .Include(h => h.Images)
             .AsQueryable();
 
         if (filters.LandlordId.HasValue)

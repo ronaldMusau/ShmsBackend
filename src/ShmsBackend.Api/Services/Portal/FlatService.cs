@@ -241,7 +241,7 @@ public class FlatService
                 TotalHouses = f.Houses.Count,
                 VacantHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
                 OccupiedHouses = f.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
-                HasPhotos = f.Houses.Any(h => h.Images.Any()),
+                HasPhotos = f.Houses.Any(h => _context.HouseTypeImages.Any(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)),
                 AgentName = f.AgentFlats
                     .Select(af => af.Agent.FirstName + " " + af.Agent.LastName)
                     .FirstOrDefault(),
@@ -256,8 +256,6 @@ public class FlatService
         var flat = await _context.Flats
             .Include(f => f.Landlord)
             .Include(f => f.Houses)
-                .ThenInclude(h => h.Images)
-            .Include(f => f.Houses)
                 .ThenInclude(h => h.HouseTypeRef)
             .Include(f => f.AgentFlats)
                 .ThenInclude(af => af.Agent)
@@ -266,6 +264,11 @@ public class FlatService
         if (flat == null) return null;
 
         var houseIds = flat.Houses.Select(h => h.Id).ToList();
+
+        var typeImages = await _context.HouseTypeImages
+            .Where(hti => hti.FlatId == flat.Id)
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
         var everOccupiedSet = new HashSet<Guid>(
             await _context.TenantHouseHistories
                 .Where(th => houseIds.Contains(th.HouseId))
@@ -315,7 +318,7 @@ public class FlatService
                 h.IsAwaitingExistingTenant,
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
-                Images = h.Images.OrderBy(hi => hi.SortOrder).Select(hi => new { hi.Id, hi.ImagePath }).ToList(),
+                Images = typeImages.Where(ti => ti.HouseTypeId == h.HouseTypeId).Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                 EverOccupied = everOccupiedSet.Contains(h.Id),
                 ScheduledRentChange = pendingRentChangesByHouse.TryGetValue(h.Id, out var prc) ? new
                 {

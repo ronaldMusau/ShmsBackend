@@ -116,7 +116,11 @@ public class HouseService
                 h.IsAwaitingExistingTenant,
                 h.CreatedAt,
                 h.UpdatedAt,
-                ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
+                ImagePaths = _context.HouseTypeImages
+                    .Where(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)
+                    .OrderBy(hti => hti.SortOrder)
+                    .Select(hti => hti.ImagePath)
+                    .ToList()
             })
             .ToListAsync<object>();
     }
@@ -125,12 +129,18 @@ public class HouseService
     {
         var house = await _context.Houses
             .Include(h => h.Flat)
-            .Include(h => h.Images)
             .Include(h => h.HouseTypeRef)
             .FirstOrDefaultAsync(h => h.Id == id);
 
         if (house == null) return null;
-        return MapToDto(house);
+
+        var imagePaths = await _context.HouseTypeImages
+            .Where(hti => hti.FlatId == house.FlatId && hti.HouseTypeId == house.HouseTypeId)
+            .OrderBy(hti => hti.SortOrder)
+            .Select(hti => hti.ImagePath)
+            .ToListAsync();
+
+        return MapToDto(house, imagePaths);
     }
 
     public async Task<IEnumerable<object>> GetByFlatAsync(Guid flatId)
@@ -153,7 +163,11 @@ public class HouseService
                 h.IsAwaitingExistingTenant,
                 h.CreatedAt,
                 h.UpdatedAt,
-                ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
+                ImagePaths = _context.HouseTypeImages
+                    .Where(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)
+                    .OrderBy(hti => hti.SortOrder)
+                    .Select(hti => hti.ImagePath)
+                    .ToList()
             })
             .ToListAsync<object>();
     }
@@ -278,7 +292,7 @@ public class HouseService
             .ToListAsync();
     }
 
-    private static object MapToDto(House h) => new
+    private static object MapToDto(House h, List<string> imagePaths) => new
     {
         h.Id,
         h.HouseNumber,
@@ -294,6 +308,6 @@ public class HouseService
         h.IsAwaitingExistingTenant,
         h.CreatedAt,
         h.UpdatedAt,
-        ImagePaths = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList()
+        ImagePaths = imagePaths
     };
 }

@@ -45,8 +45,6 @@ public class PortalTenantController : ControllerBase
             .Include(t => t.House)
                 .ThenInclude(h => h!.Flat)
             .Include(t => t.House)
-                .ThenInclude(h => h!.Images)
-            .Include(t => t.House)
                 .ThenInclude(h => h!.HouseTypeRef)
             .FirstOrDefaultAsync(t => t.Id == tenantId);
 
@@ -58,6 +56,11 @@ public class PortalTenantController : ControllerBase
             .Where(pc => pc.HouseId == h.Id && pc.AppliedAt == null)
             .OrderByDescending(pc => pc.CreatedAt)
             .FirstOrDefaultAsync();
+
+        var tenantTypeImages = await _context.HouseTypeImages
+            .Where(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
 
         return Ok(ApiResponse<object>.SuccessResponse(new
         {
@@ -86,7 +89,7 @@ public class PortalTenantController : ControllerBase
                 h.Flat.Constituency,
                 h.Flat.Ward
             },
-            Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
+            Images = tenantTypeImages.Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
             TenantProfile = new
             {
                 tenant.FirstName,

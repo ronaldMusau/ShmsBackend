@@ -88,7 +88,10 @@ public class PortalFlatController : ControllerBase
                         OccupancyStatus = h.OccupancyStatus.ToString(),
                         h.IsAwaitingExistingTenant,
                         PaymentStatus = h.PaymentStatus.ToString(),
-                        Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList()
+                        Images = _context.HouseTypeImages
+                            .Where(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)
+                            .OrderBy(hti => hti.SortOrder)
+                            .Select(hti => new { hti.Id, hti.ImagePath }).ToList()
                     }).ToList()
                 })
                 .ToListAsync();
@@ -128,7 +131,10 @@ public class PortalFlatController : ControllerBase
                         OccupancyStatus = h.OccupancyStatus.ToString(),
                         h.IsAwaitingExistingTenant,
                         PaymentStatus = h.PaymentStatus.ToString(),
-                        Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList()
+                        Images = _context.HouseTypeImages
+                            .Where(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)
+                            .OrderBy(hti => hti.SortOrder)
+                            .Select(hti => new { hti.Id, hti.ImagePath }).ToList()
                     }).ToList()
                 })
                 .ToListAsync();
@@ -138,11 +144,20 @@ public class PortalFlatController : ControllerBase
 
         var allFlats = await _context.Flats
             .Include(f => f.Houses)
-                .ThenInclude(h => h.Images)
-            .Include(f => f.Houses)
                 .ThenInclude(h => h.HouseTypeRef)
             .AsSplitQuery()
             .ToListAsync();
+
+        var allTypeImageKeys = allFlats.SelectMany(f => f.Houses)
+            .Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+        var allTypeImagesFlat = await _context.HouseTypeImages
+            .Where(hti => allTypeImageKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
+        var allTypeImagesDict = allTypeImageKeys.ToDictionary(
+            k => (k.FlatId, k.HouseTypeId),
+            k => allTypeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
+                                   .Select(ti => new { ti.Id, ti.ImagePath }).ToList());
 
         return Ok(new { success = true, data = allFlats.Select(flat => new
         {
@@ -166,7 +181,7 @@ public class PortalFlatController : ControllerBase
                 h.IsAwaitingExistingTenant,
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
-                Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList()
+                Images = allTypeImagesDict[(h.FlatId, h.HouseTypeId)]
             }),
             flat.CreatedAt
         })});
@@ -185,9 +200,6 @@ public class PortalFlatController : ControllerBase
                 .Include(af => af.Flat)
                     .ThenInclude(f => f.Houses)
                         .ThenInclude(h => h.HouseTypeRef)
-                .Include(af => af.Flat)
-                    .ThenInclude(f => f.Houses)
-                        .ThenInclude(h => h.Images)
                 .FirstOrDefaultAsync(af => af.AgentId == agentId && af.FlatId == id);
 
             if (agentFlat == null)
@@ -200,6 +212,11 @@ public class PortalFlatController : ControllerBase
                     .ToListAsync())
                 .GroupBy(pc => pc.HouseId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(pc => pc.CreatedAt).First());
+
+            var agentTypeImages = await _context.HouseTypeImages
+                .Where(hti => hti.FlatId == flat.Id)
+                .OrderBy(hti => hti.SortOrder)
+                .ToListAsync();
 
             return Ok(new { success = true, data = new
             {
@@ -224,7 +241,8 @@ public class PortalFlatController : ControllerBase
                     OccupancyStatus = h.OccupancyStatus.ToString(),
                     h.IsAwaitingExistingTenant,
                     PaymentStatus = h.PaymentStatus.ToString(),
-                    Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
+                    Images = agentTypeImages.Where(ti => ti.HouseTypeId == h.HouseTypeId)
+                                             .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                     ScheduledRentChange = agentPendingRentChanges.TryGetValue(h.Id, out var agentPrc) ? new
                     {
                         agentPrc.NewRentFee,
@@ -248,8 +266,6 @@ public class PortalFlatController : ControllerBase
                 .Include(f => f.Houses)
                     .ThenInclude(h => h.Tenants)
                 .Include(f => f.Houses)
-                    .ThenInclude(h => h.Images)
-                .Include(f => f.Houses)
                     .ThenInclude(h => h.HouseTypeRef)
                 .FirstOrDefaultAsync(f => f.Id == id && f.LandlordId == landlordId);
 
@@ -262,6 +278,11 @@ public class PortalFlatController : ControllerBase
                     .ToListAsync())
                 .GroupBy(pc => pc.HouseId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(pc => pc.CreatedAt).First());
+
+            var landlordTypeImages = await _context.HouseTypeImages
+                .Where(hti => hti.FlatId == landlordFlat.Id)
+                .OrderBy(hti => hti.SortOrder)
+                .ToListAsync();
 
             return Ok(new { success = true, data = new
             {
@@ -300,7 +321,8 @@ public class PortalFlatController : ControllerBase
                         t.Email,
                         t.CreatedAt
                     }).FirstOrDefault(),
-                    Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
+                    Images = landlordTypeImages.Where(ti => ti.HouseTypeId == h.HouseTypeId)
+                                                .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                     ScheduledRentChange = landlordPendingRentChanges.TryGetValue(h.Id, out var landlordPrc) ? new
                     {
                         landlordPrc.NewRentFee,
@@ -328,6 +350,11 @@ public class PortalFlatController : ControllerBase
             .GroupBy(pc => pc.HouseId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(pc => pc.CreatedAt).First());
 
+        var defaultTypeImages = await _context.HouseTypeImages
+            .Where(hti => hti.FlatId == result.Id)
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
+
         return Ok(new { success = true, data = new
         {
             result.Id,
@@ -352,7 +379,8 @@ public class PortalFlatController : ControllerBase
                 h.IsAwaitingExistingTenant,
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
-                Images = h.Images.OrderBy(i => i.SortOrder).Select(i => new { i.Id, i.ImagePath }).ToList(),
+                Images = defaultTypeImages.Where(ti => ti.HouseTypeId == h.HouseTypeId)
+                                           .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                 ScheduledRentChange = defaultPendingRentChanges.TryGetValue(h.Id, out var defaultPrc) ? new
                 {
                     defaultPrc.NewRentFee,

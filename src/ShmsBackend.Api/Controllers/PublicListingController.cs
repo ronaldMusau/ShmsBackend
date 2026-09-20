@@ -67,11 +67,10 @@ public class PublicListingController : ControllerBase
     {
         var baseQuery = _context.Houses
             .Include(h => h.Flat)
-            .Include(h => h.Images)
             .Include(h => h.HouseTypeRef)
             .Where(h => h.OccupancyStatus == OccupancyStatus.Vacant
                      && !h.IsListingHidden
-                     && h.Images.Any());
+                     && _context.HouseTypeImages.Any(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId));
 
         if (!string.IsNullOrEmpty(county))
             baseQuery = baseQuery.Where(h => h.Flat != null && h.Flat.County == county);
@@ -133,7 +132,6 @@ public class PublicListingController : ControllerBase
 
             var pageHouseList = await _context.Houses
                 .Include(h => h.Flat)
-                .Include(h => h.Images)
                 .Include(h => h.HouseTypeRef)
                 .Where(h => pageIds.Contains(h.Id))
                 .ToListAsync();
@@ -183,12 +181,23 @@ public class PublicListingController : ControllerBase
             .GroupBy(af => af.FlatId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
 
+        var typeImageGroupKeys = pagedHouses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+        var typeImagesFlat = await _context.HouseTypeImages
+            .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
+        var typeImagesDict = typeImageGroupKeys.ToDictionary(
+            k => (k.FlatId, k.HouseTypeId),
+            k => typeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
+                                .Select(ti => ti.ImagePath).ToList());
+
         var data = pagedHouses.Select(h =>
         {
             likeDict.TryGetValue(h.Id, out var likeCount);
             dislikeDict.TryGetValue(h.Id, out var dislikeCount);
             ratingDict.TryGetValue(h.Id, out var avgRating);
             agentDict.TryGetValue(h.FlatId, out var agent);
+            var images = typeImagesDict.GetValueOrDefault((h.FlatId, h.HouseTypeId)) ?? new List<string>();
             return (object)new
             {
                 id = h.Id,
@@ -202,7 +211,7 @@ public class PublicListingController : ControllerBase
                 county = h.Flat?.County,
                 constituency = h.Flat?.Constituency,
                 ward = h.Flat?.Ward,
-                images = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                images,
                 avgRating,
                 likeCount,
                 dislikeCount,
@@ -238,11 +247,10 @@ public class PublicListingController : ControllerBase
     {
         var query = _context.Houses
             .Include(h => h.Flat)
-            .Include(h => h.Images)
             .Include(h => h.HouseTypeRef)
             .Where(h => h.OccupancyStatus == OccupancyStatus.Occupied
                      && !h.IsListingHidden
-                     && h.Images.Any()
+                     && _context.HouseTypeImages.Any(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)
                      && _context.VacateRequests
                          .Any(v => v.HouseId == h.Id && v.Status == "Approved" && !v.IsDeleted));
 
@@ -281,10 +289,21 @@ public class PublicListingController : ControllerBase
             .GroupBy(af => af.FlatId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
 
+        var typeImageGroupKeys = houses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+        var typeImagesFlat = await _context.HouseTypeImages
+            .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
+        var typeImagesDict = typeImageGroupKeys.ToDictionary(
+            k => (k.FlatId, k.HouseTypeId),
+            k => typeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
+                                .Select(ti => ti.ImagePath).ToList());
+
         var data = houses.Select(h =>
         {
             agentDict.TryGetValue(h.FlatId, out var agent);
             vacateDict.TryGetValue(h.Id, out var vacate);
+            var images = typeImagesDict.GetValueOrDefault((h.FlatId, h.HouseTypeId)) ?? new List<string>();
             return (object)new
             {
                 id = h.Id,
@@ -296,7 +315,7 @@ public class PublicListingController : ControllerBase
                 county = h.Flat?.County,
                 constituency = h.Flat?.Constituency,
                 ward = h.Flat?.Ward,
-                images = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                images,
                 availableFromMonth = vacate?.VacateMonth,
                 availableFromYear = vacate?.VacateYear,
                 agent = agent == null ? null : new
@@ -368,7 +387,6 @@ public class PublicListingController : ControllerBase
 
         var housesQuery = _context.Houses
             .Include(h => h.Flat)
-            .Include(h => h.Images)
             .Include(h => h.HouseTypeRef)
             .Where(h => allHouseIds.Contains(h.Id));
 
@@ -386,6 +404,16 @@ public class PublicListingController : ControllerBase
             housesQuery = housesQuery.Where(h => h.RentFee <= maxRent.Value);
 
         var houses = await housesQuery.ToListAsync();
+
+        var typeImageGroupKeys = houses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+        var typeImagesFlat = await _context.HouseTypeImages
+            .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
+        var typeImagesDict = typeImageGroupKeys.ToDictionary(
+            k => (k.FlatId, k.HouseTypeId),
+            k => typeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
+                                .Select(ti => ti.ImagePath).ToList());
 
         var likeCounts = await _context.HouseListingLikes
             .Where(l => allHouseIds.Contains(l.HouseId))
@@ -434,7 +462,8 @@ public class PublicListingController : ControllerBase
             myRatingDict.TryGetValue(h.Id, out var myRating);
             myCommentDict.TryGetValue(h.Id, out var myComment);
             var myBookmark = myBookmarkSet.Contains(h.Id);
-            var isAvailable = h.OccupancyStatus == OccupancyStatus.Vacant && !h.IsListingHidden && h.Images.Any();
+            var hasImages = typeImagesDict.TryGetValue((h.FlatId, h.HouseTypeId), out var hImgs) && hImgs.Count > 0;
+            var isAvailable = h.OccupancyStatus == OccupancyStatus.Vacant && !h.IsListingHidden && hasImages;
             return new { h, likeCount, dislikeCount, avgRating, myLike, myRating, myComment, myBookmark, isAvailable };
         }).AsEnumerable();
 
@@ -456,7 +485,7 @@ public class PublicListingController : ControllerBase
         var total = filteredList.Count;
 
         var data = filteredList
-            .OrderByDescending(x => x.h.OccupancyStatus == OccupancyStatus.Vacant && !x.h.IsListingHidden && x.h.Images.Any())
+            .OrderByDescending(x => x.isAvailable)
             .ThenByDescending(x => latestInteractionDict.GetValueOrDefault(x.h.Id))
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -470,7 +499,7 @@ public class PublicListingController : ControllerBase
                 county = x.h.Flat?.County,
                 constituency = x.h.Flat?.Constituency,
                 ward = x.h.Flat?.Ward,
-                images = x.h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                images = typeImagesDict.GetValueOrDefault((x.h.FlatId, x.h.HouseTypeId)) ?? new List<string>(),
                 avgRating = x.avgRating,
                 likeCount = x.likeCount,
                 dislikeCount = x.dislikeCount,
@@ -519,7 +548,6 @@ public class PublicListingController : ControllerBase
 
         var housesQuery = _context.Houses
             .Include(h => h.Flat)
-            .Include(h => h.Images)
             .Include(h => h.HouseTypeRef)
             .Where(h => allHouseIds.Contains(h.Id));
 
@@ -537,6 +565,16 @@ public class PublicListingController : ControllerBase
             housesQuery = housesQuery.Where(h => h.RentFee <= maxRent.Value);
 
         var houses = await housesQuery.ToListAsync();
+
+        var typeImageGroupKeys = houses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+        var typeImagesFlat = await _context.HouseTypeImages
+            .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
+        var typeImagesDict = typeImageGroupKeys.ToDictionary(
+            k => (k.FlatId, k.HouseTypeId),
+            k => typeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
+                                .Select(ti => ti.ImagePath).ToList());
 
         var likeCounts = await _context.HouseListingLikes
             .Where(l => allHouseIds.Contains(l.HouseId))
@@ -561,7 +599,8 @@ public class PublicListingController : ControllerBase
             likeDict.TryGetValue(h.Id, out var likeCount);
             dislikeDict.TryGetValue(h.Id, out var dislikeCount);
             ratingDict.TryGetValue(h.Id, out var avgRating);
-            var isAvailable = h.OccupancyStatus == OccupancyStatus.Vacant && !h.IsListingHidden && h.Images.Any();
+            var hasImages = typeImagesDict.TryGetValue((h.FlatId, h.HouseTypeId), out var hImgs) && hImgs.Count > 0;
+            var isAvailable = h.OccupancyStatus == OccupancyStatus.Vacant && !h.IsListingHidden && hasImages;
             var latestInteraction = bookmarkDict.GetValueOrDefault(h.Id);
             return new { h, likeCount, dislikeCount, avgRating, isAvailable, latestInteraction };
         }).ToList();
@@ -569,7 +608,7 @@ public class PublicListingController : ControllerBase
         var total = filteredList.Count;
 
         var data = filteredList
-            .OrderByDescending(x => x.h.OccupancyStatus == OccupancyStatus.Vacant && !x.h.IsListingHidden && x.h.Images.Any())
+            .OrderByDescending(x => x.isAvailable)
             .ThenByDescending(x => x.latestInteraction)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
@@ -583,7 +622,7 @@ public class PublicListingController : ControllerBase
                 county = x.h.Flat?.County,
                 constituency = x.h.Flat?.Constituency,
                 ward = x.h.Flat?.Ward,
-                images = x.h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                images = typeImagesDict.GetValueOrDefault((x.h.FlatId, x.h.HouseTypeId)) ?? new List<string>(),
                 avgRating = x.avgRating,
                 likeCount = x.likeCount,
                 dislikeCount = x.dislikeCount,
@@ -612,14 +651,21 @@ public class PublicListingController : ControllerBase
     {
         var house = await _context.Houses
             .Include(h => h.Flat)
-            .Include(h => h.Images)
             .Include(h => h.HouseTypeRef)
             .FirstOrDefaultAsync(h => h.Id == id);
 
         if (house == null
             || house.OccupancyStatus != OccupancyStatus.Vacant
-            || house.IsListingHidden
-            || !house.Images.Any())
+            || house.IsListingHidden)
+            return NotFound(new { success = false, message = "Listing not found." });
+
+        var typeImages = await _context.HouseTypeImages
+            .Where(hti => hti.FlatId == house.FlatId && hti.HouseTypeId == house.HouseTypeId)
+            .OrderBy(hti => hti.SortOrder)
+            .Select(hti => hti.ImagePath)
+            .ToListAsync();
+
+        if (!typeImages.Any())
             return NotFound(new { success = false, message = "Listing not found." });
 
         var likeCount = await _context.HouseListingLikes.CountAsync(l => l.HouseId == id && l.IsLike);
@@ -689,7 +735,7 @@ public class PublicListingController : ControllerBase
                 constituency = house.Flat?.Constituency,
                 ward = house.Flat?.Ward,
                 googleMapsLink = house.Flat?.GoogleMapsLink,
-                images = house.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                images = typeImages,
                 avgRating,
                 likeCount,
                 dislikeCount,

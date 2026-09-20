@@ -270,7 +270,6 @@ public class HouseController : ControllerBase
         IQueryable<House> baseQuery = _context.Houses
             .Include(h => h.Flat)
                 .ThenInclude(f => f!.Landlord)
-            .Include(h => h.Images)
             .Include(h => h.HouseTypeRef);
 
         if (flatId.HasValue)
@@ -348,7 +347,6 @@ public class HouseController : ControllerBase
 
             var pageHouseList = await _context.Houses
                 .Include(h => h.Flat)
-                .Include(h => h.Images)
                 .Include(h => h.HouseTypeRef)
                 .Where(h => pageIds.Contains(h.Id))
                 .ToListAsync();
@@ -405,6 +403,16 @@ public class HouseController : ControllerBase
             .GroupBy(af => af.FlatId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
 
+        var typeImageGroupKeys = pagedHouses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+        var typeImagesFlat = await _context.HouseTypeImages
+            .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+            .OrderBy(hti => hti.SortOrder)
+            .ToListAsync();
+        var typeImagesDict = typeImageGroupKeys.ToDictionary(
+            k => (k.FlatId, k.HouseTypeId),
+            k => typeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
+                                .Select(ti => ti.ImagePath).ToList());
+
         var data = pagedHouses.Select(h =>
         {
             likeDict.TryGetValue(h.Id, out var likeCount);
@@ -412,6 +420,7 @@ public class HouseController : ControllerBase
             ratingDict.TryGetValue(h.Id, out var avgRating);
             commentCountDict.TryGetValue(h.Id, out var commentCount);
             agentDict.TryGetValue(h.FlatId, out var agent);
+            var images = typeImagesDict.GetValueOrDefault((h.FlatId, h.HouseTypeId)) ?? new List<string>();
             return (object)new
             {
                 id = h.Id,
@@ -425,12 +434,12 @@ public class HouseController : ControllerBase
                 ward = h.Flat?.Ward,
                 occupancyStatus = h.OccupancyStatus.ToString(),
                 isAwaitingExistingTenant = h.IsAwaitingExistingTenant,
-                images = h.Images.OrderBy(i => i.SortOrder).Select(i => i.ImagePath).ToList(),
+                images,
                 isListingHidden = h.IsListingHidden,
                 commentsMuted = h.CommentsMuted,
                 isPubliclyVisible = h.OccupancyStatus == OccupancyStatus.Vacant
                                  && !h.IsListingHidden
-                                 && h.Images.Any(),
+                                 && images.Count > 0,
                 avgRating,
                 likeCount,
                 dislikeCount,
