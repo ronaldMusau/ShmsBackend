@@ -32,6 +32,7 @@ public class ShmsDbContext : DbContext
     public DbSet<HouseType> HouseTypes { get; set; }
     public DbSet<Flat> Flats { get; set; }
     public DbSet<HouseImage> HouseImages { get; set; }
+    public DbSet<HouseTypeImage> HouseTypeImages { get; set; }
     public DbSet<PendingRentChange> PendingRentChanges { get; set; }
     public DbSet<FlatEditRequest> FlatEditRequests { get; set; }
     public DbSet<FlatEditApprovalAction> FlatEditApprovalActions { get; set; }
@@ -279,6 +280,21 @@ public class ShmsDbContext : DbContext
             entity.HasIndex(h => new { h.FlatId, h.HouseTypeId, h.HouseNumber })
                   .IsUnique()
                   .HasFilter("[IsDeleted] = 0");
+        });
+
+        // ── HouseTypeImage Configuration ─────────────────────────────────────
+        modelBuilder.Entity<HouseTypeImage>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.ImagePath).IsRequired().HasMaxLength(500);
+            entity.HasOne<Flat>()
+                  .WithMany()
+                  .HasForeignKey(e => e.FlatId)
+                  .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<HouseType>()
+                  .WithMany()
+                  .HasForeignKey(e => e.HouseTypeId)
+                  .OnDelete(DeleteBehavior.Restrict);
         });
 
         // ── HouseImage Configuration ─────────────────────────────────────────

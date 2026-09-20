@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ShmsBackend.Data.Context;
 
@@ -11,9 +12,11 @@ using ShmsBackend.Data.Context;
 namespace ShmsBackend.Data.Migrations
 {
     [DbContext(typeof(ShmsDbContext))]
-    partial class ShmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260920074627_AddHouseTypeImages")]
+    partial class AddHouseTypeImages
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3325,7 +3328,7 @@ namespace ShmsBackend.Data.Migrations
                     b.HasOne("ShmsBackend.Data.Models.Entities.Portal.Flat", null)
                         .WithMany()
                         .HasForeignKey("FlatId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("ShmsBackend.Data.Models.Entities.Portal.HouseType", null)
