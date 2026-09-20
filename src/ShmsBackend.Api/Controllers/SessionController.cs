@@ -7,6 +7,7 @@ using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
+using System.Linq.Expressions;
 using System.Security.Claims;
 
 namespace ShmsBackend.Api.Controllers;
@@ -37,6 +38,21 @@ public class SessionController : ControllerBase
     {
         var claim = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(claim, out var id) ? id : Guid.Empty;
+    }
+
+    // "Needs Reassignment" = explicitly Declined, OR still live (Pending/Accepted) but the assigned
+    // agent is overloaded that day. The day-load count reuses the exact same definition as
+    // agentDayCount/loadLevel elsewhere in this controller (same-day sessions in Pending/Accepted/
+    // AwaitingFeedback) — as a correlated subquery here since this has to run pre-pagination, unlike
+    // the batch dictionary used for display decoration further down.
+    private Expression<Func<ListingViewingSession, bool>> NeedsReassignmentPredicate()
+    {
+        return s => s.Status == "Declined" ||
+            ((s.Status == "Pending" || s.Status == "Accepted") &&
+             _context.ListingViewingSessions.Count(o =>
+                 o.AgentId == s.AgentId &&
+                 o.ScheduledAt.Date == s.ScheduledAt.Date &&
+                 (o.Status == "Pending" || o.Status == "Accepted" || o.Status == "AwaitingFeedback")) > 5);
     }
 
     // POST /api/sessions
@@ -253,8 +269,22 @@ public class SessionController : ControllerBase
             .Distinct()
             .ToListAsync();
 
-        if (!wardAgentIds.Contains(dto.NewAgentId))
-            return BadRequest(new { success = false, message = "Selected agent does not cover this ward." });
+        var eligibleAgentIds = wardAgentIds;
+        if (eligibleAgentIds.Count == 0)
+        {
+            var targetConstituency = house.Flat.Constituency;
+            eligibleAgentIds = await _context.AgentFlats
+                .Where(af => af.Flat.Constituency == targetConstituency)
+                .Select(af => af.AgentId)
+                .Distinct()
+                .ToListAsync();
+        }
+
+        if (eligibleAgentIds.Count == 0)
+            return BadRequest(new { success = false, message = "No agents are available for this ward or constituency." });
+
+        if (!eligibleAgentIds.Contains(dto.NewAgentId))
+            return BadRequest(new { success = false, message = "Selected agent does not cover this ward or constituency." });
 
         session.ReassignedFromAgentId = session.AgentId;
         session.AgentId = dto.NewAgentId;
@@ -723,8 +753,8 @@ public class SessionController : ControllerBase
         var query = _context.ListingViewingSessions.AsQueryable();
 
         if (needsReassignment == true)
-            query = query.Where(s => s.Status == "Declined");
-        else if (!string.IsNullOrEmpty(status))
+            query = query.Where(NeedsReassignmentPredicate());
+        if (!string.IsNullOrEmpty(status))
             query = query.Where(s => s.Status == status);
 
         if (agentId.HasValue)
@@ -838,7 +868,7 @@ public class SessionController : ControllerBase
             totalPending = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Pending"),
             totalAccepted = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Accepted"),
             totalAwaitingFeedback = await _context.ListingViewingSessions.CountAsync(s => s.Status == "AwaitingFeedback"),
-            totalDeclinedNeedsReassignment = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Declined")
+            totalDeclinedNeedsReassignment = await _context.ListingViewingSessions.CountAsync(NeedsReassignmentPredicate())
         };
 
         return Ok(new
@@ -930,6 +960,21 @@ public class SessionController : ControllerBase
             .Distinct()
             .ToListAsync();
 
+        var matchedTier = "ward";
+        if (candidateAgentIds.Count == 0)
+        {
+            var targetConstituency = house.Flat.Constituency;
+            candidateAgentIds = await _context.AgentFlats
+                .Where(af => af.Flat.Constituency == targetConstituency)
+                .Select(af => af.AgentId)
+                .Distinct()
+                .ToListAsync();
+            matchedTier = "constituency";
+        }
+
+        if (candidateAgentIds.Count == 0)
+            return BadRequest(new { success = false, message = "No agents are available for this ward or constituency." });
+
         var candidates = await _context.Agents
             .Where(a => candidateAgentIds.Contains(a.Id))
             .ToListAsync();
@@ -959,6 +1004,6 @@ public class SessionController : ControllerBase
             };
         }).ToList();
 
-        return Ok(new { success = true, data });
+        return Ok(new { success = true, data, matchedTier });
     }
 }

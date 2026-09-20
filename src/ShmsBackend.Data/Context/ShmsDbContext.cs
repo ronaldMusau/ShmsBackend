@@ -248,6 +248,7 @@ public class ShmsDbContext : DbContext
                   .WithOne(h => h.Flat)
                   .HasForeignKey(h => h.FlatId)
                   .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.County, e.Constituency, e.Ward });
         });
 
         // ── HouseType Configuration ──────────────────────────────────────────
@@ -280,6 +281,7 @@ public class ShmsDbContext : DbContext
             entity.HasIndex(h => new { h.FlatId, h.HouseTypeId, h.HouseNumber })
                   .IsUnique()
                   .HasFilter("[IsDeleted] = 0");
+            entity.HasIndex(e => new { e.OccupancyStatus, e.IsListingHidden });
         });
 
         // ── HouseTypeImage Configuration ─────────────────────────────────────
@@ -529,6 +531,8 @@ public class ShmsDbContext : DbContext
             entity.HasOne(e => e.Tenant).WithMany().HasForeignKey(e => e.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.House).WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(e => e.Flat).WithMany().HasForeignKey(e => e.FlatId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => new { e.TenantId, e.Month, e.Year });
+            entity.HasIndex(e => new { e.IsDeleted, e.PaymentStatus });
         });
 
         // ── ServiceChargeSetting Configuration ──────────────────────────────
@@ -569,6 +573,7 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.BalanceAfter).HasColumnType("decimal(18,4)");
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.HasIndex(e => e.TenantId);
+            entity.HasIndex(e => e.TransactionType);
             entity.HasOne(e => e.Tenant)
                   .WithMany()
                   .HasForeignKey(e => e.TenantId)
@@ -599,6 +604,7 @@ public class ShmsDbContext : DbContext
                   .WithMany()
                   .HasForeignKey(c => c.ComplaintTypeId)
                   .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(e => e.Status);
         });
 
         // ── ComplaintAttachment Configuration ───────────────────────────────
@@ -741,6 +747,7 @@ public class ShmsDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(e => new { e.Status, e.AgentId, e.ScheduledAt });
         });
 
         // ── SessionMessage Configuration ──────────────────────────────────────
