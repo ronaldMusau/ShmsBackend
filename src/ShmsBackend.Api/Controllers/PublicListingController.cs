@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.House;
 using ShmsBackend.Data.Context;
@@ -800,6 +801,7 @@ public class PublicListingController : ControllerBase
     // POST /api/public/listings/{id}/like
     [HttpPost("{id:guid}/like")]
     [AllowAnonymous]
+    [EnableRateLimiting("strict")]
     public async Task<IActionResult> Like(Guid id, [FromBody] LikeDto dto)
     {
         var exists = await _context.Houses
@@ -850,6 +852,7 @@ public class PublicListingController : ControllerBase
     // POST /api/public/listings/{id}/rate
     [HttpPost("{id:guid}/rate")]
     [AllowAnonymous]
+    [EnableRateLimiting("strict")]
     public async Task<IActionResult> Rate(Guid id, [FromBody] RateDto dto)
     {
         if (dto.Stars < 1 || dto.Stars > 5)
@@ -1013,6 +1016,7 @@ public class PublicListingController : ControllerBase
     // POST /api/public/listings/{id}/comments
     [HttpPost("{id:guid}/comments")]
     [AllowAnonymous]
+    [EnableRateLimiting("strict")]
     public async Task<IActionResult> AddComment(Guid id, [FromBody] CommentBodyDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Comment))

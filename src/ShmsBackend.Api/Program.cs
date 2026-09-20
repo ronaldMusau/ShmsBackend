@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -24,8 +25,28 @@ using ShmsBackend.Data.Repositories;
 using ShmsBackend.Data.Repositories.Interfaces;
 using System.Text;
 using System.Security.Claims;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// No UseForwardedHeaders is configured in this pipeline, so the only trustworthy client-IP signal
+// is the direct socket address — reading X-Forwarded-For here without a trusted-proxy setup would
+// let a client spoof its own rate-limit partition.
+static string GetClientIp(HttpContext context) =>
+    context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+// Authenticated requests are partitioned per-user (so one user's usage across devices/IPs shares a
+// single budget); anonymous requests fall back to IP.
+static string GetDefaultPartitionKey(HttpContext context)
+{
+    if (context.User?.Identity?.IsAuthenticated == true)
+    {
+        var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrEmpty(userId))
+            return $"user:{userId}";
+    }
+    return $"ip:{GetClientIp(context)}";
+}
 
 // Add Configuration Options
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("JwtOptions"));
@@ -219,6 +240,57 @@ builder.Services.AddAuthorization(options =>
         policy.RequireRole("SuperAdmin", "Admin", "Secretary", "Manager"));
 });
 
+// Add Rate Limiting
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            success = false,
+            message = "Too many requests. Please try again shortly."
+        }, cancellationToken);
+    };
+
+    // Applied via [EnableRateLimiting("strict")] on specific high-abuse-risk actions (anonymous
+    // public-listing interactions, session booking) — 10/min per IP, regardless of auth state.
+    options.AddPolicy("strict", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: $"ip:{GetClientIp(httpContext)}",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    // Named policy kept available for explicit reference; the same logic is also wired as the
+    // GlobalLimiter below so it applies to every endpoint by default without attribute-decorating
+    // every controller in the app.
+    options.AddPolicy("default", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: GetDefaultPartitionKey(httpContext),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: GetDefaultPartitionKey(httpContext),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
+
 // Add CORS
 builder.Services.AddCors(options =>
 {
@@ -306,6 +378,7 @@ app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TokenValidationMiddleware>();
+app.UseRateLimiter();
 
 app.MapControllers();
 

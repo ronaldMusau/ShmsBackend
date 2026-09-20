@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.DTOs.Session;
 using ShmsBackend.Api.Services.Email;
@@ -58,6 +59,7 @@ public class SessionController : ControllerBase
     // POST /api/sessions
     [HttpPost]
     [Authorize(Roles = "Explorer")]
+    [EnableRateLimiting("strict")]
     public async Task<IActionResult> CreateSession([FromBody] CreateViewingSessionDto dto)
     {
         var explorerId = GetCallerId();
