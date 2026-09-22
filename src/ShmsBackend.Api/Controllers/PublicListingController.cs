@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.House;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 
@@ -16,11 +18,64 @@ public class RateDto { public int Stars { get; set; } public string? DeviceId { 
 public class CommentBodyDto { public string Comment { get; set; } = string.Empty; public string? DeviceId { get; set; } }
 public class MergeDeviceDto { public string DeviceId { get; set; } = string.Empty; }
 
+// Cached-payload shapes for GetListings/GetListing — heavy/stable data only, never the live
+// like/dislike/rating/comment/personalization fields, which are always fetched fresh and merged in.
+public class ListingAgentCachePayload
+{
+    public string Name { get; set; } = "";
+    public string? Phone { get; set; }
+    public string? AgencyName { get; set; }
+}
+
+public class ListingCardCachePayload
+{
+    public Guid Id { get; set; }
+    public string HouseNumber { get; set; } = "";
+    public string? HouseType { get; set; }
+    public string? FlatName { get; set; }
+    public decimal RentFee { get; set; }
+    public decimal DepositFee { get; set; }
+    public string? Description { get; set; }
+    public string? Amenities { get; set; }
+    public string? County { get; set; }
+    public string? Constituency { get; set; }
+    public string? Ward { get; set; }
+    public List<string> Images { get; set; } = new();
+    public ListingAgentCachePayload? Agent { get; set; }
+}
+
+public class ListingsCachePayload
+{
+    public int Total { get; set; }
+    public List<ListingCardCachePayload> Cards { get; set; } = new();
+}
+
+public class ListingDetailCachePayload
+{
+    public Guid FlatId { get; set; }
+    public string HouseNumber { get; set; } = "";
+    public string? HouseType { get; set; }
+    public string? FlatName { get; set; }
+    public decimal RentFee { get; set; }
+    public decimal DepositFee { get; set; }
+    public string? Description { get; set; }
+    public string? Amenities { get; set; }
+    public string? County { get; set; }
+    public string? Constituency { get; set; }
+    public string? Ward { get; set; }
+    public string? GoogleMapsLink { get; set; }
+    public List<string> Images { get; set; } = new();
+    public ListingAgentCachePayload? Agent { get; set; }
+}
+
 [ApiController]
 [Route("api/public/listings")]
 public class PublicListingController : ControllerBase
 {
+    private static readonly TimeSpan ListingsCacheTtl = TimeSpan.FromMinutes(2);
+
     private readonly ShmsDbContext _context;
+    private readonly ICacheHelper _cacheHelper;
 
     private static readonly string[] AnonymousCreatures =
     {
@@ -47,9 +102,30 @@ public class PublicListingController : ControllerBase
         return $"Anonymous {AnonymousCreatures[creatureIndex]} {number}";
     }
 
-    public PublicListingController(ShmsDbContext context)
+    public PublicListingController(ShmsDbContext context, ICacheHelper cacheHelper)
     {
         _context = context;
+        _cacheHelper = cacheHelper;
+    }
+
+    // Deterministic key for a given filter/sort/page combination — every one of GetListings' 9 query
+    // params is represented, with C#'s own default binding (page=1, pageSize=20) already applied by
+    // the time this runs, so an omitted param and its explicit default value hash identically.
+    private static string BuildListingsCacheKey(string? county, string? constituency, string? ward,
+        string? sort, string? houseType, decimal? minRent, decimal? maxRent, int page, int pageSize)
+    {
+        return "listings:" + string.Join("|", new[]
+        {
+            $"county={county ?? ""}",
+            $"constituency={constituency ?? ""}",
+            $"ward={ward ?? ""}",
+            $"sort={(string.IsNullOrEmpty(sort) ? "foryou" : sort)}",
+            $"houseType={houseType ?? ""}",
+            $"minRent={minRent?.ToString(CultureInfo.InvariantCulture) ?? ""}",
+            $"maxRent={maxRent?.ToString(CultureInfo.InvariantCulture) ?? ""}",
+            $"page={page}",
+            $"pageSize={pageSize}"
+        });
     }
 
     // GET /api/public/listings
@@ -86,15 +162,13 @@ public class PublicListingController : ControllerBase
         if (maxRent.HasValue)
             baseQuery = baseQuery.Where(h => h.RentFee <= maxRent.Value);
 
-        var total = await baseQuery.CountAsync();
-
-        List<House> pagedHouses;
-        Dictionary<Guid, int> likeDict;
-        Dictionary<Guid, int> dislikeDict;
-        Dictionary<Guid, double?> ratingDict;
-
+        // popular/trending: fully live, never cached — their own ranking depends on the same
+        // like/dislike/rating data we're deliberately keeping live everywhere else, so caching the
+        // ranked order here would mean caching something that embeds live data by construction.
         if (sort == "popular" || sort == "trending")
         {
+            var total = await baseQuery.CountAsync();
+
             // Load all filtered IDs + CreatedAt (for stable secondary sort)
             var allLight = await baseQuery
                 .Select(h => new { h.Id, h.CreatedAt })
@@ -138,89 +212,188 @@ public class PublicListingController : ControllerBase
                 .ToListAsync();
 
             // Restore explicit sort order
-            pagedHouses = pageIds.Select(id => pageHouseList.First(h => h.Id == id)).ToList();
+            var pagedHouses = pageIds.Select(id => pageHouseList.First(h => h.Id == id)).ToList();
 
-            likeDict = sortLikeDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
-            dislikeDict = sortDislikeDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
-            ratingDict = sortRatingDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => (double?)kv.Value);
+            var likeDict = sortLikeDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            var dislikeDict = sortDislikeDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+            var ratingDict = sortRatingDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => (double?)kv.Value);
+
+            var flatIds = pagedHouses.Select(h => h.FlatId).Distinct().ToList();
+            var agentFlats = await _context.AgentFlats
+                .Include(af => af.Agent)
+                .Where(af => flatIds.Contains(af.FlatId))
+                .ToListAsync();
+
+            var agentDict = agentFlats
+                .GroupBy(af => af.FlatId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
+
+            var typeImageGroupKeys = pagedHouses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+            var typeImagesFlat = await _context.HouseTypeImages
+                .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+                .OrderBy(hti => hti.SortOrder)
+                .ToListAsync();
+            var typeImagesDict = typeImageGroupKeys.ToDictionary(
+                k => (k.FlatId, k.HouseTypeId),
+                k => typeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
+                                    .Select(ti => ti.ImagePath).ToList());
+
+            var liveData = pagedHouses.Select(h =>
+            {
+                likeDict.TryGetValue(h.Id, out var likeCount);
+                dislikeDict.TryGetValue(h.Id, out var dislikeCount);
+                ratingDict.TryGetValue(h.Id, out var avgRating);
+                agentDict.TryGetValue(h.FlatId, out var agent);
+                var images = typeImagesDict.GetValueOrDefault((h.FlatId, h.HouseTypeId)) ?? new List<string>();
+                return (object)new
+                {
+                    id = h.Id,
+                    houseNumber = h.HouseNumber,
+                    houseType = h.HouseTypeRef?.Name,
+                    flatName = h.Flat?.FlatName,
+                    rentFee = h.RentFee,
+                    depositFee = h.DepositFee,
+                    description = h.Description,
+                    amenities = h.Amenities,
+                    county = h.Flat?.County,
+                    constituency = h.Flat?.Constituency,
+                    ward = h.Flat?.Ward,
+                    images,
+                    avgRating,
+                    likeCount,
+                    dislikeCount,
+                    agent = agent == null ? null : new
+                    {
+                        name = $"{agent.FirstName} {agent.LastName}".Trim(),
+                        phone = agent.PhoneNumber,
+                        agencyName = agent.AgencyName
+                    }
+                };
+            }).ToList();
+
+            return Ok(new
+            {
+                success = true,
+                data = liveData,
+                total,
+                page,
+                pageSize,
+                totalPages = (int)Math.Ceiling((double)total / pageSize)
+            });
         }
-        else
+
+        // "foryou" (default) — newest first, paginate at DB. This path's heavy computation (house/
+        // flat/image data, total count, page ordering) is cache-aside'd; likeCount/dislikeCount/
+        // avgRating are always fetched fresh and merged in below, on both cache hit and miss.
+        var cacheKey = BuildListingsCacheKey(county, constituency, ward, sort, houseType, minRent, maxRent, page, pageSize);
+
+        var payload = await _cacheHelper.GetOrSetAsync(cacheKey, ListingsCacheTtl, async () =>
         {
-            // "foryou" (default) — newest first, paginate at DB
-            pagedHouses = await baseQuery
+            var heavyTotal = await baseQuery.CountAsync();
+
+            var heavyHouses = await baseQuery
                 .OrderByDescending(h => h.CreatedAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
 
-            var houseIds = pagedHouses.Select(h => h.Id).ToList();
-
-            var likeCounts = await _context.HouseListingLikes
-                .Where(l => houseIds.Contains(l.HouseId))
-                .GroupBy(l => new { l.HouseId, l.IsLike })
-                .Select(g => new { g.Key.HouseId, g.Key.IsLike, Count = g.Count() })
+            var flatIds = heavyHouses.Select(h => h.FlatId).Distinct().ToList();
+            var agentFlats = await _context.AgentFlats
+                .Include(af => af.Agent)
+                .Where(af => flatIds.Contains(af.FlatId))
                 .ToListAsync();
 
-            var ratings = await _context.HouseListingRatings
-                .Where(r => houseIds.Contains(r.HouseId))
-                .GroupBy(r => r.HouseId)
-                .Select(g => new { HouseId = g.Key, Avg = g.Average(r => (double)r.Stars) })
+            var agentDict = agentFlats
+                .GroupBy(af => af.FlatId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
+
+            var typeImageGroupKeys = heavyHouses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
+            var typeImagesFlat = await _context.HouseTypeImages
+                .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
+                .OrderBy(hti => hti.SortOrder)
                 .ToListAsync();
+            var typeImagesDict = typeImageGroupKeys.ToDictionary(
+                k => (k.FlatId, k.HouseTypeId),
+                k => typeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
+                                    .Select(ti => ti.ImagePath).ToList());
 
-            likeDict = likeCounts.Where(l => l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
-            dislikeDict = likeCounts.Where(l => !l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
-            ratingDict = ratings.ToDictionary(r => r.HouseId, r => (double?)r.Avg);
-        }
+            var heavyCards = heavyHouses.Select(h =>
+            {
+                agentDict.TryGetValue(h.FlatId, out var agent);
+                var images = typeImagesDict.GetValueOrDefault((h.FlatId, h.HouseTypeId)) ?? new List<string>();
+                return new ListingCardCachePayload
+                {
+                    Id = h.Id,
+                    HouseNumber = h.HouseNumber,
+                    HouseType = h.HouseTypeRef?.Name,
+                    FlatName = h.Flat?.FlatName,
+                    RentFee = h.RentFee,
+                    DepositFee = h.DepositFee,
+                    Description = h.Description,
+                    Amenities = h.Amenities,
+                    County = h.Flat?.County,
+                    Constituency = h.Flat?.Constituency,
+                    Ward = h.Flat?.Ward,
+                    Images = images,
+                    Agent = agent == null ? null : new ListingAgentCachePayload
+                    {
+                        Name = $"{agent.FirstName} {agent.LastName}".Trim(),
+                        Phone = agent.PhoneNumber,
+                        AgencyName = agent.AgencyName
+                    }
+                };
+            }).ToList();
 
-        var flatIds = pagedHouses.Select(h => h.FlatId).Distinct().ToList();
-        var agentFlats = await _context.AgentFlats
-            .Include(af => af.Agent)
-            .Where(af => flatIds.Contains(af.FlatId))
+            return new ListingsCachePayload { Total = heavyTotal, Cards = heavyCards };
+        });
+
+        var cards = payload?.Cards ?? new List<ListingCardCachePayload>();
+        var cachedTotal = payload?.Total ?? 0;
+
+        var cardIds = cards.Select(c => c.Id).ToList();
+        var foryouLikeCounts = await _context.HouseListingLikes
+            .Where(l => cardIds.Contains(l.HouseId))
+            .GroupBy(l => new { l.HouseId, l.IsLike })
+            .Select(g => new { g.Key.HouseId, g.Key.IsLike, Count = g.Count() })
             .ToListAsync();
 
-        var agentDict = agentFlats
-            .GroupBy(af => af.FlatId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
-
-        var typeImageGroupKeys = pagedHouses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
-        var typeImagesFlat = await _context.HouseTypeImages
-            .Where(hti => typeImageGroupKeys.Select(k => k.FlatId).Contains(hti.FlatId))
-            .OrderBy(hti => hti.SortOrder)
+        var foryouRatings = await _context.HouseListingRatings
+            .Where(r => cardIds.Contains(r.HouseId))
+            .GroupBy(r => r.HouseId)
+            .Select(g => new { HouseId = g.Key, Avg = g.Average(r => (double)r.Stars) })
             .ToListAsync();
-        var typeImagesDict = typeImageGroupKeys.ToDictionary(
-            k => (k.FlatId, k.HouseTypeId),
-            k => typeImagesFlat.Where(ti => ti.FlatId == k.FlatId && ti.HouseTypeId == k.HouseTypeId)
-                                .Select(ti => ti.ImagePath).ToList());
 
-        var data = pagedHouses.Select(h =>
+        var foryouLikeDict = foryouLikeCounts.Where(l => l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+        var foryouDislikeDict = foryouLikeCounts.Where(l => !l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+        var foryouRatingDict = foryouRatings.ToDictionary(r => r.HouseId, r => (double?)r.Avg);
+
+        var data = cards.Select(c =>
         {
-            likeDict.TryGetValue(h.Id, out var likeCount);
-            dislikeDict.TryGetValue(h.Id, out var dislikeCount);
-            ratingDict.TryGetValue(h.Id, out var avgRating);
-            agentDict.TryGetValue(h.FlatId, out var agent);
-            var images = typeImagesDict.GetValueOrDefault((h.FlatId, h.HouseTypeId)) ?? new List<string>();
+            foryouLikeDict.TryGetValue(c.Id, out var likeCount);
+            foryouDislikeDict.TryGetValue(c.Id, out var dislikeCount);
+            foryouRatingDict.TryGetValue(c.Id, out var avgRating);
             return (object)new
             {
-                id = h.Id,
-                houseNumber = h.HouseNumber,
-                houseType = h.HouseTypeRef?.Name,
-                flatName = h.Flat?.FlatName,
-                rentFee = h.RentFee,
-                depositFee = h.DepositFee,
-                description = h.Description,
-                amenities = h.Amenities,
-                county = h.Flat?.County,
-                constituency = h.Flat?.Constituency,
-                ward = h.Flat?.Ward,
-                images,
+                id = c.Id,
+                houseNumber = c.HouseNumber,
+                houseType = c.HouseType,
+                flatName = c.FlatName,
+                rentFee = c.RentFee,
+                depositFee = c.DepositFee,
+                description = c.Description,
+                amenities = c.Amenities,
+                county = c.County,
+                constituency = c.Constituency,
+                ward = c.Ward,
+                images = c.Images,
                 avgRating,
                 likeCount,
                 dislikeCount,
-                agent = agent == null ? null : new
+                agent = c.Agent == null ? null : new
                 {
-                    name = $"{agent.FirstName} {agent.LastName}".Trim(),
-                    phone = agent.PhoneNumber,
-                    agencyName = agent.AgencyName
+                    name = c.Agent.Name,
+                    phone = c.Agent.Phone,
+                    agencyName = c.Agent.AgencyName
                 }
             };
         }).ToList();
@@ -229,10 +402,10 @@ public class PublicListingController : ControllerBase
         {
             success = true,
             data,
-            total,
+            total = cachedTotal,
             page,
             pageSize,
-            totalPages = (int)Math.Ceiling((double)total / pageSize)
+            totalPages = (int)Math.Ceiling((double)cachedTotal / pageSize)
         });
     }
 
@@ -650,23 +823,61 @@ public class PublicListingController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> GetListing(Guid id, [FromQuery] string? deviceId)
     {
-        var house = await _context.Houses
-            .Include(h => h.Flat)
-            .Include(h => h.HouseTypeRef)
-            .FirstOrDefaultAsync(h => h.Id == id);
+        var cacheKey = $"listing-detail:{id}";
 
-        if (house == null
-            || house.OccupancyStatus != OccupancyStatus.Vacant
-            || house.IsListingHidden)
-            return NotFound(new { success = false, message = "Listing not found." });
+        var heavy = await _cacheHelper.GetOrSetAsync<ListingDetailCachePayload?>(cacheKey, ListingsCacheTtl, async () =>
+        {
+            var heavyHouse = await _context.Houses
+                .Include(h => h.Flat)
+                .Include(h => h.HouseTypeRef)
+                .FirstOrDefaultAsync(h => h.Id == id);
 
-        var typeImages = await _context.HouseTypeImages
-            .Where(hti => hti.FlatId == house.FlatId && hti.HouseTypeId == house.HouseTypeId)
-            .OrderBy(hti => hti.SortOrder)
-            .Select(hti => hti.ImagePath)
-            .ToListAsync();
+            if (heavyHouse == null
+                || heavyHouse.OccupancyStatus != OccupancyStatus.Vacant
+                || heavyHouse.IsListingHidden)
+                return null;
 
-        if (!typeImages.Any())
+            var heavyTypeImages = await _context.HouseTypeImages
+                .Where(hti => hti.FlatId == heavyHouse.FlatId && hti.HouseTypeId == heavyHouse.HouseTypeId)
+                .OrderBy(hti => hti.SortOrder)
+                .Select(hti => hti.ImagePath)
+                .ToListAsync();
+
+            if (!heavyTypeImages.Any())
+                return null;
+
+            var heavyAgentFlat = await _context.AgentFlats
+                .Include(af => af.Agent)
+                .Where(af => af.FlatId == heavyHouse.FlatId)
+                .OrderByDescending(af => af.AssignedAt)
+                .FirstOrDefaultAsync();
+            var heavyAgent = heavyAgentFlat?.Agent;
+
+            return new ListingDetailCachePayload
+            {
+                FlatId = heavyHouse.FlatId,
+                HouseNumber = heavyHouse.HouseNumber,
+                HouseType = heavyHouse.HouseTypeRef?.Name,
+                FlatName = heavyHouse.Flat?.FlatName,
+                RentFee = heavyHouse.RentFee,
+                DepositFee = heavyHouse.DepositFee,
+                Description = heavyHouse.Description,
+                Amenities = heavyHouse.Amenities,
+                County = heavyHouse.Flat?.County,
+                Constituency = heavyHouse.Flat?.Constituency,
+                Ward = heavyHouse.Flat?.Ward,
+                GoogleMapsLink = heavyHouse.Flat?.GoogleMapsLink,
+                Images = heavyTypeImages,
+                Agent = heavyAgent == null ? null : new ListingAgentCachePayload
+                {
+                    Name = $"{heavyAgent.FirstName} {heavyAgent.LastName}".Trim(),
+                    Phone = heavyAgent.PhoneNumber,
+                    AgencyName = heavyAgent.AgencyName
+                }
+            };
+        });
+
+        if (heavy == null)
             return NotFound(new { success = false, message = "Listing not found." });
 
         var likeCount = await _context.HouseListingLikes.CountAsync(l => l.HouseId == id && l.IsLike);
@@ -680,12 +891,6 @@ public class PublicListingController : ControllerBase
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new { c.Id, c.CommenterName, c.Comment, c.CreatedAt })
             .ToListAsync();
-
-        var agentFlat = await _context.AgentFlats
-            .Include(af => af.Agent)
-            .Where(af => af.FlatId == house.FlatId)
-            .OrderByDescending(af => af.AssignedAt)
-            .FirstOrDefaultAsync();
 
         bool? myLike = null;
         int? myRating = null;
@@ -718,34 +923,33 @@ public class PublicListingController : ControllerBase
             if (ratingRecord != null) myRating = ratingRecord.Stars;
         }
 
-        var agent = agentFlat?.Agent;
         return Ok(new
         {
             success = true,
             data = new
             {
-                id = house.Id,
-                houseNumber = house.HouseNumber,
-                houseType = house.HouseTypeRef?.Name,
-                flatName = house.Flat?.FlatName,
-                rentFee = house.RentFee,
-                depositFee = house.DepositFee,
-                description = house.Description,
-                amenities = house.Amenities,
-                county = house.Flat?.County,
-                constituency = house.Flat?.Constituency,
-                ward = house.Flat?.Ward,
-                googleMapsLink = house.Flat?.GoogleMapsLink,
-                images = typeImages,
+                id,
+                houseNumber = heavy.HouseNumber,
+                houseType = heavy.HouseType,
+                flatName = heavy.FlatName,
+                rentFee = heavy.RentFee,
+                depositFee = heavy.DepositFee,
+                description = heavy.Description,
+                amenities = heavy.Amenities,
+                county = heavy.County,
+                constituency = heavy.Constituency,
+                ward = heavy.Ward,
+                googleMapsLink = heavy.GoogleMapsLink,
+                images = heavy.Images,
                 avgRating,
                 likeCount,
                 dislikeCount,
                 comments,
-                agent = agent == null ? null : new
+                agent = heavy.Agent == null ? null : new
                 {
-                    name = $"{agent.FirstName} {agent.LastName}".Trim(),
-                    phone = agent.PhoneNumber,
-                    agencyName = agent.AgencyName
+                    name = heavy.Agent.Name,
+                    phone = heavy.Agent.Phone,
+                    agencyName = heavy.Agent.AgencyName
                 },
                 myLike,
                 myRating,

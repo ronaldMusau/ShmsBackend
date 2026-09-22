@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.Payment;
@@ -23,6 +24,7 @@ public class VacateController : ControllerBase
     private readonly ILogger<VacateController> _logger;
     private readonly IPaymentService _paymentService;
     private readonly IMpesaService _mpesaService;
+    private readonly ICacheHelper _cacheHelper;
 
     public VacateController(
         ShmsDbContext context,
@@ -30,7 +32,8 @@ public class VacateController : ControllerBase
         INotificationService notificationService,
         ILogger<VacateController> logger,
         IPaymentService paymentService,
-        IMpesaService mpesaService)
+        IMpesaService mpesaService,
+        ICacheHelper cacheHelper)
     {
         _context = context;
         _emailService = emailService;
@@ -38,6 +41,7 @@ public class VacateController : ControllerBase
         _logger = logger;
         _paymentService = paymentService;
         _mpesaService = mpesaService;
+        _cacheHelper = cacheHelper;
     }
 
     private Guid GetCallerId()
@@ -2151,6 +2155,7 @@ public class VacateController : ControllerBase
         vacateRequest.ClosedByAdminId = GetCallerId();
 
         await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
 
         try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), "Your tenancy has been formally closed out. Thank you for your tenancy.", "property", "Vacate", vacateRequest.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate clearance"); }

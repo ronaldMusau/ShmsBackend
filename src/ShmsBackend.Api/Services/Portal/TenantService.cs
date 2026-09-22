@@ -30,6 +30,7 @@ public class TenantService : ITenantService
     private readonly IAgreementService _agreementService;
     private readonly IPaymentService _paymentService;
     private readonly ShmsDbContext _context;
+    private readonly ICacheHelper _cacheHelper;
 
     public TenantService(
         IUnitOfWork unitOfWork,
@@ -40,7 +41,8 @@ public class TenantService : ITenantService
         ITokenBlacklistService tokenBlacklistService,
         IAgreementService agreementService,
         IPaymentService paymentService,
-        ShmsDbContext context)
+        ShmsDbContext context,
+        ICacheHelper cacheHelper)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -51,6 +53,7 @@ public class TenantService : ITenantService
         _agreementService = agreementService;
         _paymentService = paymentService;
         _context = context;
+        _cacheHelper = cacheHelper;
     }
 
     public async Task<Tenant> CreateAsync(CreateTenantDto dto)
@@ -336,6 +339,7 @@ public class TenantService : ITenantService
                 });
 
                 await _context.SaveChangesAsync();
+                await _cacheHelper.InvalidatePublicListingsCacheAsync();
             }
         }
 
@@ -510,6 +514,7 @@ public class TenantService : ITenantService
 
             _context.Tenants.Remove(tenant);
             await _context.SaveChangesAsync();
+            await _cacheHelper.InvalidatePublicListingsCacheAsync();
             return true;
         }
 
@@ -541,6 +546,7 @@ public class TenantService : ITenantService
         tenant.PointsBalance = 0;
 
         await _unitOfWork.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
 
         _logger.LogInformation("Tenant deleted: {Id}", id);
         return true;

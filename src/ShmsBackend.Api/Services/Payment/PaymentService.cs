@@ -39,6 +39,7 @@ public class PaymentService : IPaymentService
     private readonly IAgreementService _agreementService;
     private readonly IPaymentDistributionService _distributionService;
     private readonly IRewardService _rewardService;
+    private readonly ICacheHelper _cacheHelper;
     private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
@@ -50,6 +51,7 @@ public class PaymentService : IPaymentService
         IAgreementService agreementService,
         IPaymentDistributionService distributionService,
         IRewardService rewardService,
+        ICacheHelper cacheHelper,
         ILogger<PaymentService> logger)
     {
         _context = context;
@@ -60,6 +62,7 @@ public class PaymentService : IPaymentService
         _agreementService = agreementService;
         _distributionService = distributionService;
         _rewardService = rewardService;
+        _cacheHelper = cacheHelper;
         _logger = logger;
     }
 
@@ -559,6 +562,9 @@ public class PaymentService : IPaymentService
         }
 
         await _context.SaveChangesAsync();
+        // Unconditional final save for this method — covers the OccupancyStatus=Occupied write above
+        // regardless of which branch (initial payment / partial / cancelled / failed) actually ran.
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
     }
 
     public async Task<STKQueryResponse> QueryPaymentStatusAsync(string checkoutRequestId)

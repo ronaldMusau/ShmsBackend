@@ -67,6 +67,11 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.Configuration = builder.Configuration["RedisOptions:Configuration"];
     options.InstanceName = builder.Configuration["RedisOptions:InstanceName"];
 });
+// AddStackExchangeRedisCache above only exposes IDistributedCache — it does not register
+// IConnectionMultiplexer itself, but CacheHelper.RemoveByPrefixAsync needs raw SCAN access for
+// prefix-based bulk invalidation, so it's registered explicitly here against the same connection.
+builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
+    StackExchange.Redis.ConnectionMultiplexer.Connect(builder.Configuration["RedisOptions:Configuration"]!));
 builder.Services.AddScoped<ICacheHelper, CacheHelper>();
 
 // Add Repositories
@@ -276,7 +281,7 @@ builder.Services.AddRateLimiter(options =>
             partitionKey: GetDefaultPartitionKey(httpContext),
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 100,
+                PermitLimit = 1000,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
@@ -286,7 +291,7 @@ builder.Services.AddRateLimiter(options =>
             partitionKey: GetDefaultPartitionKey(httpContext),
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 100,
+                PermitLimit = 1000,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));

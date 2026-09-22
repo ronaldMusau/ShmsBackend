@@ -1,5 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Options;
+using ShmsBackend.Api.Configuration;
+using StackExchange.Redis;
 
 namespace ShmsBackend.Api.Services.Common;
 
@@ -9,11 +12,15 @@ namespace ShmsBackend.Api.Services.Common;
 public class CacheHelper : ICacheHelper
 {
     private readonly IDistributedCache _cache;
+    private readonly IConnectionMultiplexer _redis;
+    private readonly string _instanceName;
     private readonly ILogger<CacheHelper> _logger;
 
-    public CacheHelper(IDistributedCache cache, ILogger<CacheHelper> logger)
+    public CacheHelper(IDistributedCache cache, IConnectionMultiplexer redis, IOptions<RedisOptions> redisOptions, ILogger<CacheHelper> logger)
     {
         _cache = cache;
+        _redis = redis;
+        _instanceName = redisOptions.Value.InstanceName ?? string.Empty;
         _logger = logger;
     }
 
@@ -44,4 +51,30 @@ public class CacheHelper : ICacheHelper
     }
 
     public Task RemoveAsync(string key) => _cache.RemoveAsync(key);
+
+    public async Task RemoveByPrefixAsync(string prefix)
+    {
+        // IDistributedCache silently prefixes every key it writes with RedisOptions:InstanceName —
+        // the raw Redis keys are "{InstanceName}{key}", so the SCAN pattern must account for that
+        // or it will match nothing.
+        var pattern = (RedisValue)$"{_instanceName}{prefix}*";
+        var keysToDelete = new List<RedisKey>();
+
+        foreach (var endpoint in _redis.GetEndPoints())
+        {
+            var server = _redis.GetServer(endpoint);
+            await foreach (var key in server.KeysAsync(pattern: pattern))
+            {
+                keysToDelete.Add(key);
+            }
+        }
+
+        if (keysToDelete.Count == 0)
+            return;
+
+        var db = _redis.GetDatabase();
+        await db.KeyDeleteAsync(keysToDelete.ToArray());
+
+        _logger.LogInformation("Removed {Count} cache entries matching prefix {Prefix}", keysToDelete.Count, prefix);
+    }
 }

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Flat;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
@@ -18,13 +19,15 @@ public class FlatService
     private readonly ShmsDbContext _context;
     private readonly INotificationService _notificationService;
     private readonly IEmailService _emailService;
+    private readonly ICacheHelper _cacheHelper;
     private readonly ILogger<FlatService> _logger;
 
-    public FlatService(ShmsDbContext context, INotificationService notificationService, IEmailService emailService, ILogger<FlatService> logger)
+    public FlatService(ShmsDbContext context, INotificationService notificationService, IEmailService emailService, ICacheHelper cacheHelper, ILogger<FlatService> logger)
     {
         _context = context;
         _notificationService = notificationService;
         _emailService = emailService;
+        _cacheHelper = cacheHelper;
         _logger = logger;
     }
 
@@ -405,6 +408,10 @@ public class FlatService
             }
         }
 
+        // Single invalidation covering this whole method — Flat field edits above and the optional
+        // agent-assignment/clear branches all funnel through here regardless of which ones ran.
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
+
         return await GetByIdAsync(id);
     }
 
@@ -416,6 +423,8 @@ public class FlatService
         flat.IsDeleted = true;
         flat.DeletedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        // Cascades to this flat's Houses (FK is Cascade), which removes them from listings too.
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
         return true;
     }
 

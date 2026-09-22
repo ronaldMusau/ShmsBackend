@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 using PaymentRecord = ShmsBackend.Data.Models.Entities.Portal.Payment;
@@ -19,10 +20,12 @@ public interface IPaymentDistributionService
 public class PaymentDistributionService : IPaymentDistributionService
 {
     private readonly ShmsDbContext _context;
+    private readonly ICacheHelper _cacheHelper;
 
-    public PaymentDistributionService(ShmsDbContext context)
+    public PaymentDistributionService(ShmsDbContext context, ICacheHelper cacheHelper)
     {
         _context = context;
+        _cacheHelper = cacheHelper;
     }
 
     private async Task<decimal> GetServiceChargeAsync(decimal rentAmount)
@@ -217,6 +220,7 @@ public class PaymentDistributionService : IPaymentDistributionService
         }
 
         await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
         return itemized;
     }
 }

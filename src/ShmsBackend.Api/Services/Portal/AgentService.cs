@@ -26,6 +26,7 @@ public class AgentService : IAgentService
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly ITokenBlacklistService _tokenBlacklistService;
     private readonly ShmsDbContext _context;
+    private readonly ICacheHelper _cacheHelper;
 
     public AgentService(
         IUnitOfWork unitOfWork,
@@ -34,7 +35,8 @@ public class AgentService : IAgentService
         INotificationService notificationService,
         IFrontendUrlService frontendUrlService,
         ITokenBlacklistService tokenBlacklistService,
-        ShmsDbContext context)
+        ShmsDbContext context,
+        ICacheHelper cacheHelper)
     {
         _unitOfWork = unitOfWork;
         _logger = logger;
@@ -43,6 +45,7 @@ public class AgentService : IAgentService
         _frontendUrlService = frontendUrlService;
         _tokenBlacklistService = tokenBlacklistService;
         _context = context;
+        _cacheHelper = cacheHelper;
     }
 
     public async Task<Agent> CreateAsync(CreateAgentDto dto)
@@ -175,6 +178,7 @@ public class AgentService : IAgentService
                 });
             }
             await _context.SaveChangesAsync();
+            await _cacheHelper.InvalidatePublicListingsCacheAsync();
         }
 
         try
@@ -261,6 +265,7 @@ public class AgentService : IAgentService
             });
         }
         await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
         _logger.LogInformation("Flats assigned to agent {AgentId}: {Count}", agentId, dto.FlatIds.Count);
     }
 

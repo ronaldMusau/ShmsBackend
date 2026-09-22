@@ -73,6 +73,9 @@ public class HouseTypeController : ControllerBase
         type.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
         await _cacheHelper.RemoveAsync(CacheKey);
+        // A rename changes both the houseType display text and the filter string on every cached
+        // public listing card/page for houses of this type.
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
         return Ok(new { success = true, data = type });
     }
 

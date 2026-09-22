@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.House;
 using ShmsBackend.Api.Models.Responses;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.Portal;
@@ -26,13 +27,15 @@ public class HouseController : ControllerBase
     private readonly ShmsDbContext _context;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
+    private readonly ICacheHelper _cacheHelper;
 
-    public HouseController(HouseService houseService, ShmsDbContext context, IEmailService emailService, INotificationService notificationService)
+    public HouseController(HouseService houseService, ShmsDbContext context, IEmailService emailService, INotificationService notificationService, ICacheHelper cacheHelper)
     {
         _houseService = houseService;
         _context = context;
         _emailService = emailService;
         _notificationService = notificationService;
+        _cacheHelper = cacheHelper;
     }
 
     [HttpPost]
@@ -231,6 +234,7 @@ public class HouseController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
         return Ok(new { success = true, message = "Images uploaded successfully.", data = savedPaths });
     }
 
@@ -243,6 +247,7 @@ public class HouseController : ControllerBase
         house.IsListingHidden = dto.Hidden;
         house.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
         return Ok(new { success = true, data = new { house.Id, house.IsListingHidden } });
     }
 
@@ -645,6 +650,7 @@ public class HouseController : ControllerBase
 
         _context.HouseTypeImages.Remove(image);
         await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
         return Ok(new { success = true, message = "Image deleted." });
     }
 

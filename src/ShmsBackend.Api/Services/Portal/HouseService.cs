@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.House;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
@@ -16,12 +17,14 @@ public class HouseService
 {
     private readonly ShmsDbContext _context;
     private readonly INotificationService _notificationService;
+    private readonly ICacheHelper _cacheHelper;
     private readonly ILogger<HouseService> _logger;
 
-    public HouseService(ShmsDbContext context, INotificationService notificationService, ILogger<HouseService> logger)
+    public HouseService(ShmsDbContext context, INotificationService notificationService, ICacheHelper cacheHelper, ILogger<HouseService> logger)
     {
         _context = context;
         _notificationService = notificationService;
+        _cacheHelper = cacheHelper;
         _logger = logger;
     }
 
@@ -218,6 +221,7 @@ public class HouseService
 
         house.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
 
         try
         {
@@ -268,6 +272,7 @@ public class HouseService
         house.IsDeleted = true;
         house.DeletedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
         return true;
     }
 

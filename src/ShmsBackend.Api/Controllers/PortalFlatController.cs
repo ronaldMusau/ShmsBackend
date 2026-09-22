@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Models.DTOs.Flat;
+using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.Portal;
@@ -26,19 +27,22 @@ public class PortalFlatController : ControllerBase
     private readonly INotificationService _notificationService;
     private readonly ILogger<PortalFlatController> _logger;
     private readonly FlatService _flatService;
+    private readonly ICacheHelper _cacheHelper;
 
     public PortalFlatController(
         ShmsDbContext context,
         IEmailService emailService,
         INotificationService notificationService,
         ILogger<PortalFlatController> logger,
-        FlatService flatService)
+        FlatService flatService,
+        ICacheHelper cacheHelper)
     {
         _context = context;
         _emailService = emailService;
         _notificationService = notificationService;
         _logger = logger;
         _flatService = flatService;
+        _cacheHelper = cacheHelper;
     }
 
     private Guid GetUserId()
@@ -452,6 +456,9 @@ public class PortalFlatController : ControllerBase
             }
 
             await _context.SaveChangesAsync();
+            // Covers both the Flat field edits and the agent assignment/clear branches above —
+            // whichever of them actually ran, this always fires once approval is persisted.
+            await _cacheHelper.InvalidatePublicListingsCacheAsync();
 
             foreach (var change in request.HouseTypeChanges)
             {
