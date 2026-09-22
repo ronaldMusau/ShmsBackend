@@ -102,33 +102,24 @@ public class ComplaintReminderSchedulerService : BackgroundService
         (string TicketNumber, string TenantName, string HouseNumber, int DaysOpen) ToItem(Complaint c) =>
             (c.TicketNumber, tenantNames.GetValueOrDefault(c.TenantId, "-"), houseNumbers.GetValueOrDefault(c.HouseId, "-"), (int)(now - c.CreatedAt).TotalDays);
 
-        // Notifications and LastReminderSentAt stamping stay per-complaint — only the EMAIL sends
-        // are batched below, to fix the same-recipient-gets-N-separate-emails-per-run problem.
+        // Collapses a recipient's complaint list into one short in-app notification line — the
+        // grouped-email templates render every row; a notification just needs enough to identify
+        // what's overdue without duplicating the full template.
+        static string BuildComplaintSummary(List<Complaint> items, int maxShown = 5)
+        {
+            var tickets = items.Select(c => c.TicketNumber).ToList();
+            if (tickets.Count <= maxShown)
+                return string.Join(", ", tickets);
+
+            var shown = tickets.Take(maxShown);
+            var remaining = tickets.Count - maxShown;
+            return $"{string.Join(", ", shown)} +{remaining} more";
+        }
+
+        // LastReminderSentAt stamping stays per-complaint — notifications and emails are both now
+        // grouped below (one message per recipient per run, not one per complaint per recipient).
         foreach (var complaint in complaints)
         {
-            var daysOpen = (int)(now - complaint.CreatedAt).TotalDays;
-
-            try
-            {
-                await notificationService.SendToRolesAsync(
-                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
-                    $"Complaint {complaint.TicketNumber} has been open for {daysOpen} days and requires attention.",
-                    "property", "Complaint", complaint.Id.ToString());
-            }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to send management notification for overdue complaint {TicketNumber}", complaint.TicketNumber); }
-
-            if (complaint.EscalatedToAgentId.HasValue)
-            {
-                try { await notificationService.SendToUserAsync(complaint.EscalatedToAgentId.Value.ToString(), $"Complaint {complaint.TicketNumber} has been open for {daysOpen} days. Please complete your work.", "property", "Complaint", complaint.Id.ToString()); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of overdue complaint {TicketNumber}", complaint.TicketNumber); }
-            }
-
-            if (complaint.BillableTarget == "Management")
-            {
-                try { await notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"Complaint {complaint.TicketNumber} has been awaiting your decision for {daysOpen} days.", "property", "Complaint", complaint.Id.ToString()); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of overdue complaint {TicketNumber}", complaint.TicketNumber); }
-            }
-
             complaint.LastReminderSentAt = now;
         }
 
@@ -140,6 +131,15 @@ public class ComplaintReminderSchedulerService : BackgroundService
         {
             try { await emailService.SendComplaintOverdueManagementGroupedEmailAsync(mgr.Email, mgr.FirstName, allItems, mgr.Id.ToString(), false); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to {Email}", mgr.Email); }
+
+            try
+            {
+                await notificationService.SendToUserAsync(
+                    mgr.Id.ToString(),
+                    $"{complaints.Count} complaint(s) require attention: {BuildComplaintSummary(complaints)}",
+                    "property", "Complaint", null);
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to {Email}", mgr.Email); }
         }
 
         // Agent — one grouped email per distinct escalated agent, containing only their own complaints.
@@ -148,8 +148,18 @@ public class ComplaintReminderSchedulerService : BackgroundService
         {
             var agent = await context.Agents.FirstOrDefaultAsync(a => a.Id == group.Key);
             if (agent == null) continue;
-            try { await emailService.SendComplaintOverdueAgentGroupedEmailAsync(agent.Email, agent.FirstName, group.Select(ToItem).ToList(), agent.Id.ToString(), true); }
+            var groupItems = group.ToList();
+            try { await emailService.SendComplaintOverdueAgentGroupedEmailAsync(agent.Email, agent.FirstName, groupItems.Select(ToItem).ToList(), agent.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to agent {Email}", agent.Email); }
+
+            try
+            {
+                await notificationService.SendToUserAsync(
+                    agent.Id.ToString(),
+                    $"{groupItems.Count} complaint(s) awaiting your work: {BuildComplaintSummary(groupItems)}",
+                    "property", "Complaint", null);
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to agent {Email}", agent.Email); }
         }
 
         // Landlord — one grouped email per distinct landlord, for complaints billable to Management
@@ -160,8 +170,18 @@ public class ComplaintReminderSchedulerService : BackgroundService
         {
             var landlord = await context.Landlords.FirstOrDefaultAsync(l => l.Id == group.Key);
             if (landlord == null) continue;
-            try { await emailService.SendComplaintOverdueLandlordGroupedEmailAsync(landlord.Email, landlord.FirstName, group.Select(ToItem).ToList(), landlord.Id.ToString(), true); }
+            var groupItems = group.ToList();
+            try { await emailService.SendComplaintOverdueLandlordGroupedEmailAsync(landlord.Email, landlord.FirstName, groupItems.Select(ToItem).ToList(), landlord.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to landlord {Email}", landlord.Email); }
+
+            try
+            {
+                await notificationService.SendToUserAsync(
+                    landlord.Id.ToString(),
+                    $"{groupItems.Count} complaint(s) awaiting your decision: {BuildComplaintSummary(groupItems)}",
+                    "property", "Complaint", null);
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to landlord {Email}", landlord.Email); }
         }
 
         await context.SaveChangesAsync();
