@@ -641,9 +641,29 @@ public class SessionController : ControllerBase
         // and what happened to it" — nothing on ListingViewingSession itself carries that, so it's a
         // fresh batch reverse-lookup, same dictionary-lookup pattern as houses/agents above.
         var sessionIds = sessions.Select(s => s.Id).ToList();
-        var outcomeBySession = await _context.ExplorerInterests
+        var sessionInterests = await _context.ExplorerInterests
             .Where(ei => ei.SessionId.HasValue && sessionIds.Contains(ei.SessionId.Value))
-            .ToDictionaryAsync(ei => ei.SessionId!.Value, ei => ei.Status);
+            .ToListAsync();
+        var latestInterestBySession = sessionInterests
+            .GroupBy(ei => ei.SessionId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(ei => ei.CreatedAt).First());
+
+        // Same reverse-lookup ExplorerController.GetAll's tenantsByInterest uses — a "Converted"
+        // interest whose tenant hasn't actually paid yet shouldn't read as Converted here either;
+        // report it as Pending until HasCompletedInitialPayment genuinely flips true.
+        var convertedInterestIds = latestInterestBySession.Values
+            .Where(ei => ei.Status == "Converted")
+            .Select(ei => ei.Id)
+            .ToList();
+        var tenantsByInterest = await _context.Tenants
+            .Where(t => t.SourceExplorerInterestId != null && convertedInterestIds.Contains(t.SourceExplorerInterestId.Value))
+            .ToDictionaryAsync(t => t.SourceExplorerInterestId!.Value, t => t.HasCompletedInitialPayment);
+
+        var outcomeBySession = latestInterestBySession.ToDictionary(
+            kv => kv.Key,
+            kv => kv.Value.Status == "Converted"
+                ? (tenantsByInterest.GetValueOrDefault(kv.Value.Id) ? "Converted" : "Pending")
+                : kv.Value.Status);
 
         var data = sessions.Select(s =>
         {
