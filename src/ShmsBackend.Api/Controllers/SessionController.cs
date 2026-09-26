@@ -644,6 +644,7 @@ public class SessionController : ControllerBase
             return (object)new
             {
                 id = s.Id,
+                houseId = s.HouseId,
                 houseNumber = house?.HouseNumber,
                 flatName = house?.Flat?.FlatName,
                 agentName = agent != null ? $"{agent.FirstName} {agent.LastName}".Trim() : (string?)null,
