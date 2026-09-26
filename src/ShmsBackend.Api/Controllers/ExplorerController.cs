@@ -45,17 +45,25 @@ public class ExplorerController : ControllerBase
             .ToListAsync();
 
         var explorerIds = explorers.Select(e => e.Id).ToList();
-        var pendingInterests = await _context.ExplorerInterests
-            .Where(ei => explorerIds.Contains(ei.ExplorerId) && ei.Status == "Pending")
+        var interests = await _context.ExplorerInterests
+            .Where(ei => explorerIds.Contains(ei.ExplorerId) && (ei.Status == "Pending" || ei.Status == "Converted"))
             .ToListAsync();
 
-        var houseIds = pendingInterests.Select(ei => ei.HouseId).Distinct().ToList();
+        var houseIds = interests.Select(ei => ei.HouseId).Distinct().ToList();
         var houses = await _context.Houses
             .Include(h => h.Flat)
             .Where(h => houseIds.Contains(h.Id))
             .ToDictionaryAsync(h => h.Id, h => new { h.HouseNumber, FlatName = h.Flat?.FlatName });
 
-        var interestByExplorer = pendingInterests
+        // Reverse-lookup the Tenant a Converted interest produced, via Tenant.SourceExplorerInterestId
+        // (set atomically with tenant creation — see TenantService.CreateAsync), so the admin list can
+        // show whether that tenant has actually paid yet without a second round trip.
+        var interestIds = interests.Select(ei => ei.Id).ToList();
+        var tenantsByInterest = await _context.Tenants
+            .Where(t => t.SourceExplorerInterestId != null && interestIds.Contains(t.SourceExplorerInterestId.Value))
+            .ToDictionaryAsync(t => t.SourceExplorerInterestId!.Value, t => new { t.Id, t.HasCompletedInitialPayment });
+
+        var interestByExplorer = interests
             .GroupBy(ei => ei.ExplorerId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(ei => ei.CreatedAt).First());
 
@@ -65,19 +73,25 @@ public class ExplorerController : ControllerBase
             {
                 interestByExplorer.TryGetValue(e.Id, out var interest);
                 var houseInfo = interest != null ? houses.GetValueOrDefault(interest.HouseId) : null;
+                var tenantInfo = interest != null && interest.Status == "Converted"
+                    ? tenantsByInterest.GetValueOrDefault(interest.Id)
+                    : null;
                 return new
                 {
                     e.Id, e.FirstName, e.LastName, e.Email,
                     e.PhoneNumber, e.County, e.Constituency, e.Ward,
                     e.IsActive, e.IsEmailVerified, e.CreatedAt,
-                    pendingInterest = interest == null ? null : new
+                    interest = interest == null ? null : new
                     {
                         interest.Id,
                         interest.HouseId,
                         houseNumber = houseInfo?.HouseNumber,
                         flatName = houseInfo?.FlatName,
                         interest.SessionId,
-                        interest.CreatedAt
+                        interest.CreatedAt,
+                        interest.Status,
+                        tenantId = tenantInfo?.Id,
+                        hasCompletedInitialPayment = tenantInfo?.HasCompletedInitialPayment
                     }
                 };
             });

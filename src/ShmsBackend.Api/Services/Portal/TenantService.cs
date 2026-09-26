@@ -95,6 +95,24 @@ public class TenantService : ITenantService
 
                 if (blockingTenants.Count > 0)
                 {
+                    // Completing the loop: a bumped tenant's own SourceExplorerInterestId (if any) was
+                    // flipped to Converted when THEY registered — now that they're being replaced
+                    // before ever paying, revert that ExplorerInterest back to Pending so the bumped
+                    // explorer's row correctly shows a Convert button again, instead of staying stuck
+                    // on Converted pointing at a soft-deleted tenant.
+                    var staleInterestIds = blockingTenants
+                        .Where(t => t.SourceExplorerInterestId.HasValue)
+                        .Select(t => t.SourceExplorerInterestId!.Value)
+                        .ToList();
+                    if (staleInterestIds.Count > 0)
+                    {
+                        var revertedInterests = await _context.ExplorerInterests
+                            .Where(ei => staleInterestIds.Contains(ei.Id))
+                            .ToListAsync();
+                        foreach (var revertedInterest in revertedInterests)
+                            revertedInterest.Status = "Pending";
+                    }
+
                     foreach (var stale in blockingTenants)
                     {
                         stale.IsDeleted = true;
@@ -219,6 +237,21 @@ public class TenantService : ITenantService
 
             if (blockingTenants.Count > 0)
             {
+                // Same loop-closing as the revival branch above: revert the bumped tenant's own
+                // ExplorerInterest back to Pending, since it's being replaced before ever paying.
+                var staleInterestIds = blockingTenants
+                    .Where(t => t.SourceExplorerInterestId.HasValue)
+                    .Select(t => t.SourceExplorerInterestId!.Value)
+                    .ToList();
+                if (staleInterestIds.Count > 0)
+                {
+                    var revertedInterests = await _context.ExplorerInterests
+                        .Where(ei => staleInterestIds.Contains(ei.Id))
+                        .ToListAsync();
+                    foreach (var revertedInterest in revertedInterests)
+                        revertedInterest.Status = "Pending";
+                }
+
                 foreach (var stale in blockingTenants)
                 {
                     stale.IsDeleted = true;
