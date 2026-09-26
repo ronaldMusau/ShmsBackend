@@ -72,11 +72,39 @@ public class TenantService : ITenantService
             deleted.DateOfBirth = dto.DateOfBirth;
             deleted.EmergencyContactName = dto.EmergencyContactName;
             deleted.EmergencyContactPhone = dto.EmergencyContactPhone;
+            VacateRequest? revivalApprovedVacate = null;
             if (dto.HouseId.HasValue)
             {
-                var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.TenantStatus != TenantStatus.SettlingVacate);
-                if (houseTaken)
+                revivalApprovedVacate = await _context.VacateRequests
+                    .FirstOrDefaultAsync(r => r.HouseId == dto.HouseId && !r.IsDeleted && r.Status == "Approved");
+
+                // Pre-registration is allowed once the house has an Approved vacate request, even before
+                // the outgoing tenant's status has flipped to SettlingVacate — but only THAT specific
+                // outgoing tenant is excused from the "taken" check; anyone else non-deleted/non-
+                // SettlingVacate still blocks a second/duplicate registration, UNLESS that blocker is
+                // itself an unpaid, stale pre-registration — those get replaced, not preserved, since
+                // no financial record exists for them yet.
+                Guid? outgoingTenantIdToExclude = revivalApprovedVacate?.TenantId;
+                var blockingTenants = await _context.Tenants
+                    .Where(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.TenantStatus != TenantStatus.SettlingVacate
+                        && (outgoingTenantIdToExclude == null || t.Id != outgoingTenantIdToExclude))
+                    .ToListAsync();
+
+                if (blockingTenants.Any(t => t.HasCompletedInitialPayment))
                     throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
+
+                if (blockingTenants.Count > 0)
+                {
+                    foreach (var stale in blockingTenants)
+                    {
+                        stale.IsDeleted = true;
+                        stale.DeletedAt = DateTime.UtcNow;
+                    }
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation(
+                        "Replaced {Count} stale unpaid pre-registration(s) on house {HouseId} for revived tenant {Email}",
+                        blockingTenants.Count, dto.HouseId, dto.Email);
+                }
             }
             deleted.HouseId = dto.HouseId;
             deleted.IsDeleted = false;
@@ -109,12 +137,8 @@ public class TenantService : ITenantService
 
             // LeaseStartMonth/LeaseStartYear: mirror the fresh-signup branch's exact derivation
             // (explicit dto value first, else the day after an approved vacate's month, else null) —
-            // not left over from whatever house/lease the prior cycle was on.
-            VacateRequest? revivalApprovedVacate = null;
-            if (dto.HouseId.HasValue)
-                revivalApprovedVacate = await _context.VacateRequests
-                    .FirstOrDefaultAsync(r => r.HouseId == dto.HouseId && !r.IsDeleted && r.Status == "Approved");
-
+            // not left over from whatever house/lease the prior cycle was on. revivalApprovedVacate was
+            // already resolved above for the widened exclusivity check; reused here as-is.
             if (dto.LeaseStartMonth.HasValue && dto.LeaseStartYear.HasValue)
             {
                 deleted.LeaseStartMonth = dto.LeaseStartMonth;
@@ -160,17 +184,38 @@ public class TenantService : ITenantService
             return deleted;
         }
 
-        if (dto.HouseId.HasValue)
-        {
-            var houseTaken = await _context.Tenants.AnyAsync(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.TenantStatus != TenantStatus.SettlingVacate);
-            if (houseTaken)
-                throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
-        }
-
         VacateRequest? approvedVacate = null;
         if (dto.HouseId.HasValue)
+        {
             approvedVacate = await _context.VacateRequests
                 .FirstOrDefaultAsync(r => r.HouseId == dto.HouseId && !r.IsDeleted && r.Status == "Approved");
+
+            // Same widened exclusivity rule as the revival branch above: an Approved vacate request
+            // excuses only its own named outgoing tenant from the "taken" check, not anyone else —
+            // unless that blocker is itself an unpaid, stale pre-registration, which gets replaced
+            // rather than preserved, since no financial record exists for it yet.
+            Guid? outgoingTenantIdToExclude = approvedVacate?.TenantId;
+            var blockingTenants = await _context.Tenants
+                .Where(t => t.HouseId == dto.HouseId && !t.IsDeleted && t.TenantStatus != TenantStatus.SettlingVacate
+                    && (outgoingTenantIdToExclude == null || t.Id != outgoingTenantIdToExclude))
+                .ToListAsync();
+
+            if (blockingTenants.Any(t => t.HasCompletedInitialPayment))
+                throw new InvalidOperationException("This house already has an active or pending tenant assigned to it.");
+
+            if (blockingTenants.Count > 0)
+            {
+                foreach (var stale in blockingTenants)
+                {
+                    stale.IsDeleted = true;
+                    stale.DeletedAt = DateTime.UtcNow;
+                }
+                await _context.SaveChangesAsync();
+                _logger.LogInformation(
+                    "Replaced {Count} stale unpaid pre-registration(s) on house {HouseId} for new tenant {Email}",
+                    blockingTenants.Count, dto.HouseId, dto.Email);
+            }
+        }
 
         int? leaseStartMonth = null;
         int? leaseStartYear = null;
@@ -306,7 +351,19 @@ public class TenantService : ITenantService
 
                 var paymentMonth = tenant.LeaseStartMonth ?? DateTime.UtcNow.Month;
                 var paymentYear = tenant.LeaseStartYear ?? DateTime.UtcNow.Year;
-                var serviceCharge = await _paymentService.GetServiceChargeAsync(house.RentFee);
+
+                // Honor a rent change scheduled to take effect on or before this tenant's actual
+                // move-in month — same "pick the latest change that's already due by then" logic as
+                // PaymentService.CreateInitialPaymentAsync.
+                var applicableRentChange = await _context.PendingRentChanges
+                    .Where(pc => pc.HouseId == house.Id && pc.AppliedAt == null
+                        && (pc.EffectiveYear < paymentYear || (pc.EffectiveYear == paymentYear && pc.EffectiveMonth <= paymentMonth)))
+                    .OrderByDescending(pc => pc.EffectiveYear)
+                    .ThenByDescending(pc => pc.EffectiveMonth)
+                    .FirstOrDefaultAsync();
+                var effectiveRentFee = applicableRentChange?.NewRentFee ?? house.RentFee;
+
+                var serviceCharge = await _paymentService.GetServiceChargeAsync(effectiveRentFee);
                 var rentDueDay = house.Flat != null
                     ? Math.Min(house.Flat.RentDueDay, DateTime.DaysInMonth(paymentYear, paymentMonth))
                     : DateTime.DaysInMonth(paymentYear, paymentMonth);
@@ -320,10 +377,10 @@ public class TenantService : ITenantService
                     HouseId = house.Id,
                     FlatId = house.FlatId,
                     LandlordId = house.Flat?.LandlordId ?? Guid.Empty,
-                    Amount = house.RentFee,
+                    Amount = effectiveRentFee,
                     AmountPaid = 0,
-                    Balance = house.RentFee,
-                    RentAmount = house.RentFee,
+                    Balance = effectiveRentFee,
+                    RentAmount = effectiveRentFee,
                     ServiceChargeAmount = serviceCharge,
                     Month = paymentMonth,
                     Year = paymentYear,

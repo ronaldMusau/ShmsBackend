@@ -103,9 +103,24 @@ public class PaymentService : IPaymentService
         if (existingInitial != null)
             return existingInitial;
 
-        var serviceCharge = await GetServiceChargeAsync(house.RentFee);
-        var totalAmount = house.DepositFee + house.RentFee;
         var now = DateTime.UtcNow;
+        var moveInYear = tenant.LeaseStartYear ?? now.Year;
+        var moveInMonth = tenant.LeaseStartMonth ?? now.Month;
+
+        // Honor a rent change scheduled to take effect on or before the tenant's actual expected
+        // move-in month — pick the latest such change (closest to, but not after, move-in), not just
+        // whatever the most-recently-created PendingRentChange happens to be.
+        var applicableRentChange = await _context.PendingRentChanges
+            .Where(pc => pc.HouseId == houseId && pc.AppliedAt == null
+                && (pc.EffectiveYear < moveInYear || (pc.EffectiveYear == moveInYear && pc.EffectiveMonth <= moveInMonth)))
+            .OrderByDescending(pc => pc.EffectiveYear)
+            .ThenByDescending(pc => pc.EffectiveMonth)
+            .FirstOrDefaultAsync();
+        var effectiveRentFee = applicableRentChange?.NewRentFee ?? house.RentFee;
+        var effectiveDepositFee = applicableRentChange?.NewDepositFee ?? house.DepositFee;
+
+        var serviceCharge = await GetServiceChargeAsync(effectiveRentFee);
+        var totalAmount = effectiveDepositFee + effectiveRentFee;
         var dueDate = new DateTime(now.Year, now.Month,
             Math.Min(flat.RentDueDay, DateTime.DaysInMonth(now.Year, now.Month)));
 
@@ -119,8 +134,8 @@ public class PaymentService : IPaymentService
             Amount = totalAmount,
             AmountPaid = 0,
             Balance = totalAmount,
-            RentAmount = house.RentFee,
-            DepositAmount = house.DepositFee,
+            RentAmount = effectiveRentFee,
+            DepositAmount = effectiveDepositFee,
             ServiceChargeAmount = serviceCharge,
             PaymentStatus = PaymentTransactionStatus.Pending,
             PaymentType = PaymentType.InitialPayment,
@@ -788,7 +803,15 @@ public class PaymentService : IPaymentService
 
             if (house != null)
             {
-                var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.HouseId == house.Id && t.IsActive);
+                // Same deterministic resolution HouseReportBuilder.cs uses: a house can briefly carry
+                // both an outgoing (SettlingVacate) and an incoming pre-registered tenant at once, so
+                // IsActive alone can't disambiguate — order by CreatedAt and prefer non-SettlingVacate.
+                var houseTenantCandidates = await _context.Tenants
+                    .Where(t => t.HouseId == house.Id)
+                    .OrderByDescending(t => t.CreatedAt)
+                    .ToListAsync();
+                var tenant = houseTenantCandidates.FirstOrDefault(t => t.TenantStatus != TenantStatus.SettlingVacate)
+                    ?? houseTenantCandidates.FirstOrDefault();
                 if (tenant != null)
                 {
                     try

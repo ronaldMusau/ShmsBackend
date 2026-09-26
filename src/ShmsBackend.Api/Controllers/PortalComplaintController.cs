@@ -57,6 +57,9 @@ public class PortalComplaintController : ControllerBase
         if (tenant?.House == null || tenant.House.Flat == null)
             return BadRequest(new { success = false, message = "You do not currently have an assigned house." });
 
+        if (TenantAccessHelper.IsReadOnlyUntilMoveIn(tenant))
+            return BadRequest(new { success = false, message = "Your account is read-only until your move-in month arrives." });
+
         var complaintType = await _context.ComplaintTypes.FirstOrDefaultAsync(t => t.Id == dto.ComplaintTypeId && t.IsActive);
         if (complaintType == null)
             return BadRequest(new { success = false, message = "Invalid complaint type." });

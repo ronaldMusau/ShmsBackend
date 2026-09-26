@@ -139,6 +139,9 @@ public class VacateController : ControllerBase
         if (tenant.House == null || tenant.House.Flat == null)
             return BadRequest(new { success = false, message = "Tenant is not assigned to a house." });
 
+        if (callerRole == "Tenant" && TenantAccessHelper.IsReadOnlyUntilMoveIn(tenant))
+            return BadRequest(new { success = false, message = "Your account is read-only until your move-in month arrives." });
+
         if (callerRole == "Tenant" && DateTime.UtcNow.Day > tenant.House.Flat.VacateNoticeDeadlineDay)
             return BadRequest(new { success = false, message = "Vacate notice window has closed for this month." });
 

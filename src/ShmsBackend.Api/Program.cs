@@ -170,6 +170,7 @@ builder.Services.AddHostedService<ComplaintReminderSchedulerService>();
 builder.Services.AddHostedService<SessionSchedulerService>();
 builder.Services.AddHostedService<WeeklyPasswordSchedulerService>();
 builder.Services.AddHostedService<WeeklyClientPasswordSchedulerService>();
+builder.Services.AddHostedService<PreRegistrationExpirySchedulerService>();
 
 // Add JWT Authentication
 var jwtOptions = builder.Configuration.GetSection("JwtOptions").Get<JwtOptions>();

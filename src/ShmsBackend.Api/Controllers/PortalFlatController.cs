@@ -14,6 +14,7 @@ using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Models.Enums;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -43,6 +44,16 @@ public class PortalFlatController : ControllerBase
         _logger = logger;
         _flatService = flatService;
         _cacheHelper = cacheHelper;
+    }
+
+    // Same deterministic resolution HouseReportBuilder.cs uses: a house can briefly carry both an
+    // outgoing (SettlingVacate) and an incoming pre-registered tenant at once, so an unordered/
+    // unfiltered FirstOrDefault() on the collection is ambiguous. Order by CreatedAt, prefer whichever
+    // tenant is not SettlingVacate.
+    private static Tenant? ResolveCurrentTenant(IEnumerable<Tenant> tenants)
+    {
+        var candidates = tenants.OrderByDescending(t => t.CreatedAt).ToList();
+        return candidates.FirstOrDefault(t => t.TenantStatus != TenantStatus.SettlingVacate) ?? candidates.FirstOrDefault();
     }
 
     private Guid GetUserId()
@@ -304,36 +315,40 @@ public class PortalFlatController : ControllerBase
                 TotalHouses = landlordFlat.Houses.Count,
                 VacantHouses = landlordFlat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Vacant),
                 OccupiedHouses = landlordFlat.Houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
-                Houses = landlordFlat.Houses.Select(h => new
+                Houses = landlordFlat.Houses.Select(h =>
                 {
-                    h.Id,
-                    h.HouseNumber,
-                    h.HouseTypeId,
-                    HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
-                    h.RentFee,
-                    h.DepositFee,
-                    OccupancyStatus = h.OccupancyStatus.ToString(),
-                    h.IsAwaitingExistingTenant,
-                    PaymentStatus = h.PaymentStatus.ToString(),
-                    h.CreatedAt,
-                    CurrentTenant = h.Tenants.Select(t => new
+                    var currentTenant = ResolveCurrentTenant(h.Tenants);
+                    return new
                     {
-                        t.Id,
-                        t.FirstName,
-                        t.LastName,
-                        t.PhoneNumber,
-                        t.Email,
-                        t.CreatedAt
-                    }).FirstOrDefault(),
-                    Images = landlordTypeImages.Where(ti => ti.HouseTypeId == h.HouseTypeId)
-                                                .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
-                    ScheduledRentChange = landlordPendingRentChanges.TryGetValue(h.Id, out var landlordPrc) ? new
-                    {
-                        landlordPrc.NewRentFee,
-                        landlordPrc.NewDepositFee,
-                        landlordPrc.EffectiveMonth,
-                        landlordPrc.EffectiveYear
-                    } : null
+                        h.Id,
+                        h.HouseNumber,
+                        h.HouseTypeId,
+                        HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
+                        h.RentFee,
+                        h.DepositFee,
+                        OccupancyStatus = h.OccupancyStatus.ToString(),
+                        h.IsAwaitingExistingTenant,
+                        PaymentStatus = h.PaymentStatus.ToString(),
+                        h.CreatedAt,
+                        CurrentTenant = currentTenant == null ? null : new
+                        {
+                            currentTenant.Id,
+                            currentTenant.FirstName,
+                            currentTenant.LastName,
+                            currentTenant.PhoneNumber,
+                            currentTenant.Email,
+                            currentTenant.CreatedAt
+                        },
+                        Images = landlordTypeImages.Where(ti => ti.HouseTypeId == h.HouseTypeId)
+                                                    .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
+                        ScheduledRentChange = landlordPendingRentChanges.TryGetValue(h.Id, out var landlordPrc) ? new
+                        {
+                            landlordPrc.NewRentFee,
+                            landlordPrc.NewDepositFee,
+                            landlordPrc.EffectiveMonth,
+                            landlordPrc.EffectiveYear
+                        } : null
+                    };
                 }),
                 HasPendingEditRequest = _context.FlatEditRequests.Any(r => r.FlatId == landlordFlat.Id && r.Status == "Pending"),
                 landlordFlat.CreatedAt
@@ -520,7 +535,12 @@ public class PortalFlatController : ControllerBase
                             {
                                 try
                                 {
-                                    var groupTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.HouseId == groupHouse.Id && t.IsActive);
+                                    var groupHouseTenantCandidates = await _context.Tenants
+                                        .Where(t => t.HouseId == groupHouse.Id)
+                                        .OrderByDescending(t => t.CreatedAt)
+                                        .ToListAsync();
+                                    var groupTenant = groupHouseTenantCandidates.FirstOrDefault(t => t.TenantStatus != TenantStatus.SettlingVacate)
+                                        ?? groupHouseTenantCandidates.FirstOrDefault();
                                     if (groupTenant != null)
                                     {
                                         await _emailService.SendRentChangeNoticeAsync(groupTenant.Email, groupTenant.FirstName,

@@ -10,6 +10,7 @@ using ShmsBackend.Api.Models.DTOs.House;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Models.Enums;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -426,7 +427,15 @@ public class PublicListingController : ControllerBase
                      && !h.IsListingHidden
                      && _context.HouseTypeImages.Any(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)
                      && _context.VacateRequests
-                         .Any(v => v.HouseId == h.Id && v.Status == "Approved" && !v.IsDeleted));
+                         .Any(v => v.HouseId == h.Id && v.Status == "Approved" && !v.IsDeleted)
+                     // Double-booking guard: once someone has actually pre-registered AND PAID against
+                     // this house (any non-deleted, paid tenant who isn't the specific outgoing tenant
+                     // named by the approved vacate request), it's no longer available. An unpaid
+                     // pre-registration alone does not hide the house — see TenantService.CreateAsync's
+                     // replace-stale-unpaid-registration logic and the 72h expiry sweep.
+                     && !_context.Tenants.Any(t => t.HouseId == h.Id && !t.IsDeleted && t.TenantStatus != TenantStatus.SettlingVacate
+                         && t.HasCompletedInitialPayment
+                         && !_context.VacateRequests.Any(v2 => v2.HouseId == h.Id && v2.Status == "Approved" && !v2.IsDeleted && v2.TenantId == t.Id)));
 
         if (!string.IsNullOrEmpty(county))
             query = query.Where(h => h.Flat != null && h.Flat.County == county);

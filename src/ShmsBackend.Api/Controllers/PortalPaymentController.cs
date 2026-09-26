@@ -176,6 +176,10 @@ public class PortalPaymentController : ControllerBase
             if (dto.Amount.HasValue && dto.Amount.Value <= 0)
                 return BadRequest(new { success = false, message = "Amount must be positive." });
 
+            var payingTenant = await _context.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == userId);
+            if (payingTenant != null && TenantAccessHelper.IsReadOnlyUntilMoveIn(payingTenant))
+                return BadRequest(new { success = false, message = "Your account is read-only until your move-in month arrives." });
+
             var existingProcessing = await _context.Payments
                 .Where(p => p.TenantId == userId && p.PaymentStatus == PaymentTransactionStatus.Processing && !p.IsDeleted)
                 .FirstOrDefaultAsync();
