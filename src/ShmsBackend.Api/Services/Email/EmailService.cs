@@ -2250,6 +2250,26 @@ public class EmailService : IEmailService
         return WrapInLayout($"Explorer Interested — {houseNumber}", inner);
     }
 
+    public async Task SendExplorerInterestOriginalAgentFyiEmailAsync(string toEmail, string firstName, string houseNumber, string flatName, string currentAgentName, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        _logger.LogInformation("Sending explorer interest FYI email to original session agent: {Email}", toEmail);
+        await SendEmail(toEmail, $"FYI — Explorer Interested in {houseNumber}",
+            GetExplorerInterestOriginalAgentFyiTemplate(firstName, houseNumber, flatName, currentAgentName));
+    }
+
+    private string GetExplorerInterestOriginalAgentFyiTemplate(string firstName, string houseNumber, string flatName, string currentAgentName)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"An explorer you showed house <strong style='color:{ColourGold};'>{houseNumber}</strong> at <strong style='color:{ColourGold};'>{flatName}</strong> to has expressed interest on the <strong style='color:{ColourGold};'>Romah Estates</strong> system.")}
+{Para($"This is for your information only — <strong style='color:{ColourGold};'>{currentAgentName}</strong> is now handling this flat and will proceed with onboarding. No action is needed from you.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"FYI — Explorer Interested in {houseNumber}", inner);
+    }
+
     public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;

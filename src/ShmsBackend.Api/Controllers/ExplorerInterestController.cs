@@ -2,8 +2,10 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Models.DTOs.Tenant;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Api.Services.Portal;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
 
@@ -17,17 +19,20 @@ public class ExplorerInterestController : ControllerBase
     private readonly ShmsDbContext _context;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
+    private readonly ITenantService _tenantService;
     private readonly ILogger<ExplorerInterestController> _logger;
 
     public ExplorerInterestController(
         ShmsDbContext context,
         IEmailService emailService,
         INotificationService notificationService,
+        ITenantService tenantService,
         ILogger<ExplorerInterestController> logger)
     {
         _context = context;
         _emailService = emailService;
         _notificationService = notificationService;
+        _tenantService = tenantService;
         _logger = logger;
     }
 
@@ -146,6 +151,47 @@ public class ExplorerInterestController : ControllerBase
             }
         }
 
+        // If this interest traces back to a specific viewing session, and that session's original
+        // agent differs from the flat's current agent, give the original agent a separate FYI —
+        // they showed the house, but the CURRENT agent is who will actually handle onboarding.
+        if (interest.SessionId.HasValue)
+        {
+            var originalSession = await _context.ListingViewingSessions
+                .FirstOrDefaultAsync(s => s.Id == interest.SessionId.Value);
+
+            if (originalSession != null && (agentFlat == null || originalSession.AgentId != agentFlat.AgentId))
+            {
+                var originalAgent = await _context.Agents.FirstOrDefaultAsync(a => a.Id == originalSession.AgentId);
+                if (originalAgent != null)
+                {
+                    var currentAgentName = agentFlat != null
+                        ? $"{agentFlat.Agent.FirstName} {agentFlat.Agent.LastName}".Trim()
+                        : "another agent";
+                    var fyiMessage = $"An explorer you showed house {houseNumber} to has expressed interest — {currentAgentName} is now handling this flat and will proceed with onboarding.";
+
+                    try
+                    {
+                        await _notificationService.SendForcedToUserAsync(
+                            originalAgent.Id.ToString(), fyiMessage, "property", "ExplorerInterest", interest.Id.ToString());
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send FYI notification to original session agent {AgentId} for explorer interest {InterestId}", originalAgent.Id, interest.Id);
+                    }
+
+                    try
+                    {
+                        await _emailService.SendExplorerInterestOriginalAgentFyiEmailAsync(
+                            originalAgent.Email, originalAgent.FirstName, houseNumber, flatName, currentAgentName, null, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send FYI email to original session agent {AgentId} for explorer interest {InterestId}", originalAgent.Id, interest.Id);
+                    }
+                }
+            }
+        }
+
         // Forced notification to every Management user — same role-list convention as
         // ComplaintReminderSchedulerService's management alerts, but called via the forced path.
         var superAdmins = await _context.SuperAdmins.Select(u => u.Id).ToListAsync();
@@ -181,6 +227,66 @@ public class ExplorerInterestController : ControllerBase
         }
 
         return Ok(new { success = true, data = new { interest.Id, interest.Status } });
+    }
+
+    // POST /api/explorer-interest/{id}/convert — Management pre-fills and creates a Tenant from
+    // this interest's Explorer/House. Not a payment step — payment-related fields stay at defaults.
+    [HttpPost("{id:guid}/convert")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> ConvertToTenant(Guid id)
+    {
+        var interest = await _context.ExplorerInterests.FirstOrDefaultAsync(ei => ei.Id == id);
+        if (interest == null)
+            return NotFound(new { success = false, message = "Explorer interest not found." });
+
+        if (interest.Status != "Pending")
+            return BadRequest(new { success = false, message = "This interest is no longer pending and cannot be converted." });
+
+        var explorer = await _context.Explorers.FirstOrDefaultAsync(e => e.Id == interest.ExplorerId);
+        if (explorer == null)
+            return NotFound(new { success = false, message = "Explorer not found." });
+
+        var house = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == interest.HouseId);
+        if (house == null)
+            return NotFound(new { success = false, message = "House not found." });
+
+        // A one-click conversion has no caller-supplied password — generate a temporary one the same
+        // way EmailVerificationToken generation elsewhere in TenantService does (Guid-derived, random).
+        // It flows into Tenant.TemporaryInitialPassword and reaches the tenant via the existing
+        // account-ready email once their initial payment completes — same as any other tenant.
+        var temporaryPassword = Guid.NewGuid().ToString("N").Substring(0, 12);
+
+        var dto = new CreateTenantDto
+        {
+            Email = explorer.Email,
+            Password = temporaryPassword,
+            FirstName = explorer.FirstName,
+            LastName = explorer.LastName,
+            PhoneNumber = explorer.PhoneNumber,
+            HouseId = interest.HouseId,
+            SourceExplorerInterestId = interest.Id
+        };
+
+        Tenant tenant;
+        try
+        {
+            tenant = await _tenantService.CreateAsync(dto);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                tenantId = tenant.Id,
+                houseId = house.Id,
+                fullName = $"{tenant.FirstName} {tenant.LastName}".Trim()
+            }
+        });
     }
 }
 

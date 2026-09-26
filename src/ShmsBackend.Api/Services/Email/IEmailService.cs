@@ -83,4 +83,5 @@ public interface IEmailService
     Task SendSessionFeedbackPromptGroupedEmailAsync(string toEmail, string firstName, List<(string HouseNumber, DateTime ScheduledAt)> items, string? userId = null, bool isPortalUser = false);
     Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false);
     Task SendExplorerInterestAgentEmailAsync(string toEmail, string firstName, string houseNumber, string flatName, string availabilityText, string? userId = null, bool isPortalUser = false);
+    Task SendExplorerInterestOriginalAgentFyiEmailAsync(string toEmail, string firstName, string houseNumber, string flatName, string currentAgentName, string? userId = null, bool isPortalUser = false);
 }
