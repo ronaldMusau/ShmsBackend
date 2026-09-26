@@ -605,6 +605,12 @@ public class PortalAuthService : IPortalAuthService
             if (!string.IsNullOrWhiteSpace(dto.PhoneNumber))
                 user.PhoneNumber = dto.PhoneNumber;
 
+            // Theme/Mode apply to every role unconditionally, unlike County/Constituency/Ward below.
+            if (!string.IsNullOrWhiteSpace(dto.Theme))
+                user.Theme = dto.Theme;
+            if (!string.IsNullOrWhiteSpace(dto.Mode))
+                user.Mode = dto.Mode;
+
             // County/Constituency/Ward apply only to Explorer (their area of interest for browsing
             // listings) — this endpoint is callable by every portal role, so any other role's request
             // body simply has these fields ignored rather than erroring.

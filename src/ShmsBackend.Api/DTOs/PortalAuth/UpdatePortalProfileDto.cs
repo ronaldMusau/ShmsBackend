@@ -14,4 +14,8 @@ public class UpdatePortalProfileDto
     public string? County { get; set; }
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
+
+    // Applies to every role — unlike County/Constituency/Ward above, this isn't role-gated.
+    public string? Theme { get; set; }
+    public string? Mode { get; set; }
 }

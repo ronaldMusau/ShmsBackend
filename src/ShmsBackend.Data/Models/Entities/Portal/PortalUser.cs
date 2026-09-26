@@ -15,6 +15,8 @@ public abstract class PortalUser : ISoftDelete
     public string? County { get; set; }
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
+    public string? Theme { get; set; }   // null = never synced; callers treat as Default theme
+    public string? Mode { get; set; }    // null = never synced; callers treat as dark mode
     public DateTime? DateOfBirth { get; set; }
     public string? NationalId { get; set; }
     public bool IsActive { get; set; } = true;
