@@ -637,6 +637,14 @@ public class SessionController : ControllerBase
         var houseDict = houses.ToDictionary(h => h.Id);
         var agentDict = agents.ToDictionary(a => a.Id);
 
+        // ExplorerInterest.SessionId is the only link back to "did this session lead to an interest,
+        // and what happened to it" — nothing on ListingViewingSession itself carries that, so it's a
+        // fresh batch reverse-lookup, same dictionary-lookup pattern as houses/agents above.
+        var sessionIds = sessions.Select(s => s.Id).ToList();
+        var outcomeBySession = await _context.ExplorerInterests
+            .Where(ei => ei.SessionId.HasValue && sessionIds.Contains(ei.SessionId.Value))
+            .ToDictionaryAsync(ei => ei.SessionId!.Value, ei => ei.Status);
+
         var data = sessions.Select(s =>
         {
             houseDict.TryGetValue(s.HouseId, out var house);
@@ -654,7 +662,8 @@ public class SessionController : ControllerBase
                 closingComment = s.ClosingComment,
                 agentRating = s.AgentRating,
                 declineReason = s.DeclineReason,
-                rescheduleCount = s.RescheduleCount
+                rescheduleCount = s.RescheduleCount,
+                outcome = outcomeBySession.GetValueOrDefault(s.Id)
             };
         }).ToList();
 

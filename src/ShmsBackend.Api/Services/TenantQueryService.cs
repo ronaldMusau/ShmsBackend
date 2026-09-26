@@ -17,6 +17,7 @@ public class TenantFilters
     public DateTime? ToDate { get; set; }
     public string? Search { get; set; }
     public Guid? LandlordId { get; set; }   // set server-side only, never bound from a client filter param
+    public bool? FromExplorerInterest { get; set; }
 }
 
 /// <summary>
@@ -80,6 +81,9 @@ public class TenantQueryService
         {
             query = query.Where(t => t.TenantStatus == parsedStatus);
         }
+
+        if (filters.FromExplorerInterest == true)
+            query = query.Where(t => t.SourceExplorerInterestId != null);
 
         return query;
     }

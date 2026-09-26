@@ -55,6 +55,7 @@ public class ReportsController : ControllerBase
     private readonly ListingReportBuilder _listingReportBuilder;
     private readonly SessionReportBuilder _sessionReportBuilder;
     private readonly AgreementReportBuilder _agreementReportBuilder;
+    private readonly ExplorerInterestReportBuilder _explorerInterestReportBuilder;
     private readonly IReportRenderer _reportRenderer;
     private readonly ShmsDbContext _context;
 
@@ -76,6 +77,7 @@ public class ReportsController : ControllerBase
         ListingReportBuilder listingReportBuilder,
         SessionReportBuilder sessionReportBuilder,
         AgreementReportBuilder agreementReportBuilder,
+        ExplorerInterestReportBuilder explorerInterestReportBuilder,
         IReportRenderer reportRenderer,
         ShmsDbContext context)
     {
@@ -96,6 +98,7 @@ public class ReportsController : ControllerBase
         _listingReportBuilder = listingReportBuilder;
         _sessionReportBuilder = sessionReportBuilder;
         _agreementReportBuilder = agreementReportBuilder;
+        _explorerInterestReportBuilder = explorerInterestReportBuilder;
         _reportRenderer = reportRenderer;
         _context = context;
     }
@@ -769,6 +772,30 @@ public class ReportsController : ControllerBase
         var data = await _sessionReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Sessions-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Explorer Interest — admin-wide
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/reports/explorer-interest/preview
+    [HttpGet("explorer-interest/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> PreviewExplorerInterestReport([FromQuery] ExplorerFilters filters)
+    {
+        var data = await _explorerInterestReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/explorer-interest/export?format=pdf|excel|word
+    [HttpGet("explorer-interest/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> ExportExplorerInterestReport([FromQuery] ExplorerFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _explorerInterestReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Explorer-Interest-Report", format);
     }
 
     // ═══════════════════════════════════════════════════════════════════

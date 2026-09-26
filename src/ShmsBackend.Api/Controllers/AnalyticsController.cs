@@ -26,6 +26,7 @@ public class AnalyticsController : ControllerBase
     private readonly OverdueAnalyticsService _overdueAnalyticsService;
     private readonly AgentAnalyticsService _agentAnalyticsService;
     private readonly LandlordAnalyticsService _landlordAnalyticsService;
+    private readonly ExplorerInterestAnalyticsService _explorerInterestAnalyticsService;
 
     public AnalyticsController(
         ComplaintAnalyticsService complaintAnalyticsService,
@@ -41,7 +42,8 @@ public class AnalyticsController : ControllerBase
         PaymentAnalyticsService paymentAnalyticsService,
         OverdueAnalyticsService overdueAnalyticsService,
         AgentAnalyticsService agentAnalyticsService,
-        LandlordAnalyticsService landlordAnalyticsService)
+        LandlordAnalyticsService landlordAnalyticsService,
+        ExplorerInterestAnalyticsService explorerInterestAnalyticsService)
     {
         _complaintAnalyticsService = complaintAnalyticsService;
         _financialStandingService = financialStandingService;
@@ -57,6 +59,7 @@ public class AnalyticsController : ControllerBase
         _landlordAnalyticsService = landlordAnalyticsService;
         _forfeitedAdvanceAnalyticsService = forfeitedAdvanceAnalyticsService;
         _agreementAnalyticsService = agreementAnalyticsService;
+        _explorerInterestAnalyticsService = explorerInterestAnalyticsService;
     }
 
     private Guid? GetLandlordId()
@@ -128,6 +131,16 @@ public class AnalyticsController : ControllerBase
     }
 
     private static void ApplyDefaultDateRange(SessionFilters filters)
+    {
+        if (!filters.FromDate.HasValue && !filters.ToDate.HasValue)
+        {
+            var now = DateTime.UtcNow;
+            filters.FromDate = new DateTime(now.Year, now.Month, 1);
+            filters.ToDate = now;
+        }
+    }
+
+    private static void ApplyDefaultDateRange(ExplorerFilters filters)
     {
         if (!filters.FromDate.HasValue && !filters.ToDate.HasValue)
         {
@@ -497,6 +510,22 @@ public class AnalyticsController : ControllerBase
         filters.LandlordId = null;
         ApplyDefaultDateRange(filters);
         var data = await _sessionAnalyticsService.GetTrendAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Explorer Interest — admin-wide. Same access boundary as Bookings (SuperAdmin,Admin,Accountant),
+    // no landlord-scoped variant for the same reason: this is an operational Explorer-conversion
+    // funnel Management runs, not something a Landlord has a direct stake in.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // GET /api/analytics/explorer-interest/breakdown
+    [HttpGet("explorer-interest/breakdown")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetExplorerInterestBreakdown([FromQuery] ExplorerFilters filters)
+    {
+        ApplyDefaultDateRange(filters);
+        var data = await _explorerInterestAnalyticsService.GetStatusBreakdownAsync(filters);
         return Ok(new { success = true, data });
     }
 
