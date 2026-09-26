@@ -457,6 +457,34 @@ public class PaymentService : IPaymentService
                         }
                         await _context.SaveChangesAsync();
                     }
+
+                    // This tenant's initial payment just completed — any other explorer's Pending
+                    // interest in this same house is now stale; the house is genuinely taken.
+                    var supersededInterests = await _context.ExplorerInterests
+                        .Where(ei => ei.HouseId == payment.HouseId && ei.Status == "Pending")
+                        .ToListAsync();
+
+                    if (supersededInterests.Count > 0)
+                    {
+                        foreach (var interest in supersededInterests)
+                            interest.Status = "Superseded";
+                        await _context.SaveChangesAsync();
+
+                        foreach (var interest in supersededInterests)
+                        {
+                            try
+                            {
+                                await _notificationService.SendForcedToUserAsync(
+                                    interest.ExplorerId.ToString(),
+                                    "This house has been taken — check out other available listings.",
+                                    "property", "ExplorerInterest", interest.Id.ToString());
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Failed to notify explorer {ExplorerId} of superseded interest {InterestId}", interest.ExplorerId, interest.Id);
+                            }
+                        }
+                    }
                 }
 
                 var distributionBase = payment.RequestedDistributionAmount ?? payment.AmountPaid;

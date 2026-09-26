@@ -90,6 +90,7 @@ public class ShmsDbContext : DbContext
     // Viewing Sessions
     public DbSet<ListingViewingSession> ListingViewingSessions { get; set; }
     public DbSet<SessionMessage> SessionMessages { get; set; }
+    public DbSet<ExplorerInterest> ExplorerInterests { get; set; }
 
     // Tenant warnings (delinquency escalation)
     public DbSet<TenantWarning> TenantWarnings { get; set; }
@@ -748,6 +749,15 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
             entity.HasIndex(e => new { e.Status, e.AgentId, e.ScheduledAt });
+        });
+
+        // ── ExplorerInterest Configuration ───────────────────────────────────
+        modelBuilder.Entity<ExplorerInterest>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.HouseId, e.Status });
+            entity.HasIndex(e => new { e.ExplorerId, e.Status });
+            entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── SessionMessage Configuration ──────────────────────────────────────

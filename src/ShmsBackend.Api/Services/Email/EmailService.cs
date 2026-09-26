@@ -2191,6 +2191,7 @@ public class EmailService : IEmailService
   </span>
 ")}
 {Para("Please log in to the Romah Estates portal and <strong>close the session</strong> if your viewing took place, or <strong>reschedule</strong> if you need a new time. If no action is taken within 24 hours, the session will be automatically forfeited.")}
+{Para("Loved the place? You can mark your interest from your Sessions page — this notifies the agent and management directly.")}
 {Divider()}
 {SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
 
@@ -2212,10 +2213,41 @@ public class EmailService : IEmailService
   </table>
 ")}
 {Para("Please log in to the Romah Estates portal and <strong>close each session</strong> if your viewing took place, or <strong>reschedule</strong> if you need a new time. If no action is taken within 24 hours, a session will be automatically forfeited.")}
+{Para("Loved one of these places? You can mark your interest from your Sessions page — this notifies the agent and management directly.")}
 {Divider()}
 {SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
 
         return WrapInLayout("How Was Your Viewing?", inner);
+    }
+
+    public async Task SendExplorerInterestAgentEmailAsync(string toEmail, string firstName, string houseNumber, string flatName, string availabilityText, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        _logger.LogInformation("Sending explorer interest email to agent: {Email}", toEmail);
+        await SendEmail(toEmail, $"Explorer Interested — {houseNumber}",
+            GetExplorerInterestAgentTemplate(firstName, houseNumber, flatName, availabilityText));
+    }
+
+    private string GetExplorerInterestAgentTemplate(string firstName, string houseNumber, string flatName, string availabilityText)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"An explorer has expressed interest in house <strong style='color:{ColourGold};'>{houseNumber}</strong> at <strong style='color:{ColourGold};'>{flatName}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system, available {availabilityText}.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>FLAT</p>
+  <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
+    {flatName}
+  </span>
+")}
+{Para("Please log in to the Romah Estates portal to follow up with this explorer.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Explorer Interested — {houseNumber}", inner);
     }
 
     public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false)

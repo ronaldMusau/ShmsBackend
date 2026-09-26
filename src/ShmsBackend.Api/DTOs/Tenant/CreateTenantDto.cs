@@ -37,4 +37,8 @@ public class CreateTenantDto
     public int? LeaseStartYear { get; set; }
     public bool? DepositAlreadySitting { get; set; }
     public decimal? ExternalDepositAmount { get; set; }
+
+    // Optional — set only when this registration converts a specific ExplorerInterest (Stage 2's
+    // Explorer-conversion path). Stays null for ordinary manual registration.
+    public Guid? SourceExplorerInterestId { get; set; }
 }

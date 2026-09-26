@@ -33,7 +33,7 @@ public class ExplorerController : ControllerBase
 
     [HttpGet]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] bool? hasPendingInterest = null)
     {
         var explorers = await _context.Explorers
             .Select(e => new {
@@ -44,7 +44,45 @@ public class ExplorerController : ControllerBase
             .OrderByDescending(e => e.CreatedAt)
             .ToListAsync();
 
-        return Ok(new { success = true, data = explorers });
+        var explorerIds = explorers.Select(e => e.Id).ToList();
+        var pendingInterests = await _context.ExplorerInterests
+            .Where(ei => explorerIds.Contains(ei.ExplorerId) && ei.Status == "Pending")
+            .ToListAsync();
+
+        var houseIds = pendingInterests.Select(ei => ei.HouseId).Distinct().ToList();
+        var houses = await _context.Houses
+            .Include(h => h.Flat)
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => new { h.HouseNumber, FlatName = h.Flat?.FlatName });
+
+        var interestByExplorer = pendingInterests
+            .GroupBy(ei => ei.ExplorerId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(ei => ei.CreatedAt).First());
+
+        var data = explorers
+            .Where(e => hasPendingInterest != true || interestByExplorer.ContainsKey(e.Id))
+            .Select(e =>
+            {
+                interestByExplorer.TryGetValue(e.Id, out var interest);
+                var houseInfo = interest != null ? houses.GetValueOrDefault(interest.HouseId) : null;
+                return new
+                {
+                    e.Id, e.FirstName, e.LastName, e.Email,
+                    e.PhoneNumber, e.County, e.Constituency, e.Ward,
+                    e.IsActive, e.IsEmailVerified, e.CreatedAt,
+                    pendingInterest = interest == null ? null : new
+                    {
+                        interest.Id,
+                        interest.HouseId,
+                        houseNumber = houseInfo?.HouseNumber,
+                        flatName = houseInfo?.FlatName,
+                        interest.SessionId,
+                        interest.CreatedAt
+                    }
+                };
+            });
+
+        return Ok(new { success = true, data });
     }
 
     [HttpGet("{id:guid}")]

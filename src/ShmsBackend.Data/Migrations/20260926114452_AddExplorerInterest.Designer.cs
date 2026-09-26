@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using ShmsBackend.Data.Context;
 
@@ -11,9 +12,11 @@ using ShmsBackend.Data.Context;
 namespace ShmsBackend.Data.Migrations
 {
     [DbContext(typeof(ShmsDbContext))]
-    partial class ShmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260926114452_AddExplorerInterest")]
+    partial class AddExplorerInterest
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3118,9 +3121,6 @@ namespace ShmsBackend.Data.Migrations
 
                     b.Property<decimal>("PointsBalance")
                         .HasColumnType("decimal(18,4)");
-
-                    b.Property<Guid?>("SourceExplorerInterestId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("TemporaryInitialPassword")
                         .HasColumnType("nvarchar(max)");

@@ -172,6 +172,20 @@ public class TenantService : ITenantService
                 existingAgreement.LastReminderSentAt = null;
             }
 
+            deleted.SourceExplorerInterestId = dto.SourceExplorerInterestId;
+
+            // Same ordering guarantee as the fresh-signup branch below: flipped in the same
+            // SaveChangesAsync call that persists this revived tenant row.
+            if (dto.SourceExplorerInterestId.HasValue)
+            {
+                var sourceInterest = await _context.ExplorerInterests
+                    .FirstOrDefaultAsync(ei => ei.Id == dto.SourceExplorerInterestId.Value);
+                if (sourceInterest != null)
+                    sourceInterest.Status = "Converted";
+                else
+                    _logger.LogWarning("SourceExplorerInterestId {InterestId} provided for revived tenant {Email} but no matching ExplorerInterest row was found", dto.SourceExplorerInterestId, dto.Email);
+            }
+
             deleted.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.Tenants.UpdateAsync(deleted);
             await _unitOfWork.SaveChangesAsync();
@@ -250,9 +264,24 @@ public class TenantService : ITenantService
             TemporaryInitialPassword = dto.Password,
             LeaseStartMonth = leaseStartMonth,
             LeaseStartYear = leaseStartYear,
+            SourceExplorerInterestId = dto.SourceExplorerInterestId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
+
+        // Flip the source ExplorerInterest to Converted in the SAME SaveChangesAsync call that
+        // creates the tenant row below — no window where a payment completing on this house could
+        // race PaymentService's supersede-on-payment query against this explorer's own still-Pending
+        // interest before it's flipped.
+        if (dto.SourceExplorerInterestId.HasValue)
+        {
+            var sourceInterest = await _context.ExplorerInterests
+                .FirstOrDefaultAsync(ei => ei.Id == dto.SourceExplorerInterestId.Value);
+            if (sourceInterest != null)
+                sourceInterest.Status = "Converted";
+            else
+                _logger.LogWarning("SourceExplorerInterestId {InterestId} provided for new tenant {Email} but no matching ExplorerInterest row was found", dto.SourceExplorerInterestId, dto.Email);
+        }
 
         await _unitOfWork.Tenants.AddAsync(tenant);
         await _unitOfWork.SaveChangesAsync();

@@ -20,6 +20,7 @@ public class Tenant : PortalUser
     public decimal PointsBalance { get; set; } = 0;
     public bool? DepositAlreadySitting { get; set; }
     public decimal? ExternalDepositAmount { get; set; }
+    public Guid? SourceExplorerInterestId { get; set; }
 
     public Tenant()
     {
