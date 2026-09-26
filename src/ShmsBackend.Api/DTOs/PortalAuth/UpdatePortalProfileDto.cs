@@ -8,4 +8,10 @@ public class UpdatePortalProfileDto
 
     [EmailAddress]
     public string? NewEmail { get; set; }
+
+    // Explorer-only (their declared area of interest for browsing listings) — silently ignored for
+    // every other role, see UpdateProfileAsync.
+    public string? County { get; set; }
+    public string? Constituency { get; set; }
+    public string? Ward { get; set; }
 }

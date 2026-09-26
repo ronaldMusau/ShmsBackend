@@ -605,6 +605,19 @@ public class PortalAuthService : IPortalAuthService
             if (!string.IsNullOrWhiteSpace(dto.PhoneNumber))
                 user.PhoneNumber = dto.PhoneNumber;
 
+            // County/Constituency/Ward apply only to Explorer (their area of interest for browsing
+            // listings) — this endpoint is callable by every portal role, so any other role's request
+            // body simply has these fields ignored rather than erroring.
+            if (user.PortalUserType == PortalUserType.Explorer)
+            {
+                if (!string.IsNullOrWhiteSpace(dto.County))
+                    user.County = dto.County;
+                if (!string.IsNullOrWhiteSpace(dto.Constituency))
+                    user.Constituency = dto.Constituency;
+                if (!string.IsNullOrWhiteSpace(dto.Ward))
+                    user.Ward = dto.Ward;
+            }
+
             var emailChangeRequested = false;
             if (!string.IsNullOrWhiteSpace(dto.NewEmail) &&
                 !string.Equals(dto.NewEmail, user.Email, StringComparison.OrdinalIgnoreCase))
