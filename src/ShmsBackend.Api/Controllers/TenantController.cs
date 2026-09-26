@@ -392,7 +392,8 @@ public class TenantController : ControllerBase
         [FromQuery] int? tenancyCycle = null,
         [FromQuery] DateTime? fromDate = null,
         [FromQuery] DateTime? toDate = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] bool? fromExplorerInterest = null)
     {
         try
         {
@@ -404,7 +405,8 @@ public class TenantController : ControllerBase
                 TenancyCycle = tenancyCycle,
                 FromDate = fromDate,
                 ToDate = toDate,
-                Search = search
+                Search = search,
+                FromExplorerInterest = fromExplorerInterest
             });
 
             var total = await query.CountAsync();
