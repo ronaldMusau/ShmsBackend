@@ -102,6 +102,15 @@ public class ExplorerInterestController : ControllerBase
         if (house == null)
             return NotFound(new { success = false, message = "House not found." });
 
+        // Clicking "I'm Interested" again on a house this explorer already has an active interest in
+        // isn't a mistake worth blocking — return the existing row instead of creating a duplicate
+        // (which would otherwise sit orphaned until the house's eventual payment supersedes it).
+        var existingActiveInterest = await _context.ExplorerInterests
+            .FirstOrDefaultAsync(ei => ei.ExplorerId == explorerId && ei.HouseId == dto.HouseId
+                && (ei.Status == "Pending" || ei.Status == "Converted"));
+        if (existingActiveInterest != null)
+            return Ok(new { success = true, data = new { existingActiveInterest.Id, existingActiveInterest.Status } });
+
         var (availabilityText, _, _) = await ResolveAvailabilityAsync(house);
 
         var interest = new ExplorerInterest
