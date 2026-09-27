@@ -121,6 +121,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendOtpEmailAsync(EmailTemplateDto emailData)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending OTP email to: {Email}", emailData.To);
         return await SendEmail(
             emailData.To,
@@ -130,6 +133,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendWelcomeEmailAsync(string toEmail, string firstName, string temporaryPassword)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending welcome email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -139,6 +145,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendPasswordResetEmailAsync(string toEmail, string firstName, string resetLink)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending password reset email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -148,6 +157,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendPasswordResetOtpEmailAsync(string toEmail, string firstName, string otp)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending password reset OTP email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -157,6 +169,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendEmailVerificationEmailAsync(string toEmail, string firstName, string verificationLink)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending email verification to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -166,6 +181,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendPortalVerifyWithPasswordEmailAsync(string toEmail, string firstName, string verificationLink, string temporaryPassword)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending portal verify+password email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -175,6 +193,9 @@ public class EmailService : IEmailService
 
     public async Task SendAccountReadyEmailAsync(string toEmail, string firstName, string? verificationLink, string? tempPassword, string? userId = null, bool isPortalUser = false)
     {
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending account-ready email to: {Email}", toEmail);
         await SendEmail(
             toEmail,
@@ -184,6 +205,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendConfirmNewEmailAsync(string toEmail, string firstName, string confirmationLink)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending confirm-new-email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -193,6 +217,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendExplorerWelcomeEmailAsync(string toEmail, string firstName, string loginUrl)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending explorer welcome email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -202,6 +229,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendAccountLockedEmailAsync(string toEmail, string firstName)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending account locked email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -211,6 +241,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending weekly shared password email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -220,6 +253,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendWeeklyClientPasswordEmailAsync(string toEmail, string firstName, string password)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending weekly client portal support password email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -229,6 +265,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendAgreementReadyToSignEmailAsync(string toEmail, string firstName, string roleLabel)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending agreement-ready-to-sign email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -239,6 +278,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendAgreementVerifiedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending agreement-verified email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -249,6 +291,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendAgreementRejectedEmailAsync(string toEmail, string firstName, string reason, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending agreement-rejected email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -259,6 +304,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendAgreementReminderEmailAsync(string toEmail, string firstName, string roleLabel, string? userId = null, bool isPortalUser = false, string? attachmentFileName = null, byte[]? attachmentBytes = null)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending agreement-reminder email to: {Email}", toEmail);
         var hasAttachment = attachmentBytes != null && attachmentBytes.Length > 0;
         return await SendEmail(
@@ -272,6 +320,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendAccountDeactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending account deactivation email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -282,6 +333,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendAccountReactivatedEmailAsync(string toEmail, string firstName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Account")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending account reactivation email to: {Email}", toEmail);
         return await SendEmail(
             toEmail,
@@ -292,6 +346,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal amount, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending payment receipt email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Receipt — Romah Estates",
             GetPaymentReceiptTemplate(firstName, mpesaReceiptNumber, amount, houseNumber, flatName, paidAt));
@@ -300,6 +357,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendItemizedPaymentReceiptEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)> breakdown, string houseNumber, string flatName, DateTime paidAt, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending itemized payment receipt email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Receipt — Romah Estates",
             GetItemizedPaymentReceiptTemplate(firstName, mpesaReceiptNumber, totalAmount, breakdown, houseNumber, flatName, paidAt));
@@ -308,6 +368,9 @@ public class EmailService : IEmailService
     public async Task SendPaymentConfirmationEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)>? itemizedBreakdown, string houseNumber, string flatName, DateTime paidAt, decimal? pointsEarned, decimal? newPointsBalance, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending payment confirmation email to: {Email}", toEmail);
         await SendEmail(toEmail, "Payment Receipt — Romah Estates",
             GetPaymentConfirmationTemplate(firstName, mpesaReceiptNumber, totalAmount, itemizedBreakdown, houseNumber, flatName, paidAt, pointsEarned, newPointsBalance));
@@ -316,6 +379,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendPaymentReminderEmailAsync(string toEmail, string firstName, decimal amountDue, DateTime dueDate, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending payment reminder email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Reminder — Romah Estates",
             GetPaymentReminderTemplate(firstName, amountDue, dueDate, houseNumber, flatName));
@@ -324,6 +390,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendPaymentRemindersGroupedEmailAsync(string toEmail, string firstName, List<(string HouseNumber, string FlatName, decimal AmountDue, DateTime DueDate)> items, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending grouped payment reminder email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Reminder — Romah Estates",
             GetPaymentRemindersGroupedTemplate(firstName, items));
@@ -332,6 +401,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendPaymentOverdueEmailAsync(string toEmail, string firstName, List<(string MonthLabel, decimal Balance)> breakdown, decimal totalArrears, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending payment overdue email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Payment Overdue — Romah Estates",
             GetPaymentOverdueTemplate(firstName, breakdown, totalArrears, houseNumber, flatName));
@@ -339,6 +411,9 @@ public class EmailService : IEmailService
 
     public async Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear, string? userId = null, bool isPortalUser = false)
     {
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending rent change notice to: {Email}", toEmail);
         return await SendEmail(toEmail, "Upcoming Rent Change — Romah Estates",
             GetRentChangeNoticeTemplate(firstName, houseNumber, newRentFee, effectiveMonth, effectiveYear));
@@ -346,6 +421,9 @@ public class EmailService : IEmailService
 
     public async Task SendRentNowEffectiveEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee, string? userId = null, bool isPortalUser = false)
     {
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending rent-now-effective email to: {Email}", toEmail);
         await SendEmail(toEmail, "Your Rent Has Changed — Romah Estates",
             GetRentNowEffectiveTemplate(firstName, houseNumber, newRentFee, newDepositFee));
@@ -354,6 +432,9 @@ public class EmailService : IEmailService
     public async Task SendPointsEarnedEmailAsync(string toEmail, string firstName, decimal pointsEarned, decimal newBalance, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rewards")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending points-earned email to: {Email}", toEmail);
         await SendEmail(toEmail, "You Earned Reward Points — Romah Estates",
             GetPointsEarnedTemplate(firstName, pointsEarned, newBalance));
@@ -362,6 +443,9 @@ public class EmailService : IEmailService
     public async Task SendPointsRedeemedEmailAsync(string toEmail, string firstName, decimal pointsRedeemed, decimal kesAmount, string redemptionReference, decimal newBalance, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rewards")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending points-redeemed email to: {Email}", toEmail);
         await SendEmail(toEmail, "Points Redeemed — Romah Estates",
             GetPointsRedeemedTemplate(firstName, pointsRedeemed, kesAmount, redemptionReference, newBalance));
@@ -371,6 +455,9 @@ public class EmailService : IEmailService
     // toggle, so this skips ShouldSendEmailAsync entirely (same pattern as OTP/account-locked emails).
     public async Task<bool> SendRentChangeReminderEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear)
     {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending rent change reminder email to: {Email}", toEmail);
         return await SendEmail(toEmail, "Reminder: Upcoming Rent Change — Romah Estates",
             GetRentChangeReminderTemplate(firstName, houseNumber, newRentFee, effectiveMonth, effectiveYear));
@@ -379,6 +466,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendFlatCreatedLandlordEmailAsync(string toEmail, string firstName, string flatName, int houseCount, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending flat created email to landlord: {Email}", toEmail);
         return await SendEmail(toEmail, $"Your flat '{flatName}' has been created — Romah Estates",
             GetFlatCreatedLandlordTemplate(firstName, flatName, houseCount));
@@ -387,6 +477,9 @@ public class EmailService : IEmailService
     public async Task<bool> SendFlatAssignedAgentEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return false;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending flat assigned email to agent: {Email}", toEmail);
         return await SendEmail(toEmail, "New flat assigned to you — Romah Estates",
             GetFlatAssignedAgentTemplate(firstName, flatName));
@@ -395,6 +488,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending complaint confirmation email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Received — {ticketNumber}",
             GetComplaintConfirmationTemplate(firstName, ticketNumber, complaintTypeName));
@@ -403,6 +499,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintManagementAlertEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending complaint management alert email to: {Email}", toEmail);
         await SendEmail(toEmail, $"New Complaint Raised — {ticketNumber}",
             GetComplaintManagementAlertTemplate(firstName, ticketNumber, complaintTypeName, tenantName, houseNumber, flatName));
@@ -411,6 +510,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintClosedEmailAsync(string toEmail, string firstName, string ticketNumber, string resolutionNotes, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending complaint closed email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Resolved — {ticketNumber}",
             GetComplaintClosedTemplate(firstName, ticketNumber, resolutionNotes));
@@ -419,6 +521,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending complaint escalation email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Escalated to You — {ticketNumber}",
             GetComplaintEscalatedAgentTemplate(firstName, ticketNumber));
@@ -427,6 +532,9 @@ public class EmailService : IEmailService
     public async Task SendApprovalStepEmailAsync(string toEmail, string firstName, string ticketNumber, int stepOrder, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending approval-step email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Approval Needed — {ticketNumber}",
             GetApprovalStepTemplate(firstName, ticketNumber, stepOrder));
@@ -435,6 +543,9 @@ public class EmailService : IEmailService
     public async Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending approval-rejected email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Sent Back for Revision — {ticketNumber}",
             GetApprovalRejectedTemplate(firstName, ticketNumber, rejectionReason));
@@ -443,6 +554,9 @@ public class EmailService : IEmailService
     public async Task SendLandlordApprovalNeededEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending landlord approval-needed email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Your Approval Needed — {ticketNumber}",
             GetLandlordApprovalNeededTemplate(firstName, ticketNumber));
@@ -451,6 +565,9 @@ public class EmailService : IEmailService
     public async Task SendFlatEditApprovalNeededEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending flat edit approval-needed email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Your Approval Needed — {flatName}",
             GetFlatEditApprovalNeededTemplate(firstName, flatName));
@@ -459,6 +576,9 @@ public class EmailService : IEmailService
     public async Task SendLandlordDecisionEmailAsync(string toEmail, string firstName, string ticketNumber, string decision, string? notes, decimal? amount, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending landlord-decision email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Landlord {decision} Complaint {ticketNumber}",
             GetLandlordDecisionTemplate(firstName, ticketNumber, decision, notes, amount));
@@ -467,6 +587,9 @@ public class EmailService : IEmailService
     public async Task SendFlatEditSubmittedEmailAsync(string toEmail, string firstName, string flatName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending flat edit submitted email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Flat Edit Submitted — {flatName}",
             GetFlatEditSubmittedTemplate(firstName, flatName));
@@ -475,6 +598,9 @@ public class EmailService : IEmailService
     public async Task SendDeductionCreatedEmailAsync(string toEmail, string firstName, string ticketNumber, decimal amount, string? description, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Rent")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending deduction created email to landlord: {Email}", toEmail);
         await SendEmail(toEmail, $"Deduction Created — {ticketNumber}",
             GetDeductionCreatedTemplate(firstName, ticketNumber, amount, description));
@@ -483,6 +609,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintOverdueManagementEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending overdue complaint reminder email to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Overdue Complaint — {ticketNumber}",
             GetComplaintOverdueManagementTemplate(firstName, ticketNumber, daysOpen));
@@ -491,6 +620,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintOverdueAgentEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending overdue complaint reminder email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Overdue Complaint — Action Required — {ticketNumber}",
             GetComplaintOverdueAgentTemplate(firstName, ticketNumber, daysOpen));
@@ -499,6 +631,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintOverdueLandlordEmailAsync(string toEmail, string firstName, string ticketNumber, int daysOpen, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending overdue complaint reminder email to landlord: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Awaiting Your Decision — {ticketNumber}",
             GetComplaintOverdueLandlordTemplate(firstName, ticketNumber, daysOpen));
@@ -507,6 +642,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintOverdueManagementGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending grouped overdue complaint reminder email to management: {Email}", toEmail);
         await SendEmail(toEmail, $"{items.Count} Overdue Complaint(s) Requiring Attention",
             GetComplaintOverdueManagementGroupedTemplate(firstName, items));
@@ -515,6 +653,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintOverdueAgentGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending grouped overdue complaint reminder email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"{items.Count} Overdue Complaint(s) — Action Required",
             GetComplaintOverdueAgentGroupedTemplate(firstName, items));
@@ -523,6 +664,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintOverdueLandlordGroupedEmailAsync(string toEmail, string firstName, List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending grouped overdue complaint reminder email to landlord: {Email}", toEmail);
         await SendEmail(toEmail, $"{items.Count} Complaint(s) Awaiting Your Decision",
             GetComplaintOverdueLandlordGroupedTemplate(firstName, items));
@@ -1762,6 +1906,9 @@ public class EmailService : IEmailService
     public async Task SendVacateAssignedAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate inspection assigned email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Inspection Assigned — {houseNumber}",
             GetVacateAssignedAgentTemplate(firstName, houseNumber));
@@ -1788,6 +1935,9 @@ public class EmailService : IEmailService
     public async Task SendVacateCancelledAgentEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate inspection cancelled email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Inspection Cancelled — {houseNumber}",
             GetVacateCancelledAgentTemplate(firstName, houseNumber));
@@ -1814,6 +1964,9 @@ public class EmailService : IEmailService
     public async Task SendVacateArrearsBlockEmailAsync(string toEmail, string firstName, decimal arrearsAmount, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate arrears block email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, "Vacate Request Blocked — Outstanding Arrears",
             GetVacateArrearsBlockTemplate(firstName, arrearsAmount));
@@ -1840,6 +1993,9 @@ public class EmailService : IEmailService
     public async Task SendVacateSettlementReversedEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate settlement reversed email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Settlement Reversed — {houseNumber}",
             GetVacateSettlementReversedTemplate(firstName, houseNumber));
@@ -1866,6 +2022,9 @@ public class EmailService : IEmailService
     public async Task SendVacateApprovedTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate approved email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Request Approved — {houseNumber}",
             GetVacateApprovedTenantTemplate(firstName, houseNumber));
@@ -1892,6 +2051,9 @@ public class EmailService : IEmailService
     public async Task SendComplaintRejectedManagementEmailAsync(string toEmail, string firstName, string ticketNumber, string? rejectionNotes, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending complaint rejection management email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Complaint Rejected — {ticketNumber}",
             GetComplaintRejectedManagementTemplate(firstName, ticketNumber, rejectionNotes));
@@ -1919,6 +2081,9 @@ public class EmailService : IEmailService
     public async Task SendVacateRejectedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? rejectionNotes, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate rejection management email to: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Request Rejected — {houseNumber}",
             GetVacateRejectedManagementTemplate(firstName, houseNumber, rejectionNotes));
@@ -1946,6 +2111,9 @@ public class EmailService : IEmailService
     public async Task SendVacateFinalRejectionTenantEmailAsync(string toEmail, string firstName, string houseNumber, string remarks, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate final rejection email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Request Closed — {houseNumber}",
             GetVacateFinalRejectionTenantTemplate(firstName, houseNumber, remarks));
@@ -1954,6 +2122,9 @@ public class EmailService : IEmailService
     public async Task SendVacateAppealManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate appeal alert email to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Settlement Appeal — {houseNumber}",
             GetVacateAppealManagementTemplate(firstName, houseNumber));
@@ -1980,6 +2151,9 @@ public class EmailService : IEmailService
     public async Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate settlement paid email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Settlement Payment Received — {houseNumber}",
             GetVacateSettlementPaidTenantTemplate(firstName, houseNumber));
@@ -2006,6 +2180,9 @@ public class EmailService : IEmailService
     public async Task SendVacateRefundPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending vacate refund paid email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Refund Processed — {houseNumber}",
             GetVacateRefundPaidTenantTemplate(firstName, houseNumber));
@@ -2032,6 +2209,9 @@ public class EmailService : IEmailService
     public async Task SendFirstWarningToVacateEmailAsync(string toEmail, string firstName, decimal arrearsAmount, int overdueDays, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending first arrears warning email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, "Payment Reminder — Outstanding Balance",
             GetFirstWarningToVacateTemplate(firstName, arrearsAmount, overdueDays));
@@ -2062,6 +2242,9 @@ public class EmailService : IEmailService
     public async Task SendFinalWarningToVacateEmailAsync(string toEmail, string firstName, decimal arrearsAmount, int overdueDays, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending final arrears warning email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, "Final Notice — Immediate Payment Required",
             GetFinalWarningToVacateTemplate(firstName, arrearsAmount, overdueDays));
@@ -2092,6 +2275,9 @@ public class EmailService : IEmailService
     public async Task SendForcedVacateNoticeEmailAsync(string toEmail, string firstName, string houseNumber, string reason, int vacateMonth, int vacateYear, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending forced vacate notice email to tenant: {Email}", toEmail);
         await SendEmail(toEmail, $"Vacate Notice — {houseNumber}",
             GetForcedVacateNoticeTemplate(firstName, houseNumber, reason, vacateMonth, vacateYear));
@@ -2139,6 +2325,9 @@ public class EmailService : IEmailService
     public async Task SendSessionRequestAgentEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending viewing session request email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Viewing Session Requested — {houseNumber}",
             GetSessionRequestAgentTemplate(firstName, houseNumber, scheduledAt));
@@ -2169,6 +2358,9 @@ public class EmailService : IEmailService
     public async Task SendSessionConfirmedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending session confirmed email to explorer: {Email}", toEmail);
         await SendEmail(toEmail, $"Viewing Session Confirmed — {houseNumber}",
             GetSessionConfirmedExplorerTemplate(firstName, houseNumber, agentName, agentPhone, scheduledAt));
@@ -2202,6 +2394,9 @@ public class EmailService : IEmailService
     public async Task SendSessionDeclinedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending session declined alert to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Viewing Session Declined — {houseNumber}",
             GetSessionDeclinedManagementTemplate(firstName, houseNumber, agentName));
@@ -2230,6 +2425,9 @@ public class EmailService : IEmailService
     public async Task SendSessionReassignedExplorerEmailAsync(string toEmail, string firstName, string houseNumber, string agentName, string agentPhone, DateTime scheduledAt, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending session reassigned email to explorer: {Email}", toEmail);
         await SendEmail(toEmail, $"Viewing Session Reassigned — {houseNumber}",
             GetSessionReassignedExplorerTemplate(firstName, houseNumber, agentName, agentPhone, scheduledAt));
@@ -2274,6 +2472,9 @@ public class EmailService : IEmailService
     public async Task SendSessionFeedbackPromptGroupedEmailAsync(string toEmail, string firstName, List<(string HouseNumber, DateTime ScheduledAt)> items, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending grouped session feedback prompt email to explorer: {Email}", toEmail);
         await SendEmail(toEmail, "How Was Your Viewing?",
             GetSessionFeedbackPromptGroupedTemplate(firstName, items));
@@ -2327,6 +2528,9 @@ public class EmailService : IEmailService
     public async Task SendExplorerInterestAgentEmailAsync(string toEmail, string firstName, string houseNumber, string flatName, string availabilityText, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending explorer interest email to agent: {Email}", toEmail);
         await SendEmail(toEmail, $"Explorer Interested — {houseNumber}",
             GetExplorerInterestAgentTemplate(firstName, houseNumber, flatName, availabilityText));
@@ -2357,6 +2561,9 @@ public class EmailService : IEmailService
     public async Task SendExplorerInterestOriginalAgentFyiEmailAsync(string toEmail, string firstName, string houseNumber, string flatName, string currentAgentName, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending explorer interest FYI email to original session agent: {Email}", toEmail);
         await SendEmail(toEmail, $"FYI — Explorer Interested in {houseNumber}",
             GetExplorerInterestOriginalAgentFyiTemplate(firstName, houseNumber, flatName, currentAgentName));
@@ -2377,6 +2584,9 @@ public class EmailService : IEmailService
     public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending session capacity alert to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Agent Capacity Alert — {scheduledDate}",
             GetSessionCapacityAlertTemplate(firstName, agentName, scheduledDate));
