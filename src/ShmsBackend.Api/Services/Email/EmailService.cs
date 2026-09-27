@@ -1,9 +1,12 @@
-﻿using Microsoft.Extensions.Options;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using ShmsBackend.Api.Configuration;
 using ShmsBackend.Api.Models.DTOs.Email;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
+using ShmsBackend.Data.Models.Entities.Portal;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -17,32 +20,44 @@ public class EmailService : IEmailService
     private readonly ILogger<EmailService> _logger;
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly INotificationPreferenceService _notificationPreferenceService;
+    private readonly ShmsDbContext _context;
 
-    // ── Gold theme colours (mirrors gold-theme.css variables) ──
-    private const string ColourBg = "#080808";
-    private const string ColourCard = "#161616";
-    private const string ColourElevated = "#1e1e1e";
-    private const string ColourGold = "#D4AF37";
-    private const string ColourGoldDark = "#AA8C2F";
-    private const string ColourGoldGlow = "rgba(212,175,55,0.15)";
-    private const string ColourBorderGold = "rgba(212,175,55,0.25)";
-    private const string ColourTextPrime = "#FFFFFF";
-    private const string ColourTextSec = "rgba(255,255,255,0.7)";
-    private const string ColourTextMuted = "rgba(255,255,255,0.45)";
-    private const string ColourSuccess = "#10B981";
-    private const string ColourError = "#EF4444";
+    // ── Theme colours (default: gold-dark/dark — mirrors gold-theme.css's :root variables).
+    // Instance fields, not const: SetPalette reassigns these per-send once a caller resolves a
+    // per-user theme/mode. Any send method that never calls SetPalette keeps these exact defaults,
+    // so this is additive — nothing changes for methods not yet wired up.
+    private string ColourBg = "#080808";
+    private string ColourCard = "#161616";
+    private string ColourElevated = "#1e1e1e";
+    private string ColourGold = "#D4AF37";
+    private string ColourGoldDark = "#AA8C2F";
+    private string ColourGoldGlow = "rgba(212,175,55,0.15)";
+    private string ColourBorderGold = "rgba(212,175,55,0.25)";
+    private string ColourTextPrime = "#FFFFFF";
+    private string ColourTextSec = "rgba(255,255,255,0.7)";
+    private string ColourTextMuted = "rgba(255,255,255,0.45)";
+    private string ColourSuccess = "#10B981";
+    private string ColourError = "#EF4444";
+    private string ColourTextOnAccent = "#000000";
+
+    // Set once per send, alongside SetPalette — null means "never resolved for this send," which
+    // HeaderContent/FooterContent both treat as "render exactly today's hardcoded text."
+    private CompanySettings? _company;
+    private string? _companyLogoUrl;
 
     public EmailService(
         IOptions<ResendEmailOptions> emailOptions,
         ILogger<EmailService> logger,
         IHttpClientFactory httpClientFactory,
         IFrontendUrlService frontendUrlService,
-        INotificationPreferenceService notificationPreferenceService)
+        INotificationPreferenceService notificationPreferenceService,
+        ShmsDbContext context)
     {
         _emailOptions = emailOptions.Value;
         _logger = logger;
         _frontendUrlService = frontendUrlService;
         _notificationPreferenceService = notificationPreferenceService;
+        _context = context;
 
         _httpClient = httpClientFactory.CreateClient();
         _httpClient.BaseAddress = new Uri("https://api.resend.com");
@@ -51,6 +66,55 @@ public class EmailService : IEmailService
 
         _logger.LogInformation("EmailService initialized with FromEmail: {FromEmail}, FromName: {FromName}",
             _emailOptions.FromEmail, _emailOptions.FromName);
+    }
+
+    // Looks up the caller's PortalUser.Theme/Mode and resolves the fixed reference palette for it.
+    // Admin-side callers (isPortalUser: false) have no Theme/Mode column at all (added to PortalUser
+    // only) — they get the default palette immediately, same as an unresolved/never-synced user.
+    private async Task<EmailThemePalette> ResolveEmailPaletteAsync(string? userId, bool isPortalUser)
+    {
+        if (!isPortalUser || string.IsNullOrEmpty(userId) || !Guid.TryParse(userId, out var uid))
+            return EmailThemeCatalog.Resolve(null, null);
+
+        var user = await _context.PortalUsers.AsNoTracking().FirstOrDefaultAsync(u => u.Id == uid);
+        return EmailThemeCatalog.Resolve(user?.Theme, user?.Mode);
+    }
+
+    private void SetPalette(EmailThemePalette palette)
+    {
+        ColourBg = palette.BgBase;
+        ColourCard = palette.BgCard;
+        ColourElevated = palette.BgElevated;
+        ColourGold = palette.AccentPrimary;
+        ColourGoldDark = palette.AccentSecondary;
+        ColourTextPrime = palette.TextPrimary;
+        ColourTextSec = palette.TextSecondary;
+        ColourTextMuted = palette.TextMuted;
+        ColourSuccess = palette.Success;
+        ColourError = palette.Error;
+        ColourTextOnAccent = palette.TextOnAccent;
+        ColourGoldGlow = palette.AccentGlow;
+        ColourBorderGold = palette.AccentBorder;
+    }
+
+    // Mirrors ReportsController.GetOrCreateCompanySettingsAsync's exact query/create-if-missing
+    // pattern — same singleton-row logic, not reinvented.
+    private async Task<CompanySettings> GetOrCreateCompanySettingsAsync()
+    {
+        var settings = await _context.CompanySettings.FirstOrDefaultAsync();
+        if (settings == null)
+        {
+            settings = new CompanySettings { Id = Guid.NewGuid(), CreatedAt = DateTime.UtcNow };
+            _context.CompanySettings.Add(settings);
+            await _context.SaveChangesAsync();
+        }
+        return settings;
+    }
+
+    private void SetCompanyContext(CompanySettings company)
+    {
+        _company = company;
+        _companyLogoUrl = _frontendUrlService.GetCompanyLogoUrl();
     }
 
     // ── Public send methods ──────────────────────────────────────────────────
@@ -572,10 +636,7 @@ public class EmailService : IEmailService
         <tr>
           <td style='background:linear-gradient(135deg,{ColourGold},{ColourGoldDark});
                      padding:28px 32px;text-align:center;'>
-            <span style='font-family:""Syne"",Arial,sans-serif;font-size:22px;
-                         font-weight:700;color:#000000;letter-spacing:1px;'>
-              🏢 ROMAH ESTATES
-            </span>
+            {HeaderContent()}
           </td>
         </tr>
 
@@ -592,8 +653,7 @@ public class EmailService : IEmailService
                      border-top:1px solid {ColourBorderGold};
                      padding:20px 32px;text-align:center;'>
             <p style='color:{ColourTextMuted};margin:0;font-size:12px;line-height:1.6;'>
-              © 2026 Romah Estates Smart Housing Management System.<br>
-              All rights reserved. This is an automated message — please do not reply.
+              {FooterContent()}
             </p>
           </td>
         </tr>
@@ -603,6 +663,47 @@ public class EmailService : IEmailService
   </table>
 </body>
 </html>";
+
+    // Real logo + company name when SetCompanyContext was called for this send AND LogoPath is
+    // set; falls back to exactly today's hardcoded emoji+text header otherwise — never a broken
+    // <img> tag, and the identity text stays visible even if the recipient's client blocks images.
+    private string HeaderContent()
+    {
+        if (string.IsNullOrWhiteSpace(_company?.LogoPath))
+        {
+            return $@"<span style='font-family:""Syne"",Arial,sans-serif;font-size:22px;
+                         font-weight:700;color:{ColourTextOnAccent};letter-spacing:1px;'>
+              🏢 ROMAH ESTATES
+            </span>";
+        }
+
+        var companyName = string.IsNullOrWhiteSpace(_company!.CompanyName) ? "Romah Estates" : _company.CompanyName;
+        return $@"<img src='{_companyLogoUrl}' alt='{companyName}' style='max-height:48px;display:block;margin:0 auto 10px;border:0;'>
+            <span style='font-family:""Syne"",Arial,sans-serif;font-size:16px;
+                         font-weight:700;color:{ColourTextOnAccent};letter-spacing:1px;'>
+              {companyName}
+            </span>";
+    }
+
+    // Real CompanySettings fields where set, with a per-field fallback so a partially-filled row
+    // never leaves a visible gap or "null" text — an entirely unresolved _company reproduces
+    // exactly today's generic copyright line.
+    private string FooterContent()
+    {
+        var companyName = string.IsNullOrWhiteSpace(_company?.CompanyName)
+            ? "Romah Estates Smart Housing Management System"
+            : _company!.CompanyName;
+
+        var detailParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_company?.Address)) detailParts.Add(_company!.Address!);
+        if (!string.IsNullOrWhiteSpace(_company?.Phone)) detailParts.Add(_company!.Phone!);
+        if (!string.IsNullOrWhiteSpace(_company?.Email)) detailParts.Add(_company!.Email!);
+
+        var detailsLine = detailParts.Count > 0 ? $"{string.Join(" · ", detailParts)}<br>" : "";
+
+        return $@"© 2026 {companyName}.<br>
+              {detailsLine}All rights reserved. This is an automated message — please do not reply.";
+    }
 
     // ── Template helpers ─────────────────────────────────────────────────────
 
@@ -621,7 +722,7 @@ public class EmailService : IEmailService
     private string GoldButton(string href, string label) =>
         $"<div style='text-align:center;margin:28px 0;'>" +
         $"<a href='{href}' style='background:linear-gradient(135deg,{ColourGold},{ColourGoldDark});" +
-        $"color:#000000;font-family:\"Syne\",Arial,sans-serif;font-weight:700;font-size:14px;" +
+        $"color:{ColourTextOnAccent};font-family:\"Syne\",Arial,sans-serif;font-weight:700;font-size:14px;" +
         $"letter-spacing:1px;text-decoration:none;padding:14px 32px;border-radius:10px;" +
         $"display:inline-block;'>{label}</a></div>";
 
@@ -1587,7 +1688,7 @@ public class EmailService : IEmailService
         return WrapInLayout($"Complaint Awaiting Your Decision — {ticketNumber}", inner);
     }
 
-    private static string ComplaintGroupedRows(List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items) =>
+    private string ComplaintGroupedRows(List<(string TicketNumber, string TenantName, string HouseNumber, int DaysOpen)> items) =>
         string.Join("", items.Select(i =>
             $"<tr>" +
             $"<td style='color:{ColourGold};font-weight:700;font-size:13px;padding:4px 8px 4px 0;font-family:\"Courier New\",monospace;'>{i.TicketNumber}</td>" +
@@ -1596,7 +1697,7 @@ public class EmailService : IEmailService
             $"<td style='color:#ef4444;font-weight:600;font-size:13px;padding:4px 0;text-align:right;'>{i.DaysOpen} days</td>" +
             $"</tr>"));
 
-    private static string ComplaintGroupedHeaderRow() => $@"
+    private string ComplaintGroupedHeaderRow() => $@"
     <tr>
       <td style='color:{ColourTextMuted};font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:0 8px 8px 0;'>Ticket</td>
       <td style='color:{ColourTextMuted};font-size:11px;letter-spacing:1px;text-transform:uppercase;padding:0 8px 8px;'>Tenant</td>
@@ -2162,6 +2263,9 @@ public class EmailService : IEmailService
     public async Task SendSessionFeedbackPromptEmailAsync(string toEmail, string firstName, string houseNumber, DateTime scheduledAt, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending session feedback prompt email to explorer: {Email}", toEmail);
         await SendEmail(toEmail, $"How Was Your Viewing? — {houseNumber}",
             GetSessionFeedbackPromptTemplate(firstName, houseNumber, scheduledAt));

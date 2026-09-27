@@ -10,4 +10,5 @@ public class AppSettings
     public int LockoutDurationMinutes { get; set; } = 30;
     public string FrontendUrl { get; set; } = "http://localhost:4200";
     public string PortalFrontendUrl { get; set; } = "http://localhost:4201";
+    public string ApiBaseUrl { get; set; } = "http://localhost:5001";
 }

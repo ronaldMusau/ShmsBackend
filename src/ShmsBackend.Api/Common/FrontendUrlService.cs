@@ -68,4 +68,7 @@ public class FrontendUrlService : IFrontendUrlService
     }
 
     public string GetPortalLoginUrl() => $"{_portalFrontendUrl}/public/login";
+
+    public string GetCompanyLogoUrl() =>
+        $"{_appSettings.ApiBaseUrl.TrimEnd('/')}/api/companysettings/public/logo";
 }

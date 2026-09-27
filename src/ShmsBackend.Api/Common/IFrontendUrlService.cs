@@ -13,4 +13,5 @@ public interface IFrontendUrlService
     string GetPortalEmailVerificationUrl(string token, string email, PortalUserType portalUserType);
     string GetEmailChangeConfirmationUrl(string token, string email);
     string GetPortalLoginUrl();
+    string GetCompanyLogoUrl();
 }
