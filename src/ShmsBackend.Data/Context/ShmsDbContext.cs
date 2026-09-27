@@ -717,7 +717,11 @@ public class ShmsDbContext : DbContext
         modelBuilder.Entity<HouseListingLike>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.HasIndex(e => new { e.HouseId, e.ExplorerId }).IsUnique();
+            // Both indexes are already live in the database (UQ_HouseListingLike_Explorer /
+            // UQ_HouseListingLike_Device) — this just brings the model source in sync with reality,
+            // no new migration needed since neither constraint is missing physically.
+            entity.HasIndex(e => new { e.HouseId, e.ExplorerId }).IsUnique().HasDatabaseName("UQ_HouseListingLike_Explorer");
+            entity.HasIndex(e => new { e.HouseId, e.AnonymousDeviceId }).IsUnique().HasDatabaseName("UQ_HouseListingLike_Device");
             entity.HasOne<House>().WithMany().HasForeignKey(e => e.HouseId).OnDelete(DeleteBehavior.Cascade);
         });
 

@@ -5,6 +5,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.DTOs.House;
 using ShmsBackend.Api.Services.Common;
@@ -1044,18 +1045,47 @@ public class PublicListingController : ControllerBase
         {
             existing.IsLike = dto.IsLike;
             existing.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
         }
         else
         {
-            _context.HouseListingLikes.Add(new HouseListingLike
+            var newLike = new HouseListingLike
             {
                 HouseId = id,
                 ExplorerId = explorerId,
                 AnonymousDeviceId = explorerId == null ? dto.DeviceId : null,
                 IsLike = dto.IsLike
-            });
+            };
+            _context.HouseListingLikes.Add(newLike);
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+            {
+                // Another concurrent request for the same house+device/explorer won the race and
+                // already inserted the row we were trying to create (UQ_HouseListingLike_Device or
+                // the HouseId+ExplorerId unique index) — detach our failed insert and fall back to
+                // updating the row that actually exists, using the same lookup condition as above.
+                _context.Entry(newLike).State = EntityState.Detached;
+
+                HouseListingLike? nowExisting;
+                if (explorerId != null)
+                    nowExisting = await _context.HouseListingLikes
+                        .FirstOrDefaultAsync(l => l.HouseId == id && l.ExplorerId == explorerId);
+                else
+                    nowExisting = await _context.HouseListingLikes
+                        .FirstOrDefaultAsync(l => l.HouseId == id && l.AnonymousDeviceId == dto.DeviceId);
+
+                if (nowExisting != null)
+                {
+                    nowExisting.IsLike = dto.IsLike;
+                    nowExisting.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                }
+            }
         }
-        await _context.SaveChangesAsync();
 
         var likeCount = await _context.HouseListingLikes.CountAsync(l => l.HouseId == id && l.IsLike);
         var dislikeCount = await _context.HouseListingLikes.CountAsync(l => l.HouseId == id && !l.IsLike);
