@@ -76,14 +76,14 @@ public static class EmailThemeCatalog
 
     public static EmailThemePalette Resolve(string? theme, string? mode)
     {
-        var resolvedTheme = string.IsNullOrWhiteSpace(theme) ? "gold-dark" : theme;
+        var resolvedTheme = string.IsNullOrWhiteSpace(theme) ? "default" : theme;
         var resolvedMode = string.IsNullOrWhiteSpace(mode) ? "dark" : mode;
 
         var modeBase = resolvedMode == "light" ? LightBase : DarkBase;
 
         var accent = resolvedTheme == "vintage" && resolvedMode == "dark"
             ? VintageDarkMode
-            : Accents.GetValueOrDefault(resolvedTheme, Accents["gold-dark"]);
+            : Accents.GetValueOrDefault(resolvedTheme, Accents["default"]);
 
         return new EmailThemePalette
         {
