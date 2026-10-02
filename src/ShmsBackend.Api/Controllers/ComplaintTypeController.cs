@@ -71,6 +71,10 @@ public class ComplaintTypeController : ControllerBase
         var type = await _context.ComplaintTypes.FindAsync(id);
         if (type == null) return NotFound(new { success = false, message = "Not found." });
 
+        var inUse = await _context.Complaints.AnyAsync(c => c.ComplaintTypeId == id && !c.IsDeleted);
+        if (inUse)
+            return Conflict(new { success = false, message = "This complaint type has existing complaints using it and cannot be edited." });
+
         type.Name = dto.Name;
         type.Description = dto.Description;
         type.ReminderDays = dto.ReminderDays;
@@ -87,6 +91,10 @@ public class ComplaintTypeController : ControllerBase
     {
         var type = await _context.ComplaintTypes.FindAsync(id);
         if (type == null) return NotFound(new { success = false, message = "Not found." });
+
+        var inUse = await _context.Complaints.AnyAsync(c => c.ComplaintTypeId == id && !c.IsDeleted);
+        if (inUse)
+            return Conflict(new { success = false, message = "This complaint type has existing complaints using it and cannot be deleted." });
 
         type.IsDeleted = true;
         type.DeletedAt = DateTime.UtcNow;

@@ -68,6 +68,10 @@ public class HouseTypeController : ControllerBase
         var type = await _context.HouseTypes.FindAsync(id);
         if (type == null) return NotFound(new { success = false, message = "Not found." });
 
+        var inUse = await _context.Houses.AnyAsync(h => h.HouseTypeId == id && !h.IsDeleted);
+        if (inUse)
+            return Conflict(new { success = false, message = "This house type has existing houses using it and cannot be edited." });
+
         type.Name = dto.Name;
         type.Description = dto.Description;
         type.UpdatedAt = DateTime.UtcNow;
@@ -86,6 +90,10 @@ public class HouseTypeController : ControllerBase
     {
         var type = await _context.HouseTypes.FindAsync(id);
         if (type == null) return NotFound(new { success = false, message = "Not found." });
+
+        var inUse = await _context.Houses.AnyAsync(h => h.HouseTypeId == id && !h.IsDeleted);
+        if (inUse)
+            return Conflict(new { success = false, message = "This house type has existing houses using it and cannot be deleted." });
 
         type.IsDeleted = true;
         type.DeletedAt = DateTime.UtcNow;
