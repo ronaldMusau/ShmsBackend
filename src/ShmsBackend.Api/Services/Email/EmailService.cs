@@ -2148,6 +2148,152 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Settlement Appeal — {houseNumber}", inner);
     }
 
+    public async Task SendVacateSubmittedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending vacate submitted alert email to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"New Vacate Request — {houseNumber}",
+            GetVacateSubmittedManagementTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateSubmittedManagementTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"A new vacate request has been raised for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("An agent has been assigned to carry out the inspection. Please log in to the management portal to track progress.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"New Vacate Request — {houseNumber}", inner);
+    }
+
+    public async Task SendVacateCancelledManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending vacate cancelled alert email to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Request Cancelled — {houseNumber}",
+            GetVacateCancelledManagementTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateCancelledManagementTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"The vacate request for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been cancelled.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("No further action is required unless a new vacate request is raised for this tenancy.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Request Cancelled — {houseNumber}", inner);
+    }
+
+    public async Task SendVacateInspectionSubmittedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending vacate inspection submitted alert email to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Inspection Submitted — {houseNumber}",
+            GetVacateInspectionSubmittedManagementTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateInspectionSubmittedManagementTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"The vacate inspection for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been submitted and is awaiting review.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("Please log in to the management portal to review the inspection and take the next approval step.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Inspection Submitted — {houseNumber}", inner);
+    }
+
+    public async Task SendVacateTenantMessageManagementEmailAsync(string toEmail, string firstName, string houseNumber, string message, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending vacate tenant message alert email to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"New Vacate Message — {houseNumber}",
+            GetVacateTenantMessageManagementTemplate(firstName, houseNumber, message));
+    }
+
+    private string GetVacateTenantMessageManagementTemplate(string firstName, string houseNumber, string message)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"The tenant has sent a new message on the vacate request for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para($"<strong>Message:</strong> {message}")}
+{Para("Please log in to the management portal to review and respond.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"New Vacate Message — {houseNumber}", inner);
+    }
+
+    public async Task SendVacateClosedManagementEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Approvals")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending vacate closed alert email to management: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Request Closed Out — {houseNumber}",
+            GetVacateClosedManagementTemplate(firstName, houseNumber));
+    }
+
+    private string GetVacateClosedManagementTemplate(string firstName, string houseNumber)
+    {
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"The vacate request for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been fully closed out.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{Para("The tenancy has been formally cleared and the house is ready for the next steps.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Request Closed Out — {houseNumber}", inner);
+    }
+
     public async Task SendVacateSettlementPaidTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;

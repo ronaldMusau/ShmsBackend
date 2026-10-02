@@ -261,6 +261,21 @@ public class VacateController : ControllerBase
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of new vacate request"); }
 
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+            foreach (var mgr in managementUsers)
+            {
+                try { await _emailService.SendVacateSubmittedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate submitted email to {Email}", mgr.Email); }
+            }
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate submitted email"); }
+
         return Ok(new { success = true, data = new { vacateRequest.Id } });
     }
 
@@ -429,6 +444,21 @@ public class VacateController : ControllerBase
                 "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate cancellation"); }
+
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+            foreach (var mgr in managementUsers)
+            {
+                try { await _emailService.SendVacateCancelledManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate cancelled email to {Email}", mgr.Email); }
+            }
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate cancelled email"); }
 
         return Ok(new { success = true, data = new { vacateRequest.Status } });
     }
@@ -733,6 +763,21 @@ public class VacateController : ControllerBase
                 "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate inspection submission"); }
+
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+            foreach (var mgr in managementUsers)
+            {
+                try { await _emailService.SendVacateInspectionSubmittedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate inspection submitted email to {Email}", mgr.Email); }
+            }
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate inspection submitted email"); }
 
         return Ok(new { success = true });
     }
@@ -2018,6 +2063,21 @@ public class VacateController : ControllerBase
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of new tenant vacate message"); }
 
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+            foreach (var mgr in managementUsers)
+            {
+                try { await _emailService.SendVacateTenantMessageManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, dto.Message, mgr.Id.ToString(), false); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate tenant message email to {Email}", mgr.Email); }
+            }
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate tenant message email"); }
+
         return Ok(new
         {
             success = true,
@@ -2172,6 +2232,21 @@ public class VacateController : ControllerBase
                 "property", "Vacate", vacateRequest.Id.ToString());
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate clearance"); }
+
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+            foreach (var mgr in managementUsers)
+            {
+                try { await _emailService.SendVacateClosedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate closed email to {Email}", mgr.Email); }
+            }
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate closed email"); }
 
         return Ok(new { success = true, message = "Vacate request closed out successfully." });
     }
