@@ -286,6 +286,7 @@ public class VacateController : ControllerBase
 
         var paidSuccessor = await _context.Tenants.AnyAsync(t =>
             t.HouseId == vacateRequest.HouseId
+            && t.Id != vacateRequest.TenantId
             && !t.IsDeleted
             && t.TenantStatus != TenantStatus.SettlingVacate
             && t.HasCompletedInitialPayment);
