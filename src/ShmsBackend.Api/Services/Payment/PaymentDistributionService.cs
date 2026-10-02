@@ -176,6 +176,7 @@ public class PaymentDistributionService : IPaymentDistributionService
                 if (!string.IsNullOrEmpty(receiptNumber) && applyAmount > 0)
                 {
                     newPayment.MpesaReceiptNumber = receiptNumber;
+                    newPayment.PaymentMethod = PaymentMethod.Mpesa;
                     newPayment.PaidAt = DateTime.UtcNow;
                     _context.PaymentApplications.Add(new PaymentApplication
                     {

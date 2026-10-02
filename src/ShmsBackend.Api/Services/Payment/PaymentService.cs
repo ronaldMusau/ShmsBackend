@@ -359,6 +359,12 @@ public class PaymentService : IPaymentService
             payment.Balance = Math.Max(0, payment.Amount - payment.AmountPaid);
             payment.MpesaReceiptNumber = details.MpesaReceiptNumber;
             payment.PaidAt = DateTime.UtcNow;
+            // Single source of truth for PaymentMethod: this is the one place that confirms a
+            // genuine M-Pesa transaction happened, so it's the one place that stamps it — covers
+            // every creation path (CreateInitialPaymentAsync, GenerateMonthlyPaymentsAsync,
+            // PaymentDistributionService, the TenantService/VacateController backfill sites) without
+            // needing to touch each one individually.
+            payment.PaymentMethod = PaymentMethod.Mpesa;
 
             if (appliedToThisRow > 0)
             {
