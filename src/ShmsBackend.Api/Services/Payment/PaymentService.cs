@@ -355,6 +355,11 @@ public class PaymentService : IPaymentService
             var capacity = Math.Max(0, payment.Amount - priorAmountPaid);
             var appliedToThisRow = Math.Min(netCollected, capacity);
 
+            // Captured before payment.Balance is mutated below, so the reward formula later in this
+            // method mirrors InitiatePaymentAsync's (Balance-or-Amount) exactly — the amount actually
+            // requested in the STK push for THIS transaction, not the balance left after applying it.
+            var rentDueBeforeThisTransaction = payment.Balance > 0 ? payment.Balance : payment.Amount;
+
             payment.AmountPaid = priorAmountPaid + appliedToThisRow;
             payment.Balance = Math.Max(0, payment.Amount - payment.AmountPaid);
             payment.MpesaReceiptNumber = details.MpesaReceiptNumber;
@@ -516,12 +521,18 @@ public class PaymentService : IPaymentService
             try
             {
                 // Points are earned only on the rewardable (non-service-charge) portion of what was
-                // actually received this transaction — excluded proportionally so a partial payment
-                // still excludes the same share of service charge as a full one, rather than risking
-                // a negative rewardable amount on a small partial payment.
-                var totalDue = payment.Amount;
+                // actually received this transaction. payment.Amount never includes ServiceChargeAmount —
+                // the real STK push total is (Balance-or-Amount) + ServiceChargeAmount (see InitiatePaymentAsync),
+                // so the rewardable ratio must be rentDue's share of THAT total, not of Amount alone.
+                // When this transaction funds multiple future months via the pay-ahead flow,
+                // RequestedDistributionAmount holds the TRUE total pure-rent being funded (one service
+                // charge applies to the whole transaction, not one per month) — use that as the rewardable
+                // base instead of just the triggering row's own rent, or the ratio understates how much of
+                // a multi-month payment was actually rent.
                 var serviceCharge = payment.ServiceChargeAmount ?? 0m;
-                var rewardableRatio = totalDue > 0 ? Math.Max(0m, (totalDue - serviceCharge) / totalDue) : 0m;
+                var pureRentTotal = payment.RequestedDistributionAmount ?? rentDueBeforeThisTransaction;
+                var totalRequested = pureRentTotal + serviceCharge;
+                var rewardableRatio = totalRequested > 0 ? pureRentTotal / totalRequested : 0m;
                 var rewardableAmount = details.Amount.Value * rewardableRatio;
 
                 rewardResult = await _rewardService.EarnPointsAsync(payment.TenantId, payment.HouseId, rewardableAmount, payment.IsInitialPayment, payment.Id);

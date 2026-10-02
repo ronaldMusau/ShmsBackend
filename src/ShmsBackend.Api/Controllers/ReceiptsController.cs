@@ -36,7 +36,7 @@ public class ReceiptsController : ControllerBase
         if (payment == null) return NotFound(new { success = false, message = "Payment not found." });
         if (!IsAuthorized(payment)) return StatusCode(403, new { success = false, message = "You do not have permission to view this receipt." });
 
-        var data = BuildReceiptData(payment);
+        var data = BuildReceiptData(payment, CallerRole());
         var company = await GetOrCreateCompanySettingsAsync();
         return Ok(new { success = true, data, company = CompanyInfo(company) });
     }
@@ -49,7 +49,7 @@ public class ReceiptsController : ControllerBase
         if (payment == null) return NotFound(new { success = false, message = "Payment not found." });
         if (!IsAuthorized(payment)) return StatusCode(403, new { success = false, message = "You do not have permission to view this receipt." });
 
-        var data = BuildReceiptData(payment);
+        var data = BuildReceiptData(payment, CallerRole());
         var company = await GetOrCreateCompanySettingsAsync();
 
         return format.ToLowerInvariant() switch
@@ -72,13 +72,15 @@ public class ReceiptsController : ControllerBase
             .FirstOrDefaultAsync(p => p.Id == paymentId);
     }
 
+    private string CallerRole() => User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+
     private bool IsAuthorized(Payment payment)
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(userIdStr, out var userId))
             return false;
 
-        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? string.Empty;
+        var role = CallerRole();
 
         return role switch
         {
@@ -89,11 +91,16 @@ public class ReceiptsController : ControllerBase
         };
     }
 
-    private static ReceiptData BuildReceiptData(Payment payment)
+    // Service charge is an internal cost breakdown — Tenant/Landlord should only see what they paid,
+    // not this line item. Admin-side roles keep seeing it (same set IsAuthorized grants unrestricted
+    // access to).
+    private static ReceiptData BuildReceiptData(Payment payment, string callerRole)
     {
         var receiptNumber = !string.IsNullOrWhiteSpace(payment.MpesaReceiptNumber)
             ? payment.MpesaReceiptNumber!
             : $"PMT-{payment.Id.ToString()[..8].ToUpperInvariant()}";
+
+        var showServiceCharge = callerRole is "SuperAdmin" or "Admin" or "Secretary" or "Manager" or "Accountant";
 
         return new ReceiptData
         {
@@ -110,7 +117,7 @@ public class ReceiptsController : ControllerBase
             Amount = payment.Amount,
             RentAmount = payment.RentAmount,
             DepositAmount = payment.DepositAmount,
-            ServiceChargeAmount = payment.ServiceChargeAmount,
+            ServiceChargeAmount = showServiceCharge ? payment.ServiceChargeAmount : null,
             CreditApplied = payment.CreditApplied,
             AmountPaid = payment.AmountPaid,
             Balance = payment.Balance,
