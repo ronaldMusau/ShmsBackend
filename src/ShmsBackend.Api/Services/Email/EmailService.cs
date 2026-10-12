@@ -419,6 +419,18 @@ public class EmailService : IEmailService
             GetRentChangeNoticeTemplate(firstName, houseNumber, newRentFee, effectiveMonth, effectiveYear));
     }
 
+    // Sent like SendRentChangeNoticeAsync (no preference check): it retracts that notice, so it has to reach
+    // everyone the notice reached.
+    public async Task SendRentChangeCancelledEmailAsync(string toEmail, string firstName, string houseNumber, decimal cancelledRentFee, int effectiveMonth, int effectiveYear, decimal currentRentFee, string? userId = null, bool isPortalUser = false)
+    {
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending rent change cancelled email to: {Email}", toEmail);
+        await SendEmail(toEmail, "Rent Change Cancelled — Romah Estates",
+            GetRentChangeCancelledTemplate(firstName, houseNumber, cancelledRentFee, effectiveMonth, effectiveYear, currentRentFee));
+    }
+
     public async Task SendRentNowEffectiveEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee, string? userId = null, bool isPortalUser = false)
     {
         var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
@@ -1454,6 +1466,22 @@ public class EmailService : IEmailService
 {Divider()}
 {SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
         return WrapInLayout("Upcoming Rent Change — Romah Estates", inner);
+    }
+
+    private string GetRentChangeCancelledTemplate(string firstName, string houseNumber, decimal cancelledRentFee, int effectiveMonth, int effectiveYear, decimal currentRentFee)
+    {
+        var monthName = new DateTime(effectiveYear, effectiveMonth, 1).ToString("MMMM yyyy");
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"The rent change previously announced for <strong style='color:{ColourGold};'>House {houseNumber}</strong> — KES {cancelledRentFee:N2} from {monthName} — has been <strong style='color:{ColourGold};'>cancelled</strong>. Your rent stays at the amount shown below.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;margin:0 0 8px 0;'>YOUR RENT REMAINS</p>
+  <p style='margin:0;font-size:22px;font-weight:700;color:{ColourGold};'>KES {currentRentFee:N2}</p>
+")}
+{Para("If you have any questions, please contact your property manager.")}
+{Divider()}
+{SmallNote("This is an automated notification from Romah Estates Smart Housing Management System.")}";
+        return WrapInLayout("Rent Change Cancelled — Romah Estates", inner);
     }
 
     private string GetRentNowEffectiveTemplate(string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee)

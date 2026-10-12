@@ -82,9 +82,7 @@ public static class ComplaintDetailHelper
                 .ThenBy(a => a.StepOrder)
                 .ToListAsync();
             var approverIds = approvalActions.Select(a => a.ApproverId).Distinct().ToList();
-            var approvers = await context.PortalUsers
-                .Where(u => approverIds.Contains(u.Id))
-                .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+            var approvers = await ApproverLookup.GetNamesAsync(context, approverIds);
             approvalHistoryResponse = approvalActions.Select(a => (object)new
             {
                 a.AttemptNumber,

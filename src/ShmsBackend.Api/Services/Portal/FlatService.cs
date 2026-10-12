@@ -325,6 +325,7 @@ public class FlatService
                 EverOccupied = everOccupiedSet.Contains(h.Id),
                 ScheduledRentChange = pendingRentChangesByHouse.TryGetValue(h.Id, out var prc) ? new
                 {
+                    prc.Id,
                     prc.NewRentFee,
                     prc.NewDepositFee,
                     prc.EffectiveMonth,

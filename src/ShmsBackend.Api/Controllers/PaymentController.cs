@@ -65,7 +65,7 @@ public class PaymentController : ControllerBase
             }
 
             var existingProcessing = await _context.PaymentCheckoutAttempts
-                .Where(a => a.AttemptStatus == "Processing" && a.Payment!.TenantId == dto.TenantId && !a.Payment.IsDeleted)
+                .Where(a => a.AttemptStatus == "Processing" && a.ProcessedAt == null && a.Payment!.TenantId == dto.TenantId && !a.Payment.IsDeleted)
                 .FirstOrDefaultAsync();
             if (existingProcessing != null)
                 return BadRequest(new { success = false, message = "A payment is already being processed for this tenant. Please wait a moment or check their phone." });
@@ -247,7 +247,7 @@ public class PaymentController : ControllerBase
             // Checked before the row is reset below — clearing CheckoutRequestId/RequestedDistributionAmount under a
             // push that's still in flight would misroute its callback.
             var existingProcessing = await _context.PaymentCheckoutAttempts
-                .Where(a => a.AttemptStatus == "Processing" && a.Payment!.TenantId == payment.TenantId && !a.Payment.IsDeleted)
+                .Where(a => a.AttemptStatus == "Processing" && a.ProcessedAt == null && a.Payment!.TenantId == payment.TenantId && !a.Payment.IsDeleted)
                 .FirstOrDefaultAsync();
             if (existingProcessing != null)
                 return BadRequest(new { success = false, message = "A payment is already being processed for this tenant. Please wait a moment or check their phone." });

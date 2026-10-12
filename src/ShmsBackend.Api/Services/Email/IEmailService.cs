@@ -38,6 +38,7 @@ public interface IEmailService
     // rewards section (only rendered when pointsEarned.HasValue && > 0) into one email.
     Task SendPaymentConfirmationEmailAsync(string toEmail, string firstName, string mpesaReceiptNumber, decimal totalAmount, List<(int month, int year, decimal applied)>? itemizedBreakdown, string houseNumber, string flatName, DateTime paidAt, decimal? pointsEarned, decimal? newPointsBalance, string? userId = null, bool isPortalUser = false);
     Task<bool> SendRentChangeNoticeAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear, string? userId = null, bool isPortalUser = false);
+    Task SendRentChangeCancelledEmailAsync(string toEmail, string firstName, string houseNumber, decimal cancelledRentFee, int effectiveMonth, int effectiveYear, decimal currentRentFee, string? userId = null, bool isPortalUser = false);
     Task SendRentNowEffectiveEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, decimal newDepositFee, string? userId = null, bool isPortalUser = false);
     Task<bool> SendRentChangeReminderEmailAsync(string toEmail, string firstName, string houseNumber, decimal newRentFee, int effectiveMonth, int effectiveYear);
     Task SendPointsEarnedEmailAsync(string toEmail, string firstName, decimal pointsEarned, decimal newBalance, string? userId = null, bool isPortalUser = false);

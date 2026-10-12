@@ -338,6 +338,60 @@ public class FlatController : ControllerBase
         return Ok(new { success = true, message = "Edit submitted for approval.", requestId = request.Id });
     }
 
+    // DELETE /api/flats/rent-change/{id} — cancel a scheduled rent change that hasn't taken effect yet
+    [HttpDelete("rent-change/{id:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> CancelScheduledRentChange(Guid id)
+    {
+        var change = await _context.PendingRentChanges
+            .Include(c => c.House)
+            .ThenInclude(h => h!.Flat)
+            .FirstOrDefaultAsync(c => c.Id == id);
+        if (change == null)
+            return NotFound(new { success = false, message = "Scheduled rent change not found." });
+        if (change.AppliedAt != null)
+            return BadRequest(new { success = false, message = "This rent change has already taken effect and can no longer be cancelled." });
+
+        var house = change.House!;
+        var flat = house.Flat!;
+
+        _context.PendingRentChanges.Remove(change);
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            var tenantCandidates = await _context.Tenants
+                .Where(t => t.HouseId == house.Id)
+                .OrderByDescending(t => t.CreatedAt)
+                .ToListAsync();
+            var tenant = tenantCandidates.FirstOrDefault(t => t.TenantStatus != ShmsBackend.Data.Models.Enums.TenantStatus.SettlingVacate)
+                ?? tenantCandidates.FirstOrDefault();
+            if (tenant != null)
+            {
+                // Retracts the "Upcoming Rent Change" email the tenant got when this change was scheduled.
+                try
+                {
+                    await _emailService.SendRentChangeCancelledEmailAsync(tenant.Email, tenant.FirstName, house.HouseNumber,
+                        change.NewRentFee, change.EffectiveMonth, change.EffectiveYear, house.RentFee, tenant.Id.ToString(), true);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send rent-change-cancelled email for house {HouseId}", house.Id);
+                }
+                await _notificationService.SendForcedToUserAsync(tenant.Id.ToString(),
+                    $"The scheduled rent change for House {house.HouseNumber} has been cancelled. Your rent remains KES {house.RentFee}.", "rent_change");
+            }
+            await _notificationService.SendForcedToUserAsync(flat.LandlordId.ToString(),
+                $"The scheduled rent change for House {house.HouseNumber} in {flat.FlatName} has been cancelled.", "rent_change");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send rent-change-cancelled notification for house {HouseId}", house.Id);
+        }
+
+        return Ok(new { success = true, message = "Scheduled rent change cancelled." });
+    }
+
     // PATCH /api/flats/edit-request/{id}/approval-action
     [HttpPatch("edit-request/{id:guid}/approval-action")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]

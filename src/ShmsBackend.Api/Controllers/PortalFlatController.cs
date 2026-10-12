@@ -260,6 +260,7 @@ public class PortalFlatController : ControllerBase
                                              .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                     ScheduledRentChange = agentPendingRentChanges.TryGetValue(h.Id, out var agentPrc) ? new
                     {
+                        agentPrc.Id,
                         agentPrc.NewRentFee,
                         agentPrc.NewDepositFee,
                         agentPrc.EffectiveMonth,
@@ -343,6 +344,7 @@ public class PortalFlatController : ControllerBase
                                                     .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                         ScheduledRentChange = landlordPendingRentChanges.TryGetValue(h.Id, out var landlordPrc) ? new
                         {
+                            landlordPrc.Id,
                             landlordPrc.NewRentFee,
                             landlordPrc.NewDepositFee,
                             landlordPrc.EffectiveMonth,
@@ -402,6 +404,7 @@ public class PortalFlatController : ControllerBase
                                            .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                 ScheduledRentChange = defaultPendingRentChanges.TryGetValue(h.Id, out var defaultPrc) ? new
                 {
+                    defaultPrc.Id,
                     defaultPrc.NewRentFee,
                     defaultPrc.NewDepositFee,
                     defaultPrc.EffectiveMonth,
