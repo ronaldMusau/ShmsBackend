@@ -1571,6 +1571,16 @@ public class VacateController : ControllerBase
         if (firstStep == null)
             return BadRequest(new { success = false, message = "No approval sequence has been configured for Vacate. Please contact management." });
 
+        // Resubmitting out of an appeal supersedes it — record that (no staff decision, so no
+        // ResolvedByAdminId/Response). Requests without an unresolved appeal row are left alone.
+        var unresolvedAppeal = await _context.VacateAppeals
+            .FirstOrDefaultAsync(a => a.VacateRequestId == id && a.Outcome == null);
+        if (unresolvedAppeal != null)
+        {
+            unresolvedAppeal.Outcome = "Resubmitted";
+            unresolvedAppeal.ResolvedAt = DateTime.UtcNow;
+        }
+
         vacateRequest.CurrentApprovalStepOrder = firstStep.StepOrder;
         vacateRequest.NeedsResubmission = false;
         vacateRequest.Status = "AwaitingApproval";
