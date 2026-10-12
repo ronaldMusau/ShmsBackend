@@ -2449,6 +2449,37 @@ public class EmailService : IEmailService
         return WrapInLayout($"Vacate Notice — {houseNumber}", inner);
     }
 
+    public async Task SendVacateAppealDeniedTenantEmailAsync(string toEmail, string firstName, string houseNumber, string? response, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending vacate appeal denied email to tenant: {Email}", toEmail);
+        await SendEmail(toEmail, $"Vacate Appeal Reviewed — {houseNumber}",
+            GetVacateAppealDeniedTenantTemplate(firstName, houseNumber, response));
+    }
+
+    private string GetVacateAppealDeniedTenantTemplate(string firstName, string houseNumber, string? response)
+    {
+        var responsePara = string.IsNullOrWhiteSpace(response) ? "" : Para($"<strong>Management Response:</strong> {response}");
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para($"Your appeal on the vacate settlement for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has been reviewed by management and denied. The original settlement stands.")}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {houseNumber}
+  </span>
+")}
+{responsePara}
+{Para("Please log in to the Romah Estates tenant portal to view your settlement details and complete any outstanding payment.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+
+        return WrapInLayout($"Vacate Appeal Reviewed — {houseNumber}", inner);
+    }
+
     private string GetVacateFinalRejectionTenantTemplate(string firstName, string houseNumber, string remarks)
     {
         var inner = $@"

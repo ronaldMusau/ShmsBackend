@@ -1481,7 +1481,7 @@ namespace ShmsBackend.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("AnonymousDeviceId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -1500,8 +1500,14 @@ namespace ShmsBackend.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("HouseId", "AnonymousDeviceId")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_HouseListingLike_Device")
+                        .HasFilter("[AnonymousDeviceId] IS NOT NULL");
+
                     b.HasIndex("HouseId", "ExplorerId")
                         .IsUnique()
+                        .HasDatabaseName("UQ_HouseListingLike_Explorer")
                         .HasFilter("[ExplorerId] IS NOT NULL");
 
                     b.ToTable("HouseListingLikes");
@@ -2264,6 +2270,20 @@ namespace ShmsBackend.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Outcome")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("ResolvedByAdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Response")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<DateTime>("SubmittedAt")
                         .HasColumnType("datetime2");

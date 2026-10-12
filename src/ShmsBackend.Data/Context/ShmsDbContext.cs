@@ -706,6 +706,12 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
         });
 
+        modelBuilder.Entity<VacateAppeal>(entity =>
+        {
+            entity.Property(e => e.Outcome).HasMaxLength(20);
+            entity.Property(e => e.Response).HasMaxLength(1000);
+        });
+
         modelBuilder.Entity<VacateForfeitedAdvance>(entity =>
         {
             entity.Property(e => e.TotalAdvanceAmount).HasColumnType("decimal(18,2)");

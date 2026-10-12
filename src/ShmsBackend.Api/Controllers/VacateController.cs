@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
@@ -1039,6 +1040,11 @@ public class VacateController : ControllerBase
         var forfeitedAdvance = await _context.VacateForfeitedAdvances
             .FirstOrDefaultAsync(f => f.VacateRequestId == id && !f.IsVoided);
 
+        var appeal = await _context.VacateAppeals
+            .Include(a => a.Lines)
+            .FirstOrDefaultAsync(a => a.VacateRequestId == id);
+        var inspectionLinesById = vacateRequest.InspectionLines.ToDictionary(l => l.Id);
+
         return Ok(new
         {
             success = true,
@@ -1101,6 +1107,24 @@ public class VacateController : ControllerBase
                     forfeitedAdvance.TotalAdvanceAmount,
                     forfeitedAdvance.AmountAppliedToDamages,
                     forfeitedAdvance.AmountForfeitedUnused
+                },
+                appeal = appeal == null ? null : (object)new
+                {
+                    appeal.SubmittedAt,
+                    appeal.Outcome,
+                    appeal.ResolvedAt,
+                    appeal.Response,
+                    lines = appeal.Lines
+                        .Select(l => new { l, line = inspectionLinesById.GetValueOrDefault(l.VacateInspectionLineId) })
+                        .OrderBy(x => x.line?.LineOrder)
+                        .Select(x => new
+                        {
+                            inspectionLineId = x.l.VacateInspectionLineId,
+                            x.l.Reason,
+                            description = x.line?.Description,
+                            assessedAmount = x.line?.AssessedAmount,
+                            lineOrder = x.line?.LineOrder
+                        })
                 }
             }
         });
@@ -1199,7 +1223,11 @@ public class VacateController : ControllerBase
                 {
                     l.VacateInspectionLineId,
                     l.Reason
-                })
+                }),
+                // null outcome = appeal still pending; "Denied" = reviewed and the original settlement stands
+                appealOutcome = existingAppeal?.Outcome,
+                appealResolvedAt = existingAppeal?.ResolvedAt,
+                appealResponse = existingAppeal?.Response
             }
         });
     }
@@ -1563,6 +1591,75 @@ public class VacateController : ControllerBase
         }
 
         return Ok(new { success = true, data = new { vacateRequest.ApprovalAttemptNumber } });
+    }
+
+    // PATCH /api/vacate/{id}/deny-appeal
+    [HttpPatch("{id:guid}/deny-appeal")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> DenyVacateAppeal(Guid id, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] VacateAppealDenyDto? dto)
+    {
+        var vacateRequest = await _context.VacateRequests
+            .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
+
+        if (vacateRequest == null)
+            return NotFound(new { success = false, message = "Vacate request not found." });
+
+        if (vacateRequest.Status != "UnderAppeal")
+            return BadRequest(new { success = false, message = "This request is not currently under appeal." });
+
+        var appeal = await _context.VacateAppeals.FirstOrDefaultAsync(a => a.VacateRequestId == id);
+        if (appeal == null)
+            return BadRequest(new { success = false, message = "No appeal was found for this request." });
+
+        var response = string.IsNullOrWhiteSpace(dto?.Response) ? null : dto!.Response!.Trim();
+        if (response != null && response.Length > 1000)
+            return BadRequest(new { success = false, message = "Response must be 1000 characters or fewer." });
+
+        var now = DateTime.UtcNow;
+
+        // Denial restores the request to its approved state as-is: the existing settlement, forfeiture
+        // records and FinalRemarks are deliberately left untouched.
+        appeal.Outcome = "Denied";
+        appeal.ResolvedAt = now;
+        appeal.ResolvedByAdminId = GetCallerId();
+        appeal.Response = response;
+
+        vacateRequest.Status = "Approved";
+        vacateRequest.UpdatedAt = now;
+        await _context.SaveChangesAsync();
+
+        var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
+        var houseNumber = house?.HouseNumber ?? "";
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);
+        if (tenant != null)
+        {
+            var notificationText = $"Your appeal on your vacate request for house {houseNumber} has been reviewed and denied. The original settlement stands."
+                + (response != null ? $" Management response: {response}" : "");
+            try { await _notificationService.SendToUserAsync(vacateRequest.TenantId.ToString(), notificationText, "property", "Vacate", vacateRequest.Id.ToString()); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate appeal denial"); }
+
+            try { await _emailService.SendVacateAppealDeniedTenantEmailAsync(tenant.Email, tenant.FirstName, houseNumber, response, tenant.Id.ToString(), true); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate appeal denied email to tenant"); }
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = "Appeal denied. The original settlement stands.",
+            data = new
+            {
+                vacateRequest.Id,
+                vacateRequest.Status,
+                appeal = new
+                {
+                    appeal.Outcome,
+                    appeal.ResolvedAt,
+                    appeal.ResolvedByAdminId,
+                    appeal.Response
+                }
+            }
+        });
     }
 
     // PATCH /api/vacate/{id}/final-remarks
@@ -2435,6 +2532,11 @@ public class VacateFinalRemarksDto
 public class VacateAppealSubmitDto
 {
     public List<VacateAppealLineDto> Lines { get; set; } = new();
+}
+
+public class VacateAppealDenyDto
+{
+    public string? Response { get; set; }
 }
 
 public class VacateAppealLineDto
