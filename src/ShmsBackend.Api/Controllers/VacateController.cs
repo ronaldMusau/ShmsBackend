@@ -25,6 +25,7 @@ public class VacateController : ControllerBase
     private readonly IPaymentService _paymentService;
     private readonly IMpesaService _mpesaService;
     private readonly ICacheHelper _cacheHelper;
+    private readonly VacateOwedCalculator _vacateOwedCalculator;
 
     public VacateController(
         ShmsDbContext context,
@@ -33,7 +34,8 @@ public class VacateController : ControllerBase
         ILogger<VacateController> logger,
         IPaymentService paymentService,
         IMpesaService mpesaService,
-        ICacheHelper cacheHelper)
+        ICacheHelper cacheHelper,
+        VacateOwedCalculator vacateOwedCalculator)
     {
         _context = context;
         _emailService = emailService;
@@ -42,6 +44,7 @@ public class VacateController : ControllerBase
         _paymentService = paymentService;
         _mpesaService = mpesaService;
         _cacheHelper = cacheHelper;
+        _vacateOwedCalculator = vacateOwedCalculator;
     }
 
     private Guid GetCallerId()
@@ -287,6 +290,13 @@ public class VacateController : ControllerBase
         if (callerRole == "Tenant" && callerId != vacateRequest.TenantId)
             return Forbid();
 
+        // An approved vacate is final for every role — whatever its ClosedAt, successor or settlement state.
+        // A settlement row (voided or not) is only ever created on approval, so it proves the request was
+        // approved at some point even if an appeal has since moved it off "Approved".
+        if (vacateRequest.Status == "Approved"
+            || await _context.VacateSettlements.AnyAsync(s => s.VacateRequestId == id))
+            return BadRequest(new { success = false, message = "This vacate request has been approved. An approved vacate is final and can't be cancelled or reversed." });
+
         if (vacateRequest.Status == "Closed" || vacateRequest.Status == "Cancelled")
             return BadRequest(new { success = false, message = "This vacate request cannot be cancelled." });
 
@@ -354,31 +364,32 @@ public class VacateController : ControllerBase
             var flat = house.Flat;
             var now = DateTime.UtcNow;
 
-            var serviceCharge = await _context.ServiceChargeSettings
-                .Where(s => s.IsActive && !s.IsDeleted && s.MinRent <= house.RentFee && s.MaxRent >= house.RentFee)
-                .OrderBy(s => s.MinRent)
-                .Select(s => (decimal?)s.ServiceCharge)
-                .FirstOrDefaultAsync() ?? 0m;
-
             var cursorYear = vacateRequest.VacateYear;
             var cursorMonth = vacateRequest.VacateMonth;
 
             while (cursorYear < now.Year || (cursorYear == now.Year && cursorMonth <= now.Month))
             {
+                // Same "month already covered" check as GenerateMonthlyPaymentsAsync — an initial-payment row
+                // counts, since its rent portion already covers the move-in month.
                 var exists = await _context.Payments.AnyAsync(p =>
                     p.TenantId == tenant.Id &&
                     p.Month == cursorMonth &&
                     p.Year == cursorYear &&
                     p.TenancyCycle == tenant.TenancyCycle &&
                     p.HouseId == tenant.HouseId &&
-                    !p.IsInitialPayment &&
                     !p.IsDeleted);
 
                 if (!exists)
                 {
                     var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth));
                     var dueDate = new DateTime(cursorYear, cursorMonth, rentDueDay);
-                    var totalDue = house.RentFee;
+
+                    // Same rate lookup as CreateInitialPaymentAsync: the latest unapplied rent change effective
+                    // by this month, else the house's current rent.
+                    var applicableRentChange = await _vacateOwedCalculator.GetApplicableRentChangeAsync(house.Id, cursorMonth, cursorYear);
+                    var effectiveRentFee = applicableRentChange?.NewRentFee ?? house.RentFee;
+                    var serviceCharge = await _paymentService.GetServiceChargeAsync(effectiveRentFee);
+                    var totalDue = effectiveRentFee;
 
                     _context.Payments.Add(new Payment
                     {
@@ -390,7 +401,7 @@ public class VacateController : ControllerBase
                         Amount = totalDue,
                         AmountPaid = 0,
                         Balance = totalDue,
-                        RentAmount = house.RentFee,
+                        RentAmount = effectiveRentFee,
                         ServiceChargeAmount = serviceCharge,
                         PaymentStatus = PaymentTransactionStatus.Pending,
                         PaymentType = PaymentType.Rent,
@@ -1577,6 +1588,21 @@ public class VacateController : ControllerBase
         if (vacateRequest.Status == "Rejected" && dto.Outcome != "Rejected")
             return BadRequest(new { success = false, message = "Outcome must be 'Approved' when internal approval succeeded, or 'Rejected' when closing out a rejected request." });
 
+        // Re-approval after an appeal must not void a settlement that already has money on it — either
+        // already paid (tenant paid / refund paid) or with an STK push still awaiting its callback.
+        // Checked before anything is saved so a refusal leaves the request exactly as it was.
+        if (dto.Outcome == "Approved")
+        {
+            var hasPaymentOnPrior = await _context.VacateSettlements
+                .Where(s => s.VacateRequestId == id && !s.IsVoided)
+                .AnyAsync(s => s.PaidAt != null
+                    || _context.VacateCheckoutAttempts.Any(a => a.VacateSettlementId == s.Id
+                        && a.AttemptStatus == "Processing" && a.ProcessedAt == null));
+
+            if (hasPaymentOnPrior)
+                return BadRequest(new { success = false, message = "This vacate request's existing settlement already has a payment completed or in progress. Resolve it manually before re-approving." });
+        }
+
         var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == vacateRequest.HouseId);
         var houseNumber = house?.HouseNumber ?? "";
 
@@ -1590,6 +1616,21 @@ public class VacateController : ControllerBase
 
         if (dto.Outcome == "Approved")
         {
+            // Re-approval after an appeal: void the earlier settlement and forfeiture records (same as
+            // CancelRequest does) so only the recalculated ones stay live. Saved together with the new
+            // settlement by CalculateVacateSettlementAsync's SaveChangesAsync.
+            var priorSettlements = await _context.VacateSettlements
+                .Where(s => s.VacateRequestId == id && !s.IsVoided)
+                .ToListAsync();
+            foreach (var s in priorSettlements)
+                s.IsVoided = true;
+
+            var priorForfeited = await _context.VacateForfeitedAdvances
+                .Where(f => f.VacateRequestId == id && !f.IsVoided)
+                .ToListAsync();
+            foreach (var f in priorForfeited)
+                f.IsVoided = true;
+
             var settlementResult = await _paymentService.CalculateVacateSettlementAsync(vacateRequest.Id);
 
             var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId);

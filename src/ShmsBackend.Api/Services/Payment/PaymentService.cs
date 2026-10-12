@@ -338,6 +338,31 @@ public class PaymentService : IPaymentService
 
                 var settlement = vacateAttempt.VacateSettlement!;
 
+                // The settlement was voided (cancelled, or replaced on re-approval) while this push was
+                // outstanding — the money belongs to no live settlement, so don't apply it or set PaidAt;
+                // flag it for manual reconciliation instead.
+                if (details.IsSuccess && settlement.IsVoided)
+                {
+                    vacateAttempt.AttemptStatus = "Success";
+                    await _context.SaveChangesAsync();
+
+                    _logger.LogWarning(
+                        "SUCCESS callback for vacate CheckoutRequestId {CheckoutRequestId} on voided VacateSettlement {SettlementId} (VacateRequest {VacateRequestId}), KES {Amount} — not applied, flagging for manual reconciliation.",
+                        checkoutRequestId, settlement.Id, settlement.VacateRequestId, details.Amount);
+
+                    var voidedHouse = await _context.Houses.FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
+                    try
+                    {
+                        await _notificationService.SendToRolesAsync(
+                            new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin,
+                                    NotificationAudience.Manager, NotificationAudience.Accountant },
+                            $"An M-Pesa payment of KES {details.Amount:N2} for house {voidedHouse?.HouseNumber} arrived for a vacate settlement that has since been voided — it was NOT applied. Please verify with the tenant and reconcile manually. Settlement: {settlement.Id}, VacateRequest: {settlement.VacateRequestId}, Receipt: {details.MpesaReceiptNumber}, CheckoutRequestId: {checkoutRequestId}",
+                            "payment");
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate voided-settlement reconciliation notification"); }
+                    return;
+                }
+
                 // Vacate equivalent of the superseded-attempt case: a settlement allows several attempts, so a
                 // late success after another attempt already paid it is a likely duplicate M-Pesa charge —
                 // don't re-apply it, flag it for manual reconciliation instead.
@@ -425,7 +450,11 @@ public class PaymentService : IPaymentService
                     vacateAttempt.RetryCount++;
                     await _context.SaveChangesAsync();
 
-                    var vacateTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
+                    // No "please try again" for a voided settlement — the pay endpoint can't find it, so a retry
+                    // is guaranteed to fail.
+                    var vacateTenant = settlement.IsVoided
+                        ? null
+                        : await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
                     if (vacateTenant != null)
                     {
                         try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Your vacate settlement payment failed: {mappedDesc}. Please try again from the tenant portal.", "property"); }
