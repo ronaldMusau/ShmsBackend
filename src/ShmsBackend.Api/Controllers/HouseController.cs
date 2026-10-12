@@ -673,25 +673,12 @@ public class HouseController : ControllerBase
             }
             else
             {
-                if (!dto.EffectiveMonth.HasValue || !dto.EffectiveYear.HasValue)
-                    return BadRequest(new { success = false, message = $"House {house.HouseNumber} has tenant history — an effective month is required." });
-
-                // Notifications for this branch were removed: occupied-group price changes now go through
-                // the flat-edit approval flow (PortalFlatController.LandlordFinalEditApproval, "ScheduleRentChange"),
-                // which sends the equivalent notice on approval. This endpoint's occupied-house branch is no
-                // longer called by the frontend, so removing the notification here doesn't affect the
-                // still-used immediate branch above (never-occupied houses).
-                _context.PendingRentChanges.Add(new PendingRentChange
-                {
-                    Id = Guid.NewGuid(),
-                    HouseId = houseId,
-                    NewRentFee = dto.NewRentFee,
-                    NewDepositFee = dto.NewDepositFee,
-                    EffectiveMonth = dto.EffectiveMonth.Value,
-                    EffectiveYear = dto.EffectiveYear.Value,
-                    CreatedByUserId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!)
-                });
-                results.Add(new { houseId, applied = "scheduled" });
+                // Retired: occupied-house price changes now go exclusively through the flat-edit approval
+                // flow (FlatController.SubmitEditRequest -> PortalFlatController.LandlordFinalEditApproval,
+                // "ScheduleRentChange"), which also guards against a house getting a second unapplied
+                // PendingRentChange. This endpoint bypassed that guard entirely and the frontend already
+                // doesn't call this branch, so it's refused outright instead of left reachable with a gap.
+                return BadRequest(new { success = false, message = $"House {house.HouseNumber} has tenant history — schedule this price change through the flat edit request flow instead." });
             }
         }
         await _context.SaveChangesAsync();

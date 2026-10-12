@@ -245,6 +245,23 @@ public class FlatController : ControllerBase
                 .Any(c => c.ActionType == "ScheduleRentChange" && (!c.EffectiveMonth.HasValue || !c.EffectiveYear.HasValue));
             if (missingEffectiveDate)
                 return BadRequest(new { success = false, message = "An effective month is required for every scheduled price change." });
+
+            // A house can only have one unapplied rent change at a time — approving a second while the first
+            // hasn't taken effect yet would leave no defined "latest" rate for GetApplicableRentChangeAsync to pick.
+            var rentChangeGroupIds = dto.HouseTypeChanges
+                .Where(c => c.ActionType == "ScheduleRentChange")
+                .Select(c => c.HouseTypeId)
+                .ToList();
+            if (rentChangeGroupIds.Count > 0)
+            {
+                var alreadyPendingHouse = await _context.Houses
+                    .Where(h => h.FlatId == id && rentChangeGroupIds.Contains(h.HouseTypeId)
+                             && _context.PendingRentChanges.Any(prc => prc.HouseId == h.Id && prc.AppliedAt == null))
+                    .Select(h => h.HouseNumber)
+                    .FirstOrDefaultAsync();
+                if (alreadyPendingHouse != null)
+                    return BadRequest(new { success = false, message = $"House {alreadyPendingHouse} already has a scheduled rent change awaiting its effective month. Wait for it to apply, or cancel it, before scheduling another." });
+            }
         }
 
         var adminId = GetUserId();

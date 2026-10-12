@@ -19,7 +19,7 @@
 --
 -- Every row uses a fixed GUID starting 7E570000-0000-0000- ("TEST"), grouped by the 4th block:
 --   0001 = landlord, 0002 = flat, 0003 = houses, 0004 = tenants,
---   0005 = vacate requests, 0006 = payments, 0007 = vacate settlements, 000C = Vacate approval step, 000E = pending rent changes.
+--   0005 = vacate requests, 0006 = payments, 0007 = vacate settlements, 000C = Vacate approval step, 000E = pending rent changes, 000F = tenant house history.
 -- TEST-E/F are seeded by a second, separately-guarded block, so re-running this script only adds them.
 -- Houses/tenants/vacate requests/settlements end in A-F to match TEST-A..TEST-F;
 -- payments end in <house letter> + YYYYMM (e.g. ...0006-00000A202609 = TEST-A, Sept 2026).
@@ -724,6 +724,32 @@ BEGIN
     VALUES ('7E570000-0000-0000-000E-000000000012', '7E570000-0000-0000-0003-000000000012', 2000, 5000, 12, 2026,
             SYSUTCDATETIME(), NULL, '372267DF-7926-4343-9633-8458385AC971');
     PRINT '✅ TEST-I pending rent change seeded (2,000 from December 2026).';
+END
+GO
+
+-- =====================================================
+-- TEST-I tenant history: the open TenantHouseHistories row the app writes when a tenant moves in. Makes TEST-I
+-- an "ever occupied" house, so HouseController.BulkPriceChange must refuse it (occupied-house price changes go
+-- through the flat edit request flow). Other TEST houses still have no history.
+-- =====================================================
+SET NOCOUNT ON;
+
+IF NOT EXISTS (SELECT 1 FROM Houses WHERE Id = '7E570000-0000-0000-0003-000000000012')
+BEGIN
+    PRINT '❌ TEST-I house not found — the TEST-I block must seed first.';
+END
+ELSE IF EXISTS (SELECT 1 FROM TenantHouseHistories WHERE Id = '7E570000-0000-0000-000F-000000000012')
+BEGIN
+    PRINT '⚠️ TEST-I tenant history already seeded — nothing inserted.';
+END
+ELSE
+BEGIN
+    INSERT INTO TenantHouseHistories (Id, HouseId, TenantId, TenantFirstName, TenantLastName, TenantEmail, TenantPhone,
+                                      HouseNumber, FlatName, AssignedAt, RemovedAt, TenancyCycle)
+    VALUES ('7E570000-0000-0000-000F-000000000012', '7E570000-0000-0000-0003-000000000012', '7E570000-0000-0000-0004-000000000012',
+            'Test Tenant', 'MultiOverdue', 'test-tenant-multioverdue@shms-test.invalid', '254700000009',
+            'TEST-I', N'TEST PROPERTY — DO NOT USE', '2026-07-01T09:00:00', NULL, 1);
+    PRINT '✅ TEST-I tenant history seeded.';
 END
 GO
 
