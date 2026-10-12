@@ -204,8 +204,8 @@ public class PortalPaymentController : ControllerBase
             if (payingTenant != null && TenantAccessHelper.IsReadOnlyUntilMoveIn(payingTenant))
                 return BadRequest(new { success = false, message = "Your account is read-only until your move-in month arrives." });
 
-            var existingProcessing = await _context.Payments
-                .Where(p => p.TenantId == userId && p.PaymentStatus == PaymentTransactionStatus.Processing && !p.IsDeleted)
+            var existingProcessing = await _context.PaymentCheckoutAttempts
+                .Where(a => a.AttemptStatus == "Processing" && a.Payment!.TenantId == userId && !a.Payment.IsDeleted)
                 .FirstOrDefaultAsync();
             if (existingProcessing != null)
                 return BadRequest(new { success = false, message = "A payment is already being processed. Please wait a moment or check your phone." });

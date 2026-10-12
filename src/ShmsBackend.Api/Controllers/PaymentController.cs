@@ -64,8 +64,8 @@ public class PaymentController : ControllerBase
                     return StatusCode(403, new { success = false, message = "You are not authorized to initiate payments for this flat." });
             }
 
-            var existingProcessing = await _context.Payments
-                .Where(p => p.TenantId == dto.TenantId && p.PaymentStatus == PaymentTransactionStatus.Processing && !p.IsDeleted)
+            var existingProcessing = await _context.PaymentCheckoutAttempts
+                .Where(a => a.AttemptStatus == "Processing" && a.Payment!.TenantId == dto.TenantId && !a.Payment.IsDeleted)
                 .FirstOrDefaultAsync();
             if (existingProcessing != null)
                 return BadRequest(new { success = false, message = "A payment is already being processed for this tenant. Please wait a moment or check their phone." });
@@ -243,6 +243,14 @@ public class PaymentController : ControllerBase
 
             if (payment.PaymentStatus == PaymentTransactionStatus.Paid)
                 return BadRequest(new { success = false, message = "Payment is already completed." });
+
+            // Checked before the row is reset below — clearing CheckoutRequestId/RequestedDistributionAmount under a
+            // push that's still in flight would misroute its callback.
+            var existingProcessing = await _context.PaymentCheckoutAttempts
+                .Where(a => a.AttemptStatus == "Processing" && a.Payment!.TenantId == payment.TenantId && !a.Payment.IsDeleted)
+                .FirstOrDefaultAsync();
+            if (existingProcessing != null)
+                return BadRequest(new { success = false, message = "A payment is already being processed for this tenant. Please wait a moment or check their phone." });
 
             var activeVacate = await _paymentService.GetActiveApprovedVacateRequestAsync(payment.TenantId);
             if (activeVacate != null
