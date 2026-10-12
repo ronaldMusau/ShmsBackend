@@ -499,6 +499,33 @@ public class PaymentController : ControllerBase
             Payments = payments
         };
 
+        // With an approved vacate, also show what the tenant can still pay through the vacate month.
+        // Without one, the response stays exactly as before.
+        var activeVacate = currentTenant == null
+            ? null
+            : await _paymentService.GetActiveApprovedVacateRequestAsync(currentTenant.Id);
+        if (activeVacate != null && activeVacate.HouseId == houseId)
+        {
+            var vacateOwed = await _paymentService.GetOwedThroughMonthAsync(
+                currentTenant!.Id, activeVacate.HouseId, activeVacate.TenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear);
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    summary.TenantId,
+                    summary.TenantName,
+                    summary.TenantPhoneNumber,
+                    summary.TotalCollected,
+                    summary.TotalPending,
+                    summary.TotalOverdue,
+                    summary.PaymentCount,
+                    summary.Payments,
+                    VacateOwed = vacateOwed
+                }
+            });
+        }
+
         return Ok(new { success = true, data = summary });
     }
 
