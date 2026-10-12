@@ -11,6 +11,7 @@ public class RewardService : IRewardService
 {
     private readonly ShmsDbContext _context;
     private readonly IPaymentDistributionService _distributionService;
+    private readonly VacateOwedCalculator _vacateOwedCalculator;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<RewardService> _logger;
@@ -18,12 +19,14 @@ public class RewardService : IRewardService
     public RewardService(
         ShmsDbContext context,
         IPaymentDistributionService distributionService,
+        VacateOwedCalculator vacateOwedCalculator,
         IEmailService emailService,
         INotificationService notificationService,
         ILogger<RewardService> logger)
     {
         _context = context;
         _distributionService = distributionService;
+        _vacateOwedCalculator = vacateOwedCalculator;
         _emailService = emailService;
         _notificationService = notificationService;
         _logger = logger;
@@ -97,6 +100,21 @@ public class RewardService : IRewardService
         var kesAmount = pointsToRedeem * settings.RedemptionRate;
         if (kesAmount <= 0)
             return new RedeemPointsResult { Success = false, Message = "Insufficient points." };
+
+        // Same cap as cash payments: with an approved vacate, redeem at most what's still owed through the
+        // vacate month, so points never fill months after it.
+        var activeVacate = await _vacateOwedCalculator.GetActiveApprovedVacateRequestAsync(tenantId);
+        if (activeVacate != null)
+        {
+            var owed = await _vacateOwedCalculator.GetOwedThroughMonthAsync(
+                tenantId, activeVacate.HouseId, activeVacate.TenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear);
+            if (kesAmount > owed.Total)
+                return new RedeemPointsResult
+                {
+                    Success = false,
+                    Message = $"You can redeem up to KES {owed.Total:N2} before your vacate month — this redemption (KES {kesAmount:N2}) would exceed that."
+                };
+        }
 
         var redemptionReference = await GenerateRedemptionReferenceAsync();
 

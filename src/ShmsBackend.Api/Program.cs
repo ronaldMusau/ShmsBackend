@@ -166,6 +166,7 @@ builder.Services.Configure<MpesaConfig>(builder.Configuration.GetSection("Mpesa"
 builder.Services.AddHttpClient("Mpesa");
 builder.Services.AddSingleton<IMpesaService, MpesaService>();
 builder.Services.AddScoped<IPaymentDistributionService, PaymentDistributionService>();
+builder.Services.AddScoped<VacateOwedCalculator>();
 builder.Services.AddScoped<IRewardService, RewardService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddHostedService<PaymentSchedulerService>();

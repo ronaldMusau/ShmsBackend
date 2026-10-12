@@ -29,6 +29,18 @@ public class PortalPaymentController : ControllerBase
         _logger = logger;
     }
 
+    private static bool IsAfterMonth(int year, int month, int anchorYear, int anchorMonth)
+        => year > anchorYear || (year == anchorYear && month > anchorMonth);
+
+    private BadRequestObjectResult VacateCapExceeded(VacateOwedBreakdown owed)
+        => BadRequest(new
+        {
+            success = false,
+            errorType = "VacateCapExceeded",
+            message = $"You can pay up to KES {owed.Total:N2} before your vacate month — this would exceed that.",
+            vacateOwed = owed
+        });
+
     // GET /api/portalpayments/my-payments — tenant views their own payments
     [HttpGet("my-payments")]
     public async Task<IActionResult> GetMyPayments()
@@ -106,26 +118,38 @@ public class PortalPaymentController : ControllerBase
             .OrderByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
 
-        if (payment == null)
-            return Ok(new { success = true, data = (object?)null, message = "No payment due this month." });
+        // With an approved vacate, also return what's left to pay through the vacate month (overdue / still to
+        // come / total) so the Pay Rent tab can show it. Response is unchanged for everyone else.
+        var activeVacate = await _paymentService.GetActiveApprovedVacateRequestAsync(userId);
+        var vacateOwed = activeVacate == null
+            ? null
+            : await _paymentService.GetOwedThroughMonthAsync(
+                userId, activeVacate.HouseId, activeVacate.TenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear);
 
-        return Ok(new
+        if (payment == null)
         {
-            success = true,
-            data = new
-            {
-                payment.Id,
-                payment.Amount,
-                payment.AmountPaid,
-                payment.Balance,
-                payment.RentAmount,
-                Status = payment.PaymentStatus.ToString(),
-                payment.DueDate,
-                payment.Month,
-                payment.Year,
-                payment.Description
-            }
-        });
+            if (vacateOwed != null)
+                return Ok(new { success = true, data = (object?)null, message = "No payment due this month.", vacateOwed });
+            return Ok(new { success = true, data = (object?)null, message = "No payment due this month." });
+        }
+
+        var data = new
+        {
+            payment.Id,
+            payment.Amount,
+            payment.AmountPaid,
+            payment.Balance,
+            payment.RentAmount,
+            Status = payment.PaymentStatus.ToString(),
+            payment.DueDate,
+            payment.Month,
+            payment.Year,
+            payment.Description
+        };
+
+        if (vacateOwed != null)
+            return Ok(new { success = true, data, vacateOwed });
+        return Ok(new { success = true, data });
     }
 
     // GET /api/portalpayments/house/{houseId}/current-status — agent views current-month payment status for a house
@@ -186,20 +210,35 @@ public class PortalPaymentController : ControllerBase
             if (existingProcessing != null)
                 return BadRequest(new { success = false, message = "A payment is already being processed. Please wait a moment or check your phone." });
 
-            // No amount means "pay what's currently due" — every row still owing up to the current month.
-            // Oldest row anchors the STK push; with several rows owing, charge the combined balance as a lump
-            // sum — ProcessCallbackAsync fills the anchor, then PaymentDistributionService's arrears loop
-            // settles the remaining rows oldest-first (same mechanism as PaymentController's pay-on-behalf).
+            // Once a vacate is approved, the tenant can pay at most what's still owed through the vacate month.
+            var activeVacate = await _paymentService.GetActiveApprovedVacateRequestAsync(userId);
+            VacateOwedBreakdown? vacateOwed = activeVacate == null
+                ? null
+                : await _paymentService.GetOwedThroughMonthAsync(
+                    userId, activeVacate.HouseId, activeVacate.TenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear);
+
+            if (vacateOwed != null && dto.Amount.HasValue && dto.Amount.Value > vacateOwed.Total)
+                return VacateCapExceeded(vacateOwed);
+
+            // No amount means "pay what's currently due" — every row still owing up to the current month (or the
+            // vacate month, if that's earlier). Oldest row anchors the STK push; with several rows owing, charge
+            // the combined balance as a lump sum — ProcessCallbackAsync fills the anchor, then
+            // PaymentDistributionService's arrears loop settles the remaining rows oldest-first (same mechanism
+            // as PaymentController's pay-on-behalf).
             Payment? payment = null;
             decimal? arrearsLumpSum = null;
             if (!dto.Amount.HasValue && payingTenant?.HouseId != null)
             {
                 var now = DateTime.UtcNow;
+                var (boundYear, boundMonth) = (now.Year, now.Month);
+                if (activeVacate != null && IsAfterMonth(boundYear, boundMonth, activeVacate.VacateYear, activeVacate.VacateMonth))
+                    (boundYear, boundMonth) = (activeVacate.VacateYear, activeVacate.VacateMonth);
+
                 var duePayments = await _context.Payments
                     .Where(p => p.TenantId == userId && p.HouseId == payingTenant.HouseId
                              && p.TenancyCycle == payingTenant.TenancyCycle
                              && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted
-                             && (p.Year < now.Year || (p.Year == now.Year && p.Month <= now.Month)))
+                             && (p.Year < boundYear || (p.Year == boundYear && p.Month <= boundMonth)))
                     .OrderBy(p => p.Year).ThenBy(p => p.Month)
                     .ToListAsync();
 
@@ -220,17 +259,34 @@ public class PortalPaymentController : ControllerBase
                         .FirstOrDefaultAsync(p => p.Id == dto.PaymentId.Value && p.TenantId == userId);
                 }
 
+                var useExisting = existing != null && existing.PaymentStatus != PaymentTransactionStatus.Paid;
+
+                // Nothing left owing through the vacate month — refuse before the advance row gets created.
+                if (vacateOwed != null && !useExisting && vacateOwed.Total <= 0)
+                    return VacateCapExceeded(vacateOwed);
+
                 // A named row that's already Paid means the tenant is paying ahead (the prepay flow sends the
                 // current, settled month's id) — route to the advance-payment row exactly as if no id was sent,
                 // rather than rejecting, and never apply new money onto the settled row itself.
-                payment = existing != null && existing.PaymentStatus != PaymentTransactionStatus.Paid
-                    ? existing
+                payment = useExisting
+                    ? existing!
                     : await _paymentService.CreateAdvancePaymentRowAsync(userId)
                         ?? throw new Exception("No house assigned to your account.");
             }
 
-            decimal? actualChargeAmount = null;
             var distributionAmount = dto.Amount ?? arrearsLumpSum;
+
+            // Final check on what this push would actually charge (excluding service charge): the explicit amount,
+            // the lump sum, or the single row's own balance — and never anchor on a row after the vacate month.
+            if (activeVacate != null && vacateOwed != null)
+            {
+                var charge = distributionAmount ?? (payment.Balance > 0 ? payment.Balance : payment.Amount);
+                if (charge > vacateOwed.Total
+                    || IsAfterMonth(payment.Year, payment.Month, activeVacate.VacateYear, activeVacate.VacateMonth))
+                    return VacateCapExceeded(vacateOwed);
+            }
+
+            decimal? actualChargeAmount = null;
             if (distributionAmount.HasValue)
             {
                 var serviceCharge = payment.ServiceChargeAmount ?? 0m;

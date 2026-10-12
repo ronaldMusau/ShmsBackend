@@ -21,12 +21,23 @@ public class PaymentDistributionService : IPaymentDistributionService
 {
     private readonly ShmsDbContext _context;
     private readonly ICacheHelper _cacheHelper;
+    private readonly VacateOwedCalculator _vacateOwedCalculator;
+    private readonly ILogger<PaymentDistributionService> _logger;
 
-    public PaymentDistributionService(ShmsDbContext context, ICacheHelper cacheHelper)
+    public PaymentDistributionService(
+        ShmsDbContext context,
+        ICacheHelper cacheHelper,
+        VacateOwedCalculator vacateOwedCalculator,
+        ILogger<PaymentDistributionService> logger)
     {
         _context = context;
         _cacheHelper = cacheHelper;
+        _vacateOwedCalculator = vacateOwedCalculator;
+        _logger = logger;
     }
+
+    private static bool IsAfterMonth(int year, int month, int anchorYear, int anchorMonth)
+        => year > anchorYear || (year == anchorYear && month > anchorMonth);
 
     private async Task<decimal> GetServiceChargeAsync(decimal rentAmount)
     {
@@ -54,6 +65,14 @@ public class PaymentDistributionService : IPaymentDistributionService
                      && p.Id != excludePaymentId)
             .OrderBy(p => p.Year).ThenBy(p => p.Month)
             .ToListAsync();
+
+        // With an approved vacate, money only ever goes to months up to and including the vacate month: rows
+        // after it are skipped and never created. Without one, nothing below changes.
+        var activeVacate = await _vacateOwedCalculator.GetActiveApprovedVacateRequestAsync(tenantId);
+        if (activeVacate != null)
+            existingUnpaid = existingUnpaid
+                .Where(p => !IsAfterMonth(p.Year, p.Month, activeVacate.VacateYear, activeVacate.VacateMonth))
+                .ToList();
 
         var house = await _context.Houses
             .Include(h => h.Flat)
@@ -103,11 +122,19 @@ public class PaymentDistributionService : IPaymentDistributionService
         {
             if (++totalIterations > 60) break;
             if (itemized.Count > 36) break;
+            if (activeVacate != null
+                && IsAfterMonth(cursorYear, cursorMonth, activeVacate.VacateYear, activeVacate.VacateMonth))
+                break;
 
             var existingMonthRow = await _context.Payments.FirstOrDefaultAsync(p =>
                 p.TenantId == tenantId && p.HouseId == houseId
                 && p.TenancyCycle == tenancyCycle
                 && p.Month == cursorMonth && p.Year == cursorYear && !p.IsDeleted);
+
+            // The deposit sits for the vacate month, so (like GenerateMonthlyPaymentsAsync) never bill a new
+            // row for it — an existing one with a balance is still paid down above.
+            var isDepositCoveredVacateMonth = activeVacate != null && activeVacate.SitDeposit
+                && cursorMonth == activeVacate.VacateMonth && cursorYear == activeVacate.VacateYear;
 
             if (existingMonthRow != null && existingMonthRow.Balance > 0)
             {
@@ -140,7 +167,7 @@ public class PaymentDistributionService : IPaymentDistributionService
                 remaining -= applyAmount;
                 itemized.Add((cursorMonth, cursorYear, applyAmount));
             }
-            else if (existingMonthRow == null)
+            else if (existingMonthRow == null && !isDepositCoveredVacateMonth)
             {
                 // No row yet — create one
                 var monthlyTotal = house.RentFee;
@@ -201,6 +228,17 @@ public class PaymentDistributionService : IPaymentDistributionService
             cursorMonth++;
             if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
         }
+
+        // Upstream caps (self-pay, pay-on-behalf, retry, redemption) should leave nothing here. If something is
+        // left anyway, it is received money sitting on no Payment row — surface it for manual review rather than
+        // dropping it silently or billing a post-vacate month.
+        if (activeVacate != null && remaining > 0)
+            _logger.LogError(
+                "Undistributed remainder of KES {Remaining:N2} for tenant {TenantId}, house {HouseId}, cycle {TenancyCycle}: " +
+                "nothing left owing through approved vacate month {VacateMonth}/{VacateYear} (vacate request {VacateRequestId}). " +
+                "Receipt {ReceiptNumber}, checkout {CheckoutRequestId}, redemption {RedemptionReference}. Needs manual review.",
+                remaining, tenantId, houseId, tenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear, activeVacate.Id,
+                receiptNumber, checkoutRequestId, redemptionReference);
 
         var currentMonthPayment = await _context.Payments
             .Where(p => p.TenantId == tenantId && p.HouseId == houseId && p.TenancyCycle == tenancyCycle

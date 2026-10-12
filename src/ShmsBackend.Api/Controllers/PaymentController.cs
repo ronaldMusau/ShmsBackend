@@ -29,6 +29,18 @@ public class PaymentController : ControllerBase
         _logger = logger;
     }
 
+    private static bool IsAfterMonth(int year, int month, int anchorYear, int anchorMonth)
+        => year > anchorYear || (year == anchorYear && month > anchorMonth);
+
+    private BadRequestObjectResult VacateCapExceeded(VacateOwedBreakdown owed)
+        => BadRequest(new
+        {
+            success = false,
+            errorType = "VacateCapExceeded",
+            message = $"This tenant can pay up to KES {owed.Total:N2} before their vacate month — this would exceed that.",
+            vacateOwed = owed
+        });
+
     // POST /api/payments/initiate — create payment record and trigger STK push
     [HttpPost("initiate")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Agent")]
@@ -58,6 +70,13 @@ public class PaymentController : ControllerBase
             if (existingProcessing != null)
                 return BadRequest(new { success = false, message = "A payment is already being processed for this tenant. Please wait a moment or check their phone." });
 
+            // Once a vacate is approved, at most what's still owed through the vacate month can be paid.
+            var activeVacate = await _paymentService.GetActiveApprovedVacateRequestAsync(dto.TenantId);
+            VacateOwedBreakdown? vacateOwed = activeVacate == null
+                ? null
+                : await _paymentService.GetOwedThroughMonthAsync(
+                    dto.TenantId, activeVacate.HouseId, activeVacate.TenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear);
+
             Payment payment;
             decimal? arrearsLumpSum = null;
             if (dto.Amount.HasValue)
@@ -67,10 +86,18 @@ public class PaymentController : ControllerBase
                 if (tenant == null)
                     return BadRequest(new { success = false, message = "Tenant not found." });
 
+                // Checked before the advance/initial fallbacks below, which create a row.
+                if (vacateOwed != null && dto.Amount.Value > vacateOwed.Total)
+                    return VacateCapExceeded(vacateOwed);
+
+                // With an approved vacate, never anchor on a row after the vacate month.
                 var targetPayment = await _context.Payments
                     .Where(p => p.TenantId == dto.TenantId && p.HouseId == dto.HouseId
                              && p.TenancyCycle == tenant.TenancyCycle
-                             && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted)
+                             && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted
+                             && (activeVacate == null
+                                 || p.Year < activeVacate.VacateYear
+                                 || (p.Year == activeVacate.VacateYear && p.Month <= activeVacate.VacateMonth)))
                     .OrderBy(p => p.Year).ThenBy(p => p.Month)
                     .FirstOrDefaultAsync();
 
@@ -101,14 +128,19 @@ public class PaymentController : ControllerBase
                 {
                     // No amount means "pay what's currently due" — for an already-onboarded tenant that's
                     // every row still owing. Never prepay or re-run onboarding from this branch.
-                    // Bounded at the current month (same as tenant self-pay) — a future month's remaining
-                    // balance isn't owed yet, so it's never swept into the lump sum.
+                    // Bounded at the current month, or the vacate month if that's earlier (same as tenant
+                    // self-pay) — a future month's remaining balance isn't owed yet, and a month after the
+                    // vacate month never is, so neither is swept into the lump sum.
                     var now = DateTime.UtcNow;
+                    var (boundYear, boundMonth) = (now.Year, now.Month);
+                    if (activeVacate != null && IsAfterMonth(boundYear, boundMonth, activeVacate.VacateYear, activeVacate.VacateMonth))
+                        (boundYear, boundMonth) = (activeVacate.VacateYear, activeVacate.VacateMonth);
+
                     var duePayments = await _context.Payments
                         .Where(p => p.TenantId == dto.TenantId && p.HouseId == dto.HouseId
                                  && p.TenancyCycle == tenant.TenancyCycle
                                  && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted
-                                 && (p.Year < now.Year || (p.Year == now.Year && p.Month <= now.Month)))
+                                 && (p.Year < boundYear || (p.Year == boundYear && p.Month <= boundMonth)))
                         .OrderBy(p => p.Year).ThenBy(p => p.Month)
                         .ToListAsync();
 
@@ -124,8 +156,19 @@ public class PaymentController : ControllerBase
                 }
             }
 
-            decimal? actualChargeAmount = null;
             var distributionAmount = dto.Amount ?? arrearsLumpSum;
+
+            // Final check on what this push would actually charge (excluding service charge), and never anchor
+            // on a row after the vacate month.
+            if (activeVacate != null && vacateOwed != null)
+            {
+                var charge = distributionAmount ?? (payment.Balance > 0 ? payment.Balance : payment.Amount);
+                if (charge > vacateOwed.Total
+                    || IsAfterMonth(payment.Year, payment.Month, activeVacate.VacateYear, activeVacate.VacateMonth))
+                    return VacateCapExceeded(vacateOwed);
+            }
+
+            decimal? actualChargeAmount = null;
             if (distributionAmount.HasValue)
             {
                 var serviceCharge = payment.ServiceChargeAmount ?? 0m;
@@ -196,6 +239,16 @@ public class PaymentController : ControllerBase
 
             if (payment.PaymentStatus == PaymentTransactionStatus.Paid)
                 return BadRequest(new { success = false, message = "Payment is already completed." });
+
+            var activeVacate = await _paymentService.GetActiveApprovedVacateRequestAsync(payment.TenantId);
+            if (activeVacate != null
+                && IsAfterMonth(payment.Year, payment.Month, activeVacate.VacateYear, activeVacate.VacateMonth))
+                return BadRequest(new
+                {
+                    success = false,
+                    errorType = "VacateCapExceeded",
+                    message = $"This payment is for {new DateTime(payment.Year, payment.Month, 1):MMMM yyyy}, after the tenant's approved vacate month ({new DateTime(activeVacate.VacateYear, activeVacate.VacateMonth, 1):MMMM yyyy}). It can't be retried."
+                });
 
             payment.PaymentStatus = PaymentTransactionStatus.Pending;
             payment.CheckoutRequestId = null;

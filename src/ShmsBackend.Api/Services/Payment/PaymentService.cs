@@ -29,6 +29,8 @@ public interface IPaymentService
     Task SendRentChangeRemindersAsync();
     Task<VacateSettlementResult> CalculateVacateSettlementAsync(Guid vacateRequestId);
     Task<decimal> GetForfeitableAdvanceAsync(Guid tenantId, Guid houseId, int tenancyCycle, int vacateMonth, int vacateYear);
+    Task<VacateRequest?> GetActiveApprovedVacateRequestAsync(Guid tenantId);
+    Task<VacateOwedBreakdown> GetOwedThroughMonthAsync(Guid tenantId, Guid houseId, int tenancyCycle, int throughMonth, int throughYear);
 }
 
 public class PaymentService : IPaymentService
@@ -42,6 +44,7 @@ public class PaymentService : IPaymentService
     private readonly IPaymentDistributionService _distributionService;
     private readonly IRewardService _rewardService;
     private readonly ICacheHelper _cacheHelper;
+    private readonly VacateOwedCalculator _vacateOwedCalculator;
     private readonly ILogger<PaymentService> _logger;
 
     public PaymentService(
@@ -54,6 +57,7 @@ public class PaymentService : IPaymentService
         IPaymentDistributionService distributionService,
         IRewardService rewardService,
         ICacheHelper cacheHelper,
+        VacateOwedCalculator vacateOwedCalculator,
         ILogger<PaymentService> logger)
     {
         _context = context;
@@ -65,6 +69,7 @@ public class PaymentService : IPaymentService
         _distributionService = distributionService;
         _rewardService = rewardService;
         _cacheHelper = cacheHelper;
+        _vacateOwedCalculator = vacateOwedCalculator;
         _logger = logger;
     }
 
@@ -112,12 +117,7 @@ public class PaymentService : IPaymentService
         // Honor a rent change scheduled to take effect on or before the tenant's actual expected
         // move-in month — pick the latest such change (closest to, but not after, move-in), not just
         // whatever the most-recently-created PendingRentChange happens to be.
-        var applicableRentChange = await _context.PendingRentChanges
-            .Where(pc => pc.HouseId == houseId && pc.AppliedAt == null
-                && (pc.EffectiveYear < moveInYear || (pc.EffectiveYear == moveInYear && pc.EffectiveMonth <= moveInMonth)))
-            .OrderByDescending(pc => pc.EffectiveYear)
-            .ThenByDescending(pc => pc.EffectiveMonth)
-            .FirstOrDefaultAsync();
+        var applicableRentChange = await _vacateOwedCalculator.GetApplicableRentChangeAsync(houseId, moveInMonth, moveInYear);
         var effectiveRentFee = applicableRentChange?.NewRentFee ?? house.RentFee;
         var effectiveDepositFee = applicableRentChange?.NewDepositFee ?? house.DepositFee;
 
@@ -1033,6 +1033,13 @@ public class PaymentService : IPaymentService
         return paidAfterVacate + Math.Max(0, paidThroughVacate - dueThroughVacate);
     }
 
+    public Task<VacateRequest?> GetActiveApprovedVacateRequestAsync(Guid tenantId)
+        => _vacateOwedCalculator.GetActiveApprovedVacateRequestAsync(tenantId);
+
+    public Task<VacateOwedBreakdown> GetOwedThroughMonthAsync(
+        Guid tenantId, Guid houseId, int tenancyCycle, int throughMonth, int throughYear)
+        => _vacateOwedCalculator.GetOwedThroughMonthAsync(tenantId, houseId, tenancyCycle, throughMonth, throughYear);
+
     public async Task SendRentChangeRemindersAsync()
     {
         var now = DateTime.UtcNow;
@@ -1295,4 +1302,11 @@ public class VacateSettlementResult
     public decimal AdvanceForfeited { get; set; }
     public string Direction { get; set; } = string.Empty;
     public decimal FinalAmount { get; set; }
+}
+
+public class VacateOwedBreakdown
+{
+    public decimal Overdue { get; set; }
+    public decimal Remaining { get; set; }
+    public decimal Total { get; set; }
 }
