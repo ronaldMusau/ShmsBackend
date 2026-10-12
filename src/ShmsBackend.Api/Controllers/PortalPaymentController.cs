@@ -186,24 +186,20 @@ public class PortalPaymentController : ControllerBase
             if (existingProcessing != null)
                 return BadRequest(new { success = false, message = "A payment is already being processed. Please wait a moment or check your phone." });
 
-            Payment payment;
-
+            Payment? existing = null;
             if (dto.PaymentId.HasValue)
             {
-                var existing = await _context.Payments
+                existing = await _context.Payments
                     .FirstOrDefaultAsync(p => p.Id == dto.PaymentId.Value && p.TenantId == userId);
-
-                if (existing != null && existing.PaymentStatus == PaymentTransactionStatus.Paid)
-                    return BadRequest(new { success = false, message = "Payment already completed." });
-
-                payment = existing ?? await CreateAdvancePaymentRowAsync(userId)
-                    ?? throw new Exception("No house assigned to your account.");
             }
-            else
-            {
-                payment = await CreateAdvancePaymentRowAsync(userId)
+
+            // A named row that's already Paid means the tenant is paying ahead (the prepay flow sends the
+            // current, settled month's id) — route to the advance-payment row exactly as if no id was sent,
+            // rather than rejecting, and never apply new money onto the settled row itself.
+            var payment = existing != null && existing.PaymentStatus != PaymentTransactionStatus.Paid
+                ? existing
+                : await _paymentService.CreateAdvancePaymentRowAsync(userId)
                     ?? throw new Exception("No house assigned to your account.");
-            }
 
             decimal? actualChargeAmount = null;
             if (dto.Amount.HasValue)
@@ -427,80 +423,6 @@ public class PortalPaymentController : ControllerBase
             .ToListAsync();
 
         return Ok(new { success = true, data = applications });
-    }
-
-    private async Task<Payment?> CreateAdvancePaymentRowAsync(Guid userId)
-    {
-        var tenant = await _context.Tenants
-            .Include(t => t.House)
-                .ThenInclude(h => h!.Flat)
-            .FirstOrDefaultAsync(t => t.Id == userId);
-
-        if (tenant?.House == null || tenant.House.Flat == null)
-            return null;
-
-        var house = tenant.House;
-        var flat = house.Flat;
-        var serviceCharge = await _paymentService.GetServiceChargeAsync(house.RentFee);
-        var totalDue = house.RentFee;
-        var now = DateTime.UtcNow;
-
-        // Find earliest month that has no row or still has a balance owing — skip only fully-settled months
-        var cursorMonth = now.Month;
-        var cursorYear = now.Year;
-        for (var i = 0; i < 12; i++)
-        {
-            var settled = await _context.Payments.AnyAsync(p =>
-                p.TenantId == userId && p.HouseId == house.Id
-                && p.TenancyCycle == tenant.TenancyCycle
-                && p.Month == cursorMonth && p.Year == cursorYear
-                && !p.IsDeleted && p.Balance <= 0);
-
-            if (!settled) break;
-
-            cursorMonth++;
-            if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
-        }
-
-        // If an unpaid row already exists for the target month, return it instead of creating a duplicate
-        var existingForMonth = await _context.Payments.FirstOrDefaultAsync(p =>
-            p.TenantId == userId && p.HouseId == house.Id
-            && p.TenancyCycle == tenant.TenancyCycle
-            && p.Month == cursorMonth && p.Year == cursorYear
-            && !p.IsDeleted);
-
-        if (existingForMonth != null)
-            return existingForMonth;
-
-        var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth));
-        var newPayment = new Payment
-        {
-            Id = Guid.NewGuid(),
-            TenantId = userId,
-            HouseId = house.Id,
-            FlatId = flat.Id,
-            LandlordId = flat.LandlordId,
-            Amount = totalDue,
-            AmountPaid = 0,
-            Balance = totalDue,
-            RentAmount = house.RentFee,
-            ServiceChargeAmount = serviceCharge,
-            PaymentStatus = PaymentTransactionStatus.Pending,
-            PaymentType = PaymentType.Rent,
-            PhoneNumber = tenant.PhoneNumber,
-            DueDate = new DateTime(cursorYear, cursorMonth, rentDueDay),
-            Month = cursorMonth,
-            Year = cursorYear,
-            TenancyCycle = tenant.TenancyCycle,
-            IsInitialPayment = false,
-            Description = $"Monthly rent - {new DateTime(cursorYear, cursorMonth, 1):MMMM yyyy}",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        await _context.Payments.AddAsync(newPayment);
-        await _context.SaveChangesAsync();
-        return newPayment;
     }
 }
 

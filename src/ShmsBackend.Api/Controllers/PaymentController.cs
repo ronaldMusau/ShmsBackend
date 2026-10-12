@@ -73,13 +73,45 @@ public class PaymentController : ControllerBase
                     .OrderBy(p => p.Year).ThenBy(p => p.Month)
                     .FirstOrDefaultAsync();
 
-                payment = targetPayment
-                    ?? await _paymentService.CreateInitialPaymentAsync(dto.TenantId, dto.HouseId, dto.PhoneNumber);
+                // Nothing currently owing: an already-onboarded tenant is paying ahead, so target the
+                // advance-payment row — CreateInitialPaymentAsync is only for a genuine first payment and
+                // would otherwise re-run onboarding (status reset, history row, account-ready email).
+                if (targetPayment != null)
+                    payment = targetPayment;
+                else if (tenant.HasCompletedInitialPayment)
+                    payment = await _paymentService.CreateAdvancePaymentRowAsync(dto.TenantId)
+                        ?? throw new Exception("Tenant has no house assigned.");
+                else
+                    payment = await _paymentService.CreateInitialPaymentAsync(dto.TenantId, dto.HouseId, dto.PhoneNumber);
             }
             else
             {
-                payment = await _paymentService.CreateInitialPaymentAsync(
-                    dto.TenantId, dto.HouseId, dto.PhoneNumber);
+                var tenant = await _context.Tenants
+                    .FirstOrDefaultAsync(t => t.Id == dto.TenantId);
+                if (tenant == null)
+                    return BadRequest(new { success = false, message = "Tenant not found." });
+
+                if (!tenant.HasCompletedInitialPayment)
+                {
+                    payment = await _paymentService.CreateInitialPaymentAsync(
+                        dto.TenantId, dto.HouseId, dto.PhoneNumber);
+                }
+                else
+                {
+                    // No amount means "pay what's currently due" — for an already-onboarded tenant that's
+                    // the oldest row still owing. Never prepay or re-run onboarding from this branch.
+                    var duePayment = await _context.Payments
+                        .Where(p => p.TenantId == dto.TenantId && p.HouseId == dto.HouseId
+                                 && p.TenancyCycle == tenant.TenancyCycle
+                                 && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted)
+                        .OrderBy(p => p.Year).ThenBy(p => p.Month)
+                        .FirstOrDefaultAsync();
+
+                    if (duePayment == null)
+                        return BadRequest(new { success = false, message = "This tenant has no outstanding balance. Enter an amount to pay in advance." });
+
+                    payment = duePayment;
+                }
             }
 
             decimal? actualChargeAmount = null;
