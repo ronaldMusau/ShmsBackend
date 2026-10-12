@@ -39,6 +39,14 @@ public class OverdueController : ControllerBase
         return Guid.TryParse(claim, out var id) ? id : Guid.Empty;
     }
 
+    // Warnings and force-vacate apply only to an onboarded tenant — same predicate GenerateMonthlyPaymentsAsync
+    // bills on. A pre-registered tenant (Inactive, initial payment not yet made) never qualifies, even inside
+    // the 72-hour window before PreRegistrationExpirySchedulerService removes them. Pending is included: that
+    // tenant has paid/been onboarded and is billed rent, they just haven't set a password yet.
+    private static bool IsOnboardedTenant(Tenant t) =>
+        t.HasCompletedInitialPayment
+        && (t.TenantStatus == TenantStatus.Active || t.TenantStatus == TenantStatus.Pending);
+
     // GET /api/overdue/tenants
     [HttpGet("tenants")]
     public async Task<IActionResult> GetOverdueTenants()
@@ -55,7 +63,7 @@ public class OverdueController : ControllerBase
                 && p.DueDate < now
                 && !p.IsDeleted)
             .ToListAsync())
-            .Where(p => p.Tenant != null && p.TenancyCycle == p.Tenant.TenancyCycle)
+            .Where(p => p.Tenant != null && p.TenancyCycle == p.Tenant.TenancyCycle && IsOnboardedTenant(p.Tenant))
             .ToList();
 
         var groups = overduePayments
@@ -196,6 +204,9 @@ public class OverdueController : ControllerBase
         if (tenant == null)
             return NotFound(new { success = false, message = "Tenant not found." });
 
+        if (!IsOnboardedTenant(tenant))
+            return BadRequest(new { success = false, message = "Warnings can only be sent to an active tenant, not a pre-registered one." });
+
         var snapshot = await ComputeOverdueSnapshotAsync(tenantId);
         if (snapshot == null)
             return NotFound(new { success = false, message = "Tenant not found." });
@@ -280,6 +291,9 @@ public class OverdueController : ControllerBase
 
         if (tenant == null)
             return NotFound(new { success = false, message = "Tenant not found." });
+
+        if (!IsOnboardedTenant(tenant))
+            return BadRequest(new { success = false, message = "Only an active tenant can be force-vacated, not a pre-registered one." });
 
         if (tenant.House == null || tenant.House.Flat == null)
             return BadRequest(new { success = false, message = "Tenant is not assigned to a house." });

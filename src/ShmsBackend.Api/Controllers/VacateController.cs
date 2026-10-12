@@ -70,27 +70,23 @@ public class VacateController : ControllerBase
         if (tenant.House == null || tenant.House.Flat == null)
             return BadRequest(new { success = false, message = "Tenant is not assigned to a house." });
 
+        // Vacate arrears = only rows whose due date has passed — a partially prepaid future month isn't owed yet.
+        var todayUtc = DateTime.UtcNow.Date;
         var arrears = await _context.Payments
             .Where(p => p.TenantId == tenantId
                 && p.TenancyCycle == tenant.TenancyCycle
                 && !p.IsDeleted
+                && p.DueDate < todayUtc
                 && (p.PaymentStatus == PaymentTransactionStatus.Overdue
                     || p.PaymentStatus == PaymentTransactionStatus.Pending
                     || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))
             .SumAsync(p => p.Balance);
 
-        var totalPaid = await _context.Payments
-            .Where(p => p.TenantId == tenantId && !p.IsDeleted)
-            .SumAsync(p => p.AmountPaid);
-
-        var totalDue = await _context.Payments
-            .Where(p => p.TenantId == tenantId
-                && !p.IsDeleted
-                && p.PaymentStatus != PaymentTransactionStatus.Cancelled
-                && p.PaymentStatus != PaymentTransactionStatus.Failed)
-            .SumAsync(p => p.Amount);
-
-        var advanceCredit = Math.Max(0, totalPaid - totalDue);
+        // No vacate month chosen yet — anchor at the current month: "paid credit that's at risk if they vacate".
+        // CreateRequest re-checks against the chosen month, which can only give the same or a smaller figure.
+        var nowUtc = DateTime.UtcNow;
+        var advanceCredit = await _paymentService.GetForfeitableAdvanceAsync(
+            tenantId, tenant.House.Id, tenant.TenancyCycle, nowUtc.Month, nowUtc.Year);
 
         var today = DateTime.UtcNow.Day;
         var deadlineDay = tenant.House.Flat.VacateNoticeDeadlineDay;
@@ -145,10 +141,13 @@ public class VacateController : ControllerBase
         if (callerRole == "Tenant" && DateTime.UtcNow.Day > tenant.House.Flat.VacateNoticeDeadlineDay)
             return BadRequest(new { success = false, message = "Vacate notice window has closed for this month." });
 
+        // Vacate arrears = only rows whose due date has passed — a partially prepaid future month isn't owed yet.
+        var todayUtc = DateTime.UtcNow.Date;
         var arrears = await _context.Payments
             .Where(p => p.TenantId == dto.TenantId
                 && p.TenancyCycle == tenant.TenancyCycle
                 && !p.IsDeleted
+                && p.DueDate < todayUtc
                 && (p.PaymentStatus == PaymentTransactionStatus.Overdue
                     || p.PaymentStatus == PaymentTransactionStatus.Pending
                     || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))
@@ -171,30 +170,6 @@ public class VacateController : ControllerBase
             });
         }
 
-        if (callerRole == "Tenant")
-        {
-            var totalPaid = await _context.Payments
-                .Where(p => p.TenantId == dto.TenantId && !p.IsDeleted)
-                .SumAsync(p => p.AmountPaid);
-
-            var totalDue = await _context.Payments
-                .Where(p => p.TenantId == dto.TenantId
-                    && !p.IsDeleted
-                    && p.PaymentStatus != PaymentTransactionStatus.Cancelled
-                    && p.PaymentStatus != PaymentTransactionStatus.Failed)
-                .SumAsync(p => p.Amount);
-
-            var advanceCredit = Math.Max(0, totalPaid - totalDue);
-            if (advanceCredit > 0)
-                return BadRequest(new
-                {
-                    success = false,
-                    errorType = "AdvanceCreditBlock",
-                    advanceCreditAmount = advanceCredit,
-                    message = "You have a credit balance — please contact management to arrange vacating; advance payments are not refunded."
-                });
-        }
-
         DateTime requestDate;
         try { requestDate = new DateTime(dto.VacateYear, dto.VacateMonth, 1); }
         catch { return BadRequest(new { success = false, message = "Invalid vacate month or year." }); }
@@ -204,6 +179,22 @@ public class VacateController : ControllerBase
         var maxDate = minDate.AddMonths(5);
         if (requestDate < minDate || requestDate > maxDate)
             return BadRequest(new { success = false, message = "Vacate month must be between now and 5 months from today." });
+
+        // Checked after the month is validated, since the figure is anchored to the chosen vacate month: only
+        // money paid for months after it is at risk. Never larger than what GetEligibility showed (anchored at now).
+        if (callerRole == "Tenant")
+        {
+            var advanceCredit = await _paymentService.GetForfeitableAdvanceAsync(
+                dto.TenantId, tenant.House.Id, tenant.TenancyCycle, dto.VacateMonth, dto.VacateYear);
+            if (advanceCredit > 0)
+                return BadRequest(new
+                {
+                    success = false,
+                    errorType = "AdvanceCreditBlock",
+                    advanceCreditAmount = advanceCredit,
+                    message = $"You have KES {advanceCredit:N2} paid for months after your chosen vacate month — please contact management to arrange vacating; advance payments are not refunded."
+                });
+        }
 
         var existingRequest = await _context.VacateRequests.AnyAsync(r =>
             r.TenantId == dto.TenantId && r.Status != "Closed" && r.Status != "Cancelled" && !r.IsDeleted);
@@ -2119,10 +2110,16 @@ public class VacateController : ControllerBase
                 message = "Tenant is not yet in SettlingVacate status. Clearance is not yet applicable."
             });
 
+        // Vacate arrears = only rows whose due date has passed, up to and including the vacate month.
+        // Rows after the vacate month are forfeited at settlement, so their unpaid remainder is never owed.
+        var todayUtc = DateTime.UtcNow.Date;
         var arrears = await _context.Payments
             .Where(p => p.TenantId == vacateRequest.TenantId
                 && p.TenancyCycle == tenant.TenancyCycle
                 && !p.IsDeleted
+                && p.DueDate < todayUtc
+                && (p.Year < vacateRequest.VacateYear
+                    || (p.Year == vacateRequest.VacateYear && p.Month <= vacateRequest.VacateMonth))
                 && (p.PaymentStatus == PaymentTransactionStatus.Overdue
                     || p.PaymentStatus == PaymentTransactionStatus.Pending
                     || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))
@@ -2170,10 +2167,15 @@ public class VacateController : ControllerBase
         if (tenant == null)
             return NotFound(new { success = false, message = "Tenant not found." });
 
+        // Same rule as GetClearChecklist: due rows only, nothing after the vacate month.
+        var todayUtc = DateTime.UtcNow.Date;
         var arrears = await _context.Payments
             .Where(p => p.TenantId == vacateRequest.TenantId
                 && p.TenancyCycle == tenant.TenancyCycle
                 && !p.IsDeleted
+                && p.DueDate < todayUtc
+                && (p.Year < vacateRequest.VacateYear
+                    || (p.Year == vacateRequest.VacateYear && p.Month <= vacateRequest.VacateMonth))
                 && (p.PaymentStatus == PaymentTransactionStatus.Overdue
                     || p.PaymentStatus == PaymentTransactionStatus.Pending
                     || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))

@@ -28,6 +28,7 @@ public interface IPaymentService
     Task CheckOverduePaymentsAsync();
     Task SendRentChangeRemindersAsync();
     Task<VacateSettlementResult> CalculateVacateSettlementAsync(Guid vacateRequestId);
+    Task<decimal> GetForfeitableAdvanceAsync(Guid tenantId, Guid houseId, int tenancyCycle, int vacateMonth, int vacateYear);
 }
 
 public class PaymentService : IPaymentService
@@ -122,8 +123,11 @@ public class PaymentService : IPaymentService
 
         var serviceCharge = await GetServiceChargeAsync(effectiveRentFee);
         var totalAmount = effectiveDepositFee + effectiveRentFee;
-        var dueDate = new DateTime(now.Year, now.Month,
-            Math.Min(flat.RentDueDay, DateTime.DaysInMonth(now.Year, now.Month)));
+        // The initial payment covers the tenant's real move-in month (a pre-registered tenant may move in
+        // months after this row is created) — same Month/Year/DueDate derivation as TenantService's
+        // IsAwaitingExistingTenant fast-path.
+        var dueDate = new DateTime(moveInYear, moveInMonth,
+            Math.Min(flat.RentDueDay, DateTime.DaysInMonth(moveInYear, moveInMonth)));
 
         var payment = new PaymentRecord
         {
@@ -143,8 +147,8 @@ public class PaymentService : IPaymentService
             PaymentMethod = PaymentMethod.Mpesa,
             PhoneNumber = phoneNumber,
             DueDate = dueDate,
-            Month = now.Month,
-            Year = now.Year,
+            Month = moveInMonth,
+            Year = moveInYear,
             IsInitialPayment = true,
             TenancyCycle = tenant.TenancyCycle,
             Description = "Initial payment: Deposit + Rent",
@@ -893,13 +897,13 @@ public class PaymentService : IPaymentService
         {
             try
             {
+                // An initial-payment row counts: its rent portion already covers the move-in month.
                 var exists = await _context.Payments.AnyAsync(p =>
                     p.TenantId == tenant.Id &&
                     p.Month == now.Month &&
                     p.Year == now.Year &&
                     p.TenancyCycle == tenant.TenancyCycle &&
                     p.HouseId == tenant.HouseId &&
-                    !p.IsInitialPayment &&
                     !p.IsDeleted);
 
                 if (exists) continue;
@@ -995,6 +999,38 @@ public class PaymentService : IPaymentService
             .SumAsync(p => p.Amount);
 
         return Math.Max(0, totalPaid - totalDue);
+    }
+
+    // Money the tenant has paid that a vacate effective at the anchor month makes unusable. Rows are split at
+    // the anchor month into two disjoint sets so nothing is counted twice:
+    //  - rows dated AFTER the anchor month: all AmountPaid (overpayments materialise as future-dated rows);
+    //  - rows up to and including the anchor month: any loose credit left over, using GetRemainingCreditAsync's
+    //    paid-minus-due formula restricted to those rows. Running that formula over all rows would let a
+    //    partially-prepaid future row's unpaid balance net against real credit.
+    // The anchor is the vacate month at settlement/request time, or the current month before one is chosen.
+    // The result never grows as the anchor moves later, so a later vacate month can only shrink it.
+    public async Task<decimal> GetForfeitableAdvanceAsync(
+        Guid tenantId, Guid houseId, int tenancyCycle, int vacateMonth, int vacateYear)
+    {
+        var cycleRows = _context.Payments.Where(p =>
+            p.TenantId == tenantId
+            && p.HouseId == houseId
+            && p.TenancyCycle == tenancyCycle
+            && !p.IsDeleted);
+
+        var paidAfterVacate = await cycleRows
+            .Where(p => p.Year > vacateYear || (p.Year == vacateYear && p.Month > vacateMonth))
+            .SumAsync(p => p.AmountPaid);
+
+        var throughVacate = cycleRows
+            .Where(p => p.Year < vacateYear || (p.Year == vacateYear && p.Month <= vacateMonth));
+        var paidThroughVacate = await throughVacate.SumAsync(p => p.AmountPaid);
+        var dueThroughVacate = await throughVacate
+            .Where(p => p.PaymentStatus != PaymentTransactionStatus.Cancelled
+                && p.PaymentStatus != PaymentTransactionStatus.Failed)
+            .SumAsync(p => p.Amount);
+
+        return paidAfterVacate + Math.Max(0, paidThroughVacate - dueThroughVacate);
     }
 
     public async Task SendRentChangeRemindersAsync()
@@ -1162,7 +1198,9 @@ public class PaymentService : IPaymentService
         var totalDamages = vacateRequest.InspectionLines.Sum(l => l.AssessedAmount ?? 0m);
         var totalOwed = totalDamages;
 
-        var advanceBalance = await GetRemainingCreditAsync(tenant.Id);
+        var advanceBalance = await GetForfeitableAdvanceAsync(
+            vacateRequest.TenantId, vacateRequest.HouseId, vacateRequest.TenancyCycle,
+            vacateRequest.VacateMonth, vacateRequest.VacateYear);
         var advanceAppliedToDamages = Math.Min(advanceBalance, totalOwed);
         var advanceForfeitedUnused = advanceBalance - advanceAppliedToDamages;
         var remainingAfterAdvance = Math.Max(0, totalOwed - advanceBalance);

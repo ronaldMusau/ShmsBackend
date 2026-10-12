@@ -186,27 +186,56 @@ public class PortalPaymentController : ControllerBase
             if (existingProcessing != null)
                 return BadRequest(new { success = false, message = "A payment is already being processed. Please wait a moment or check your phone." });
 
-            Payment? existing = null;
-            if (dto.PaymentId.HasValue)
+            // No amount means "pay what's currently due" — every row still owing up to the current month.
+            // Oldest row anchors the STK push; with several rows owing, charge the combined balance as a lump
+            // sum — ProcessCallbackAsync fills the anchor, then PaymentDistributionService's arrears loop
+            // settles the remaining rows oldest-first (same mechanism as PaymentController's pay-on-behalf).
+            Payment? payment = null;
+            decimal? arrearsLumpSum = null;
+            if (!dto.Amount.HasValue && payingTenant?.HouseId != null)
             {
-                existing = await _context.Payments
-                    .FirstOrDefaultAsync(p => p.Id == dto.PaymentId.Value && p.TenantId == userId);
+                var now = DateTime.UtcNow;
+                var duePayments = await _context.Payments
+                    .Where(p => p.TenantId == userId && p.HouseId == payingTenant.HouseId
+                             && p.TenancyCycle == payingTenant.TenancyCycle
+                             && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted
+                             && (p.Year < now.Year || (p.Year == now.Year && p.Month <= now.Month)))
+                    .OrderBy(p => p.Year).ThenBy(p => p.Month)
+                    .ToListAsync();
+
+                if (duePayments.Count > 0)
+                {
+                    payment = duePayments[0];
+                    if (duePayments.Count > 1)
+                        arrearsLumpSum = duePayments.Sum(p => p.Balance);
+                }
             }
 
-            // A named row that's already Paid means the tenant is paying ahead (the prepay flow sends the
-            // current, settled month's id) — route to the advance-payment row exactly as if no id was sent,
-            // rather than rejecting, and never apply new money onto the settled row itself.
-            var payment = existing != null && existing.PaymentStatus != PaymentTransactionStatus.Paid
-                ? existing
-                : await _paymentService.CreateAdvancePaymentRowAsync(userId)
-                    ?? throw new Exception("No house assigned to your account.");
+            if (payment == null)
+            {
+                Payment? existing = null;
+                if (dto.PaymentId.HasValue)
+                {
+                    existing = await _context.Payments
+                        .FirstOrDefaultAsync(p => p.Id == dto.PaymentId.Value && p.TenantId == userId);
+                }
+
+                // A named row that's already Paid means the tenant is paying ahead (the prepay flow sends the
+                // current, settled month's id) — route to the advance-payment row exactly as if no id was sent,
+                // rather than rejecting, and never apply new money onto the settled row itself.
+                payment = existing != null && existing.PaymentStatus != PaymentTransactionStatus.Paid
+                    ? existing
+                    : await _paymentService.CreateAdvancePaymentRowAsync(userId)
+                        ?? throw new Exception("No house assigned to your account.");
+            }
 
             decimal? actualChargeAmount = null;
-            if (dto.Amount.HasValue)
+            var distributionAmount = dto.Amount ?? arrearsLumpSum;
+            if (distributionAmount.HasValue)
             {
                 var serviceCharge = payment.ServiceChargeAmount ?? 0m;
-                actualChargeAmount = dto.Amount.Value + serviceCharge;
-                payment.RequestedDistributionAmount = dto.Amount.Value;
+                actualChargeAmount = distributionAmount.Value + serviceCharge;
+                payment.RequestedDistributionAmount = distributionAmount.Value;
                 payment.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
             }

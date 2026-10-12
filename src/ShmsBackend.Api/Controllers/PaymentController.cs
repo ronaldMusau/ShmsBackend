@@ -101,10 +101,14 @@ public class PaymentController : ControllerBase
                 {
                     // No amount means "pay what's currently due" — for an already-onboarded tenant that's
                     // every row still owing. Never prepay or re-run onboarding from this branch.
+                    // Bounded at the current month (same as tenant self-pay) — a future month's remaining
+                    // balance isn't owed yet, so it's never swept into the lump sum.
+                    var now = DateTime.UtcNow;
                     var duePayments = await _context.Payments
                         .Where(p => p.TenantId == dto.TenantId && p.HouseId == dto.HouseId
                                  && p.TenancyCycle == tenant.TenancyCycle
-                                 && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted)
+                                 && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted
+                                 && (p.Year < now.Year || (p.Year == now.Year && p.Month <= now.Month)))
                         .OrderBy(p => p.Year).ThenBy(p => p.Month)
                         .ToListAsync();
 
