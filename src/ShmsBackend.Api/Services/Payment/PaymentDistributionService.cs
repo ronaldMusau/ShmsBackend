@@ -113,7 +113,6 @@ public class PaymentDistributionService : IPaymentDistributionService
             itemized.Add((row.Month, row.Year, applyAmount));
         }
 
-        var serviceCharge = await GetServiceChargeAsync(house.RentFee);
         var cursorMonth = currentDate.Month;
         var cursorYear = currentDate.Year;
         var totalIterations = 0;
@@ -169,8 +168,12 @@ public class PaymentDistributionService : IPaymentDistributionService
             }
             else if (existingMonthRow == null && !isDepositCoveredVacateMonth)
             {
-                // No row yet — create one
-                var monthlyTotal = house.RentFee;
+                // No row yet — create one, honoring any rent change effective for this specific month (same
+                // "latest applicable, never retroactive" rule CreateInitialPaymentAsync uses) — service charge
+                // is tiered by rent amount, so it's recomputed from the effective rate too, not house.RentFee.
+                var rentChange = await _vacateOwedCalculator.GetApplicableRentChangeAsync(houseId, cursorMonth, cursorYear);
+                var monthlyTotal = rentChange?.NewRentFee ?? house.RentFee;
+                var monthlyServiceCharge = await GetServiceChargeAsync(monthlyTotal);
                 var applyAmount = Math.Min(remaining, monthlyTotal);
                 var newPayment = new PaymentRecord
                 {
@@ -183,8 +186,8 @@ public class PaymentDistributionService : IPaymentDistributionService
                     Amount = monthlyTotal,
                     AmountPaid = applyAmount,
                     Balance = monthlyTotal - applyAmount,
-                    RentAmount = house.RentFee,
-                    ServiceChargeAmount = serviceCharge,
+                    RentAmount = monthlyTotal,
+                    ServiceChargeAmount = monthlyServiceCharge,
                     Month = cursorMonth,
                     Year = cursorYear,
                     IsInitialPayment = false,
@@ -231,14 +234,26 @@ public class PaymentDistributionService : IPaymentDistributionService
 
         // Upstream caps (self-pay, pay-on-behalf, retry, redemption) should leave nothing here. If something is
         // left anyway, it is received money sitting on no Payment row — surface it for manual review rather than
-        // dropping it silently or billing a post-vacate month.
-        if (activeVacate != null && remaining > 0)
-            _logger.LogError(
-                "Undistributed remainder of KES {Remaining:N2} for tenant {TenantId}, house {HouseId}, cycle {TenancyCycle}: " +
-                "nothing left owing through approved vacate month {VacateMonth}/{VacateYear} (vacate request {VacateRequestId}). " +
-                "Receipt {ReceiptNumber}, checkout {CheckoutRequestId}, redemption {RedemptionReference}. Needs manual review.",
-                remaining, tenantId, houseId, tenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear, activeVacate.Id,
-                receiptNumber, checkoutRequestId, redemptionReference);
+        // dropping it silently or billing a post-vacate month. Two distinct causes, both logged: capped by an
+        // approved vacate month, or capped by the loop's own iteration/row-count safety limits (an
+        // unrealistically large overpayment with no vacate involved).
+        if (remaining > 0)
+        {
+            if (activeVacate != null)
+                _logger.LogError(
+                    "Undistributed remainder of KES {Remaining:N2} for tenant {TenantId}, house {HouseId}, cycle {TenancyCycle}: " +
+                    "nothing left owing through approved vacate month {VacateMonth}/{VacateYear} (vacate request {VacateRequestId}). " +
+                    "Receipt {ReceiptNumber}, checkout {CheckoutRequestId}, redemption {RedemptionReference}. Needs manual review.",
+                    remaining, tenantId, houseId, tenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear, activeVacate.Id,
+                    receiptNumber, checkoutRequestId, redemptionReference);
+            else
+                _logger.LogError(
+                    "Undistributed remainder of KES {Remaining:N2} for tenant {TenantId}, house {HouseId}, cycle {TenancyCycle}: " +
+                    "distribution stopped after {Iterations} iterations / {ItemizedCount} rows without exhausting the amount. " +
+                    "Receipt {ReceiptNumber}, checkout {CheckoutRequestId}, redemption {RedemptionReference}. Needs manual review.",
+                    remaining, tenantId, houseId, tenancyCycle, totalIterations, itemized.Count,
+                    receiptNumber, checkoutRequestId, redemptionReference);
+        }
 
         var currentMonthPayment = await _context.Payments
             .Where(p => p.TenantId == tenantId && p.HouseId == houseId && p.TenancyCycle == tenancyCycle

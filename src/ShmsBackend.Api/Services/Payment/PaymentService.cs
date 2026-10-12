@@ -178,8 +178,6 @@ public class PaymentService : IPaymentService
 
         var house = tenant.House;
         var flat = house.Flat;
-        var serviceCharge = await GetServiceChargeAsync(house.RentFee);
-        var totalDue = house.RentFee;
         var now = DateTime.UtcNow;
 
         // Find earliest month that has no row or still has a balance owing — skip only fully-settled months
@@ -217,6 +215,12 @@ public class PaymentService : IPaymentService
         if (existingForMonth != null)
             return (existingForMonth, false);
 
+        // Honor any rent change effective for this specific target month (same "latest applicable" rule as
+        // CreateInitialPaymentAsync) rather than always billing today's rate.
+        var rentChange = await _vacateOwedCalculator.GetApplicableRentChangeAsync(house.Id, cursorMonth, cursorYear);
+        var totalDue = rentChange?.NewRentFee ?? house.RentFee;
+        var serviceCharge = await GetServiceChargeAsync(totalDue);
+
         var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth));
         var newPayment = new PaymentRecord
         {
@@ -228,7 +232,7 @@ public class PaymentService : IPaymentService
             Amount = totalDue,
             AmountPaid = 0,
             Balance = totalDue,
-            RentAmount = house.RentFee,
+            RentAmount = totalDue,
             ServiceChargeAmount = serviceCharge,
             PaymentStatus = PaymentTransactionStatus.Pending,
             PaymentType = PaymentType.Rent,
