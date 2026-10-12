@@ -1030,9 +1030,7 @@ public class VacateController : ControllerBase
             .ToListAsync();
 
         var approverIds = approvalActions.Select(a => a.ApproverId).Distinct().ToList();
-        var approvers = await _context.PortalUsers
-            .Where(u => approverIds.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => $"{u.FirstName} {u.LastName}");
+        var approvers = await ApproverLookup.GetNamesAsync(_context, approverIds);
 
         var settlement = await _context.VacateSettlements
             .FirstOrDefaultAsync(s => s.VacateRequestId == id && !s.IsVoided);
@@ -1453,7 +1451,7 @@ public class VacateController : ControllerBase
         {
             Id = Guid.NewGuid(),
             VacateRequestId = id,
-            AttemptNumber = 1,
+            AttemptNumber = vacateRequest.ApprovalAttemptNumber,
             StepOrder = currentStep.StepOrder,
             ApproverId = callerId,
             Decision = dto.Approved ? "Approved" : "Rejected",
@@ -1515,10 +1513,10 @@ public class VacateController : ControllerBase
             try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Vacate request for house {houseNumber} requires your approval (step {nextStep.StepOrder}).", "property", "Vacate", vacateRequest.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver of vacate step"); }
 
-            var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
+            var nextApprover = await ApproverLookup.GetContactAsync(_context, nextStep.ApproverId);
             if (nextApprover != null)
             {
-                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"Vacate — {houseNumber}", nextStep.StepOrder, nextApprover.Id.ToString(), true); }
+                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"Vacate — {houseNumber}", nextStep.StepOrder, nextApprover.Id.ToString(), nextApprover.IsPortalUser); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email to next vacate approver"); }
             }
 
@@ -1593,10 +1591,10 @@ public class VacateController : ControllerBase
         try { await _notificationService.SendToUserAsync(firstStep.ApproverId.ToString(), $"Vacate request for house {houseNumber} has been resubmitted and requires your approval (step {firstStep.StepOrder}).", "property", "Vacate", vacateRequest.Id.ToString()); }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify first approver of vacate resubmission"); }
 
-        var firstApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == firstStep.ApproverId);
+        var firstApprover = await ApproverLookup.GetContactAsync(_context, firstStep.ApproverId);
         if (firstApprover != null)
         {
-            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"Vacate — {houseNumber}", firstStep.StepOrder, firstApprover.Id.ToString(), true); }
+            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"Vacate — {houseNumber}", firstStep.StepOrder, firstApprover.Id.ToString(), firstApprover.IsPortalUser); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email to first vacate approver on resubmission"); }
         }
 

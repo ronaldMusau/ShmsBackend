@@ -547,10 +547,10 @@ public class ComplaintController : ControllerBase
             try { await _notificationService.SendToUserAsync(nextStep.ApproverId.ToString(), $"Complaint {complaint.TicketNumber} requires your approval (step {nextStep.StepOrder}).", "property", "Complaint", complaint.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver"); }
 
-            var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
+            var nextApprover = await ApproverLookup.GetContactAsync(_context, nextStep.ApproverId);
             if (nextApprover != null)
             {
-                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, complaint.TicketNumber, nextStep.StepOrder, nextApprover.Id.ToString(), true); }
+                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, complaint.TicketNumber, nextStep.StepOrder, nextApprover.Id.ToString(), nextApprover.IsPortalUser); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send approval-step email"); }
             }
 

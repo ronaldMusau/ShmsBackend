@@ -309,12 +309,12 @@ public class FlatController : ControllerBase
             catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit submission email"); }
         }
 
-        var firstApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == firstStep.ApproverId);
+        var firstApprover = await ApproverLookup.GetContactAsync(_context, firstStep.ApproverId);
         if (firstApprover != null)
         {
             try { await _notificationService.SendToUserAsync(firstApprover.Id.ToString(), $"A flat edit for \"{flat.FlatName}\" requires your approval.", "property", "FlatEdit", flat.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify first approver of flat edit"); }
-            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"FLAT-{flat.FlatName}", firstStep.StepOrder, firstApprover.Id.ToString(), true); }
+            try { await _emailService.SendApprovalStepEmailAsync(firstApprover.Email, firstApprover.FirstName, $"FLAT-{flat.FlatName}", firstStep.StepOrder, firstApprover.Id.ToString(), firstApprover.IsPortalUser); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit approval-step email"); }
         }
 
@@ -379,12 +379,12 @@ public class FlatController : ControllerBase
             request.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            var nextApprover = await _context.PortalUsers.FirstOrDefaultAsync(u => u.Id == nextStep.ApproverId);
+            var nextApprover = await ApproverLookup.GetContactAsync(_context, nextStep.ApproverId);
             if (nextApprover != null)
             {
                 try { await _notificationService.SendToUserAsync(nextApprover.Id.ToString(), $"A flat edit for \"{request.Flat!.FlatName}\" requires your approval.", "property", "FlatEdit", request.FlatId.ToString()); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to notify next approver of flat edit"); }
-                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"FLAT-{request.Flat!.FlatName}", nextStep.StepOrder, nextApprover.Id.ToString(), true); }
+                try { await _emailService.SendApprovalStepEmailAsync(nextApprover.Email, nextApprover.FirstName, $"FLAT-{request.Flat!.FlatName}", nextStep.StepOrder, nextApprover.Id.ToString(), nextApprover.IsPortalUser); }
                 catch (Exception ex) { _logger.LogError(ex, "Failed to send flat edit approval-step email"); }
             }
             return Ok(new { success = true, message = "Approved. Advanced to the next approval step." });
