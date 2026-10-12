@@ -220,14 +220,15 @@ public class PortalPaymentController : ControllerBase
             if (vacateOwed != null && dto.Amount.HasValue && dto.Amount.Value > vacateOwed.Total)
                 return VacateCapExceeded(vacateOwed);
 
-            // No amount means "pay what's currently due" — every row still owing up to the current month (or the
-            // vacate month, if that's earlier). Oldest row anchors the STK push; with several rows owing, charge
-            // the combined balance as a lump sum — ProcessCallbackAsync fills the anchor, then
+            // The oldest row still owing up to the current month (or the vacate month, if that's earlier) anchors
+            // the STK push, with or without an amount — ProcessCallbackAsync fills the anchor, then
             // PaymentDistributionService's arrears loop settles the remaining rows oldest-first (same mechanism
-            // as PaymentController's pay-on-behalf).
+            // as PaymentController's pay-on-behalf), so an entered amount clears arrears before later months.
+            // No amount means "pay what's currently due": with several rows owing, charge the combined balance
+            // as a lump sum.
             Payment? payment = null;
             decimal? arrearsLumpSum = null;
-            if (!dto.Amount.HasValue && payingTenant?.HouseId != null)
+            if (payingTenant?.HouseId != null)
             {
                 var now = DateTime.UtcNow;
                 var (boundYear, boundMonth) = (now.Year, now.Month);
@@ -245,15 +246,17 @@ public class PortalPaymentController : ControllerBase
                 if (duePayments.Count > 0)
                 {
                     payment = duePayments[0];
-                    if (duePayments.Count > 1)
+                    if (!dto.Amount.HasValue && duePayments.Count > 1)
                         arrearsLumpSum = duePayments.Sum(p => p.Balance);
                 }
             }
 
             if (payment == null)
             {
+                // Nothing owing through the current/vacate month. With an amount that's paying ahead, so a named
+                // row is ignored and the advance-payment row is used; without one, a named unpaid row still applies.
                 Payment? existing = null;
-                if (dto.PaymentId.HasValue)
+                if (dto.PaymentId.HasValue && !dto.Amount.HasValue)
                 {
                     existing = await _context.Payments
                         .FirstOrDefaultAsync(p => p.Id == dto.PaymentId.Value && p.TenantId == userId);
@@ -268,10 +271,15 @@ public class PortalPaymentController : ControllerBase
                 // A named row that's already Paid means the tenant is paying ahead (the prepay flow sends the
                 // current, settled month's id) — route to the advance-payment row exactly as if no id was sent,
                 // rather than rejecting, and never apply new money onto the settled row itself.
-                payment = useExisting
-                    ? existing!
-                    : await _paymentService.CreateAdvancePaymentRowAsync(userId)
-                        ?? throw new Exception("No house assigned to your account.");
+                if (useExisting)
+                    payment = existing!;
+                else
+                {
+                    var (advanceRow, pastVacateMonth) = await _paymentService.CreateAdvancePaymentRowAsync(userId);
+                    if (pastVacateMonth && vacateOwed != null)
+                        return VacateCapExceeded(vacateOwed);
+                    payment = advanceRow ?? throw new Exception("No house assigned to your account.");
+                }
             }
 
             var distributionAmount = dto.Amount ?? arrearsLumpSum;

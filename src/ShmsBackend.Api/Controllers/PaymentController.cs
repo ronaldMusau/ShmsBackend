@@ -107,8 +107,12 @@ public class PaymentController : ControllerBase
                 if (targetPayment != null)
                     payment = targetPayment;
                 else if (tenant.HasCompletedInitialPayment)
-                    payment = await _paymentService.CreateAdvancePaymentRowAsync(dto.TenantId)
-                        ?? throw new Exception("Tenant has no house assigned.");
+                {
+                    var (advanceRow, pastVacateMonth) = await _paymentService.CreateAdvancePaymentRowAsync(dto.TenantId);
+                    if (pastVacateMonth && vacateOwed != null)
+                        return VacateCapExceeded(vacateOwed);
+                    payment = advanceRow ?? throw new Exception("Tenant has no house assigned.");
+                }
                 else
                     payment = await _paymentService.CreateInitialPaymentAsync(dto.TenantId, dto.HouseId, dto.PhoneNumber);
             }

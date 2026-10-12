@@ -16,7 +16,7 @@ namespace ShmsBackend.Api.Services.Payment;
 public interface IPaymentService
 {
     Task<PaymentRecord> CreateInitialPaymentAsync(Guid tenantId, Guid houseId, string phoneNumber);
-    Task<PaymentRecord?> CreateAdvancePaymentRowAsync(Guid tenantId);
+    Task<(PaymentRecord? Payment, bool PastVacateMonth)> CreateAdvancePaymentRowAsync(Guid tenantId);
     Task<STKPushResponse> InitiatePaymentAsync(Guid paymentId, string phoneNumber, decimal? overrideAmount = null);
     Task ProcessCallbackAsync(MpesaCallback callback);
     Task<STKQueryResponse> QueryPaymentStatusAsync(string checkoutRequestId);
@@ -164,7 +164,9 @@ public class PaymentService : IPaymentService
     // Advance/pay-ahead target row for an already-onboarded tenant: the earliest month in the current
     // tenancy cycle that isn't fully settled (existing row returned as-is, otherwise a new Rent row is
     // created). Shared by the tenant portal Pay endpoint and the staff/agent pay-on-behalf endpoint.
-    public async Task<PaymentRecord?> CreateAdvancePaymentRowAsync(Guid tenantId)
+    // Returns (null, false) when the tenant has no house; (null, true) when, with an approved vacate, the target
+    // month would fall after the vacate month — nothing is created or returned then, since the cap would refuse it.
+    public async Task<(PaymentRecord? Payment, bool PastVacateMonth)> CreateAdvancePaymentRowAsync(Guid tenantId)
     {
         var tenant = await _context.Tenants
             .Include(t => t.House)
@@ -172,7 +174,7 @@ public class PaymentService : IPaymentService
             .FirstOrDefaultAsync(t => t.Id == tenantId);
 
         if (tenant?.House == null || tenant.House.Flat == null)
-            return null;
+            return (null, false);
 
         var house = tenant.House;
         var flat = house.Flat;
@@ -197,6 +199,14 @@ public class PaymentService : IPaymentService
             if (cursorMonth > 12) { cursorMonth = 1; cursorYear++; }
         }
 
+        // Every month through an approved vacate month is settled — paying ahead past it is never allowed, so
+        // stop here rather than creating (and saving) a row the caller's vacate cap check would then refuse.
+        var activeVacate = await _vacateOwedCalculator.GetActiveApprovedVacateRequestAsync(tenantId);
+        if (activeVacate != null
+            && (cursorYear > activeVacate.VacateYear
+                || (cursorYear == activeVacate.VacateYear && cursorMonth > activeVacate.VacateMonth)))
+            return (null, true);
+
         // If an unpaid row already exists for the target month, return it instead of creating a duplicate
         var existingForMonth = await _context.Payments.FirstOrDefaultAsync(p =>
             p.TenantId == tenantId && p.HouseId == house.Id
@@ -205,7 +215,7 @@ public class PaymentService : IPaymentService
             && !p.IsDeleted);
 
         if (existingForMonth != null)
-            return existingForMonth;
+            return (existingForMonth, false);
 
         var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth));
         var newPayment = new PaymentRecord
@@ -235,7 +245,7 @@ public class PaymentService : IPaymentService
 
         await _context.Payments.AddAsync(newPayment);
         await _context.SaveChangesAsync();
-        return newPayment;
+        return (newPayment, false);
     }
 
     public async Task<STKPushResponse> InitiatePaymentAsync(Guid paymentId, string phoneNumber, decimal? overrideAmount = null)
