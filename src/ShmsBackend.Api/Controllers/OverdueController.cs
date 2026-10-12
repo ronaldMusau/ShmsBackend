@@ -115,7 +115,7 @@ public class OverdueController : ControllerBase
                 monthsOverdueCount = g.MonthsOverdueCount,
                 warning1SentAt = warning1?.SentAt,
                 warning2SentAt = warning2?.SentAt,
-                canSendWarning1 = g.OverdueDays >= 45 && warning1 == null,
+                canSendWarning1 = g.TotalArrears > 0 && warning1 == null,
                 canSendWarning2 = warning1 != null && warning2 == null,
                 canForceVacate = warning2 != null && !activeVacateTenantIds.Contains(g.TenantId)
             };
@@ -211,8 +211,8 @@ public class OverdueController : ControllerBase
         {
             if (warning1Exists)
                 return BadRequest(new { success = false, message = "A first warning has already been sent to this tenant." });
-            if (overdueDays < 45)
-                return BadRequest(new { success = false, message = "This tenant is not yet overdue by 45 days or more." });
+            if (arrears <= 0)
+                return BadRequest(new { success = false, message = "This tenant has no arrears." });
         }
         else
         {
