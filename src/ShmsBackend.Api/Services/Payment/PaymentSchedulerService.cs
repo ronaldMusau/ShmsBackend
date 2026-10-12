@@ -160,11 +160,12 @@ public class PaymentSchedulerService : BackgroundService
             .Where(a => a.AttemptStatus == "Processing" && a.CreatedAt < stuckThreshold)
             .ToListAsync();
 
+        // ProcessedAt and RequestedDistributionAmount are deliberately left untouched: no callback was
+        // received, so M-Pesa's real one may still arrive and must be applied (see ProcessCallbackAsync).
         foreach (var attempt in stuckAttempts)
         {
             attempt.AttemptStatus = "Failed";
             attempt.ResultDesc = "Timed out — no callback received";
-            attempt.ProcessedAt = DateTime.UtcNow;
         }
 
         if (stuckAttempts.Count > 0)

@@ -254,7 +254,7 @@ public class PortalPaymentController : ControllerBase
             attempt.AttemptStatus = "Failed";
             attempt.ResultDesc = "Timed out — client gave up waiting";
             attempt.RetryCount++;
-            attempt.ProcessedAt = DateTime.UtcNow;
+            // ProcessedAt stays null — reserved for a real M-Pesa callback, which may still arrive.
             await _context.SaveChangesAsync();
         }
 

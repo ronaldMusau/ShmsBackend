@@ -1723,11 +1723,13 @@ public class VacateController : ControllerBase
         if (callerRole == "Tenant" && attempt.VacateSettlement?.TenantId != GetCallerId())
             return Forbid();
 
-        if (attempt.ProcessedAt == null)
+        // ProcessedAt stays null — reserved for a real M-Pesa callback, which may still arrive and must be
+        // applied (see PaymentService.ProcessCallbackAsync's vacate branch). Status-only guard so a repeat
+        // give-up call doesn't overwrite a real result.
+        if (attempt.ProcessedAt == null && attempt.AttemptStatus == "Processing")
         {
             attempt.AttemptStatus = "Failed";
             attempt.ResultDesc = "Timed out — no callback received";
-            attempt.ProcessedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
         }
 

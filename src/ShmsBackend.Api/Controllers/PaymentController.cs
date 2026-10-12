@@ -59,6 +59,7 @@ public class PaymentController : ControllerBase
                 return BadRequest(new { success = false, message = "A payment is already being processed for this tenant. Please wait a moment or check their phone." });
 
             Payment payment;
+            decimal? arrearsLumpSum = null;
             if (dto.Amount.HasValue)
             {
                 var tenant = await _context.Tenants
@@ -99,27 +100,33 @@ public class PaymentController : ControllerBase
                 else
                 {
                     // No amount means "pay what's currently due" — for an already-onboarded tenant that's
-                    // the oldest row still owing. Never prepay or re-run onboarding from this branch.
-                    var duePayment = await _context.Payments
+                    // every row still owing. Never prepay or re-run onboarding from this branch.
+                    var duePayments = await _context.Payments
                         .Where(p => p.TenantId == dto.TenantId && p.HouseId == dto.HouseId
                                  && p.TenancyCycle == tenant.TenancyCycle
                                  && p.Balance > 0 && !p.IsInitialPayment && !p.IsDeleted)
                         .OrderBy(p => p.Year).ThenBy(p => p.Month)
-                        .FirstOrDefaultAsync();
+                        .ToListAsync();
 
-                    if (duePayment == null)
+                    if (duePayments.Count == 0)
                         return BadRequest(new { success = false, message = "This tenant has no outstanding balance. Enter an amount to pay in advance." });
 
-                    payment = duePayment;
+                    // Oldest row anchors the STK push. With several rows owing, charge the combined balance
+                    // as a lump sum — ProcessCallbackAsync fills the anchor, then PaymentDistributionService's
+                    // arrears loop settles the remaining rows oldest-first (same set as this query).
+                    payment = duePayments[0];
+                    if (duePayments.Count > 1)
+                        arrearsLumpSum = duePayments.Sum(p => p.Balance);
                 }
             }
 
             decimal? actualChargeAmount = null;
-            if (dto.Amount.HasValue)
+            var distributionAmount = dto.Amount ?? arrearsLumpSum;
+            if (distributionAmount.HasValue)
             {
                 var serviceCharge = payment.ServiceChargeAmount ?? 0m;
-                actualChargeAmount = dto.Amount.Value + serviceCharge;
-                payment.RequestedDistributionAmount = dto.Amount.Value;
+                actualChargeAmount = distributionAmount.Value + serviceCharge;
+                payment.RequestedDistributionAmount = distributionAmount.Value;
                 payment.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
             }
@@ -164,7 +171,7 @@ public class PaymentController : ControllerBase
             attempt.AttemptStatus = "Failed";
             attempt.ResultDesc = "Timed out — client gave up waiting";
             attempt.RetryCount++;
-            attempt.ProcessedAt = DateTime.UtcNow;
+            // ProcessedAt stays null — reserved for a real M-Pesa callback, which may still arrive.
             await _context.SaveChangesAsync();
         }
 
@@ -191,6 +198,8 @@ public class PaymentController : ControllerBase
             payment.MerchantRequestId = null;
             payment.MpesaResultCode = null;
             payment.MpesaResultDesc = null;
+            // Retry never sends an override amount, so no earlier lump-sum/advance intent applies to it.
+            payment.RequestedDistributionAmount = null;
             payment.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 

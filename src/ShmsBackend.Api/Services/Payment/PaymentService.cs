@@ -247,6 +247,12 @@ public class PaymentService : IPaymentService
 
         payment.PhoneNumber = phoneNumber;
 
+        // Every caller that sets RequestedDistributionAmount also passes the matching override; a push
+        // without one charges the row's own balance, so any lump-sum/advance intent left by an earlier
+        // (e.g. timed-out) attempt must not be applied to it.
+        if (!overrideAmount.HasValue)
+            payment.RequestedDistributionAmount = null;
+
         var reference = $"PAY-{paymentId.ToString().Substring(0, 8).ToUpper()}";
         var description = payment.IsInitialPayment
             ? $"Deposit+Rent {flat.FlatName}"
@@ -290,11 +296,18 @@ public class PaymentService : IPaymentService
         var checkoutAttempt = await _context.PaymentCheckoutAttempts
             .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
 
+        // ProcessedAt is stamped ONLY when a real M-Pesa callback for this attempt has been processed
+        // (timeout paths mark AttemptStatus "Failed" but leave it null), so it's the genuine-duplicate signal.
         if (checkoutAttempt != null && checkoutAttempt.ProcessedAt != null)
         {
             _logger.LogWarning("Duplicate callback received for already-processed CheckoutRequestId: {CheckoutRequestId} — ignoring.", checkoutRequestId);
             return;
         }
+
+        // A non-Processing status with no ProcessedAt means a timeout (scheduler sweep or client give-up)
+        // already told the user this attempt failed, without M-Pesa ever having answered.
+        var wasTimeoutMarked = checkoutAttempt != null
+            && (checkoutAttempt.AttemptStatus == "Failed" || checkoutAttempt.AttemptStatus == "Cancelled");
 
         // ── Vacate Settlement Branch ─────────────────────────────────────────────
         if (checkoutAttempt == null)
@@ -305,17 +318,46 @@ public class PaymentService : IPaymentService
 
             if (vacateAttempt != null)
             {
+                // Same rule as the main payment flow: ProcessedAt is stamped only by a real callback, so it's
+                // the genuine-duplicate signal; Failed/Cancelled without it means a timeout already fired.
                 if (vacateAttempt.ProcessedAt != null)
                 {
                     _logger.LogWarning("Duplicate callback received for already-processed vacate CheckoutRequestId: {CheckoutRequestId} — ignoring.", checkoutRequestId);
                     return;
                 }
 
+                var vacateWasTimeoutMarked = vacateAttempt.AttemptStatus == "Failed" || vacateAttempt.AttemptStatus == "Cancelled";
+
                 vacateAttempt.ProcessedAt = DateTime.UtcNow;
                 vacateAttempt.ResultCode = details.ResultCode.ToString();
                 vacateAttempt.ResultDesc = details.ResultDescription;
 
                 var settlement = vacateAttempt.VacateSettlement!;
+
+                // Vacate equivalent of the superseded-attempt case: a settlement allows several attempts, so a
+                // late success after another attempt already paid it is a likely duplicate M-Pesa charge —
+                // don't re-apply it, flag it for manual reconciliation instead.
+                if (details.IsSuccess && settlement.PaidAt != null)
+                {
+                    vacateAttempt.AttemptStatus = "Success";
+                    await _context.SaveChangesAsync();
+
+                    _logger.LogWarning(
+                        "Late SUCCESS callback for vacate CheckoutRequestId {CheckoutRequestId} on already-paid VacateSettlement {SettlementId} — possible duplicate charge, not re-applied.",
+                        checkoutRequestId, settlement.Id);
+
+                    var dupHouse = await _context.Houses.FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
+                    try
+                    {
+                        await _notificationService.SendToRolesAsync(
+                            new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin,
+                                    NotificationAudience.Manager, NotificationAudience.Accountant },
+                            $"Possible duplicate M-Pesa charge on the vacate settlement for house {dupHouse?.HouseNumber} — a successful payment callback arrived for a settlement that was already paid. Please verify with the tenant and reconcile manually. Receipt: {details.MpesaReceiptNumber}, CheckoutRequestId: {checkoutRequestId}",
+                            "payment");
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate duplicate-charge reconciliation notification"); }
+                    return;
+                }
 
                 if (details.IsSuccess)
                 {
@@ -326,6 +368,23 @@ public class PaymentService : IPaymentService
                     var vacateTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
                     var vacateHouse = await _context.Houses.FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
                     var vacateHouseNumber = vacateHouse?.HouseNumber ?? "";
+
+                    if (vacateWasTimeoutMarked)
+                    {
+                        _logger.LogWarning(
+                            "SUCCESS callback for vacate CheckoutRequestId {CheckoutRequestId} arrived after the attempt was already marked timed out — settlement marked paid, flagging for review.",
+                            checkoutRequestId);
+
+                        try
+                        {
+                            await _notificationService.SendToRolesAsync(
+                                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin,
+                                        NotificationAudience.Manager, NotificationAudience.Accountant },
+                                $"A vacate settlement payment of KES {details.Amount:N2} for house {vacateHouseNumber} succeeded after the system had already marked it as timed out. The settlement has been marked paid — please verify no duplicate charge or retry confusion occurred. Receipt: {details.MpesaReceiptNumber}, CheckoutRequestId: {checkoutRequestId}",
+                                "payment");
+                        }
+                        catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate late-success-after-timeout notification"); }
+                    }
 
                     if (vacateTenant != null)
                     {
@@ -620,6 +679,30 @@ public class PaymentService : IPaymentService
                 _logger.LogError(ex, "Failed to earn reward points for payment {PaymentId}", payment.Id);
             }
 
+            // Fully consumed by the distribution and reward math above — clear it so a later, unrelated
+            // transaction on this row (e.g. a no-override retry) can't distribute or reward against it.
+            payment.RequestedDistributionAmount = null;
+
+            if (wasTimeoutMarked)
+            {
+                _logger.LogWarning(
+                    "SUCCESS callback for CheckoutRequestId {CheckoutRequestId} on Payment {PaymentId} arrived after the attempt was already marked timed out — payment applied, flagging for review.",
+                    checkoutRequestId, payment.Id);
+
+                try
+                {
+                    await _notificationService.SendToRolesAsync(
+                        new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin,
+                                NotificationAudience.Manager, NotificationAudience.Accountant },
+                        $"A payment of KES {details.Amount:N2} for {payment.Tenant?.FirstName} {payment.Tenant?.LastName} (House {payment.House?.HouseNumber}) succeeded after the system had already marked it as timed out. It has been applied — please verify no duplicate charge or retry confusion occurred. Receipt: {details.MpesaReceiptNumber}, CheckoutRequestId: {checkoutRequestId}",
+                        "payment");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send late-success-after-timeout notification");
+                }
+            }
+
             if (payment.Tenant != null && !string.IsNullOrEmpty(details.MpesaReceiptNumber))
             {
                 try
@@ -667,6 +750,11 @@ public class PaymentService : IPaymentService
         }
         else if (details.IsCancelled)
         {
+            // Only the row's current attempt owns RequestedDistributionAmount — a late failure for a
+            // superseded attempt must not wipe the value a newer in-flight push depends on.
+            if (!isSupersededAttempt)
+                payment.RequestedDistributionAmount = null;
+
             if (checkoutAttempt != null)
             {
                 checkoutAttempt.AttemptStatus = "Cancelled";
@@ -677,6 +765,9 @@ public class PaymentService : IPaymentService
         }
         else
         {
+            if (!isSupersededAttempt)
+                payment.RequestedDistributionAmount = null;
+
             if (checkoutAttempt != null)
             {
                 var mappedDesc = details.ResultCode switch
