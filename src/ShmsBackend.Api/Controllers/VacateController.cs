@@ -75,6 +75,8 @@ public class VacateController : ControllerBase
             return BadRequest(new { success = false, message = "Tenant is not assigned to a house." });
 
         // Vacate arrears = only rows whose due date has passed — a partially prepaid future month isn't owed yet.
+        // STRICT overdue test — not the looser "payable now" duePayments query in PaymentController/
+        // PortalPaymentController, which includes the current month before its due date.
         var todayUtc = DateTime.UtcNow.Date;
         var arrears = await _context.Payments
             .Where(p => p.TenantId == tenantId
@@ -146,6 +148,8 @@ public class VacateController : ControllerBase
             return BadRequest(new { success = false, message = "Vacate notice window has closed for this month." });
 
         // Vacate arrears = only rows whose due date has passed — a partially prepaid future month isn't owed yet.
+        // STRICT overdue test — not the looser "payable now" duePayments query in PaymentController/
+        // PortalPaymentController, which includes the current month before its due date.
         var todayUtc = DateTime.UtcNow.Date;
         var arrears = await _context.Payments
             .Where(p => p.TenantId == dto.TenantId
@@ -2258,6 +2262,8 @@ public class VacateController : ControllerBase
 
         // Vacate arrears = only rows whose due date has passed, up to and including the vacate month.
         // Rows after the vacate month are forfeited at settlement, so their unpaid remainder is never owed.
+        // STRICT overdue test — not the looser "payable now" duePayments query in PaymentController/
+        // PortalPaymentController, which includes the current month before its due date.
         var todayUtc = DateTime.UtcNow.Date;
         var arrears = await _context.Payments
             .Where(p => p.TenantId == vacateRequest.TenantId
@@ -2314,6 +2320,8 @@ public class VacateController : ControllerBase
             return NotFound(new { success = false, message = "Tenant not found." });
 
         // Same rule as GetClearChecklist: due rows only, nothing after the vacate month.
+        // STRICT overdue test — not the looser "payable now" duePayments query in PaymentController/
+        // PortalPaymentController, which includes the current month before its due date.
         var todayUtc = DateTime.UtcNow.Date;
         var arrears = await _context.Payments
             .Where(p => p.TenantId == vacateRequest.TenantId

@@ -235,6 +235,8 @@ public class PortalPaymentController : ControllerBase
                 if (activeVacate != null && IsAfterMonth(boundYear, boundMonth, activeVacate.VacateYear, activeVacate.VacateMonth))
                     (boundYear, boundMonth) = (activeVacate.VacateYear, activeVacate.VacateMonth);
 
+                // "PAYABLE NOW" (calendar month <= bound, no DueDate check) — deliberately looser than the STRICT
+                // overdue test in OverdueController/VacateController (DueDate has passed); picks every self-pay's anchor.
                 var duePayments = await _context.Payments
                     .Where(p => p.TenantId == userId && p.HouseId == payingTenant.HouseId
                              && p.TenancyCycle == payingTenant.TenancyCycle

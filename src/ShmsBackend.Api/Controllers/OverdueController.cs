@@ -53,6 +53,8 @@ public class OverdueController : ControllerBase
     {
         var now = DateTime.UtcNow;
 
+        // STRICT overdue test (DueDate has passed) — not the looser "payable now" duePayments query in
+        // PaymentController/PortalPaymentController, which includes the current month before its due date.
         var overduePayments = (await _context.Payments
             .Include(p => p.Tenant)
             .Include(p => p.House)
@@ -142,6 +144,8 @@ public class OverdueController : ControllerBase
 
         var now = DateTime.UtcNow;
 
+        // STRICT overdue test (DueDate has passed) — not the looser "payable now" duePayments query in
+        // PaymentController/PortalPaymentController, which includes the current month before its due date.
         var payments = await _context.Payments
             .Where(p => p.TenantId == tenantId
                 && p.TenancyCycle == tenant.TenancyCycle
@@ -173,6 +177,8 @@ public class OverdueController : ControllerBase
 
         var now = DateTime.UtcNow;
 
+        // STRICT overdue test (DueDate has passed) — not the looser "payable now" duePayments query in
+        // PaymentController/PortalPaymentController, which includes the current month before its due date.
         var payments = await _context.Payments
             .Where(p => p.TenantId == tenantId
                 && p.TenancyCycle == tenant.TenancyCycle

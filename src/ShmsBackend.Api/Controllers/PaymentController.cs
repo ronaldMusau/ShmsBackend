@@ -140,6 +140,8 @@ public class PaymentController : ControllerBase
                     if (activeVacate != null && IsAfterMonth(boundYear, boundMonth, activeVacate.VacateYear, activeVacate.VacateMonth))
                         (boundYear, boundMonth) = (activeVacate.VacateYear, activeVacate.VacateMonth);
 
+                    // "PAYABLE NOW" (calendar month <= bound, no DueDate check) — deliberately looser than the STRICT
+                    // overdue test in OverdueController/VacateController (DueDate has passed); used only here, for no-amount pay.
                     var duePayments = await _context.Payments
                         .Where(p => p.TenantId == dto.TenantId && p.HouseId == dto.HouseId
                                  && p.TenancyCycle == tenant.TenancyCycle
