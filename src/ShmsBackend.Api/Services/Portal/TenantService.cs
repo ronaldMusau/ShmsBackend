@@ -438,7 +438,7 @@ public class TenantService : ITenantService
                     TenantId = tenant.Id,
                     HouseId = house.Id,
                     FlatId = house.FlatId,
-                    LandlordId = house.Flat?.LandlordId ?? Guid.Empty,
+                    LandlordId = house.Flat?.LandlordId,
                     Amount = effectiveRentFee,
                     AmountPaid = 0,
                     Balance = effectiveRentFee,
