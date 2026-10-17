@@ -73,7 +73,11 @@ public class TenantQueryService
             query = query.Where(t =>
                 EF.Functions.Like(t.FirstName, $"%{search}%") ||
                 EF.Functions.Like(t.LastName, $"%{search}%") ||
-                EF.Functions.Like(t.Email, $"%{search}%"));
+                EF.Functions.Like(t.Email, $"%{search}%") ||
+                EF.Functions.Like(t.FirstName + " " + t.LastName, $"%{search}%") ||
+                (t.PhoneNumber != null && EF.Functions.Like(t.PhoneNumber, $"%{search}%")) ||
+                (t.NationalId != null && EF.Functions.Like(t.NationalId, $"%{search}%")) ||
+                (t.House != null && EF.Functions.Like(t.House.HouseNumber, $"%{search}%")));
         }
 
         if (!isVacated && !string.IsNullOrWhiteSpace(filters.Status) &&

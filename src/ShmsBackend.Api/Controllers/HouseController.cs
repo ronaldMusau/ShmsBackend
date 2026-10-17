@@ -57,9 +57,12 @@ public class HouseController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 50)
+        [FromQuery] int pageSize = 50,
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] string? status = null)
     {
-        var all = (await _houseService.GetAllAsync()).ToList();
+        var all = (await _houseService.GetAllAsync(search, flatId, status)).ToList();
         var total = all.Count;
         var data = all.Skip((page - 1) * pageSize).Take(pageSize).ToList();
         return Ok(new

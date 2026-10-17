@@ -98,11 +98,27 @@ public class HouseService
         return (await GetByIdAsync(house.Id))!;
     }
 
-    public async Task<IEnumerable<object>> GetAllAsync()
+    public async Task<IEnumerable<object>> GetAllAsync(string? search = null, Guid? flatId = null, string? status = null)
     {
-        return await _context.Houses
-            .Include(h => h.Flat)
-            .Include(h => h.HouseTypeRef)
+        var query = _context.Houses.AsQueryable();
+        if (flatId.HasValue) query = query.Where(h => h.FlatId == flatId.Value);
+        if (!string.IsNullOrWhiteSpace(status) &&
+            Enum.TryParse<ShmsBackend.Data.Models.Entities.Portal.OccupancyStatus>(status, true, out var occ))
+            query = query.Where(h => h.OccupancyStatus == occ);
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(h =>
+                EF.Functions.Like(h.HouseNumber, $"%{term}%") ||
+                (h.Flat != null && EF.Functions.Like(h.Flat.FlatName, $"%{term}%")) ||
+                (h.HouseTypeRef != null && EF.Functions.Like(h.HouseTypeRef.Name, $"%{term}%")) ||
+                (h.Flat != null && h.Flat.Landlord != null &&
+                    EF.Functions.Like(h.Flat.Landlord.FirstName + " " + h.Flat.Landlord.LastName, $"%{term}%")) ||
+                _context.TenantHouseHistories.Any(t => t.HouseId == h.Id && t.RemovedAt == null &&
+                    EF.Functions.Like(t.TenantFirstName + " " + t.TenantLastName, $"%{term}%")));
+        }
+        return await query
+            .OrderBy(h => h.Flat!.FlatName).ThenBy(h => h.HouseNumber)
             .Select(h => new
             {
                 h.Id,
@@ -119,6 +135,13 @@ public class HouseService
                 h.IsAwaitingExistingTenant,
                 h.CreatedAt,
                 h.UpdatedAt,
+                LandlordName = h.Flat != null && h.Flat.Landlord != null
+                    ? h.Flat.Landlord.FirstName + " " + h.Flat.Landlord.LastName : null,
+                TenantName = _context.TenantHouseHistories
+                    .Where(t => t.HouseId == h.Id && t.RemovedAt == null)
+                    .OrderByDescending(t => t.AssignedAt)
+                    .Select(t => t.TenantFirstName + " " + t.TenantLastName)
+                    .FirstOrDefault(),
                 ImagePaths = _context.HouseTypeImages
                     .Where(hti => hti.FlatId == h.FlatId && hti.HouseTypeId == h.HouseTypeId)
                     .OrderBy(hti => hti.SortOrder)
