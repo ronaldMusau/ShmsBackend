@@ -417,18 +417,11 @@ public class PortalComplaintController : ControllerBase
         images ??= new List<IFormFile>();
         documents ??= new List<IFormFile>();
 
-        if (images.Count > 3)
-            return BadRequest(new { success = false, message = "Maximum 3 images allowed." });
-        if (documents.Count > 3)
-            return BadRequest(new { success = false, message = "Maximum 3 documents allowed." });
-
-        const long maxFileSize = 4 * 1024 * 1024; // 4MB
+        if (complaint.ReviewedAt != null || complaint.Status == "Closed")
+            return BadRequest(new { success = false, message = "Attachments can only be added when the complaint is first raised." });
+        var fileError = ComplaintFileRules.Validate(images, documents, 3);
+        if (fileError != null) return BadRequest(new { success = false, message = fileError });
         var allFiles = images.Concat(documents).ToList();
-        foreach (var file in allFiles)
-        {
-            if (file.Length > maxFileSize)
-                return BadRequest(new { success = false, message = $"{file.FileName} exceeds the 4MB limit." });
-        }
 
         var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "complaint-attachments");
         Directory.CreateDirectory(saveDir);
@@ -473,10 +466,8 @@ public class PortalComplaintController : ControllerBase
 
         images ??= new List<IFormFile>();
         documents ??= new List<IFormFile>();
-        const long maxFileSize = 4 * 1024 * 1024;
-        foreach (var file in images.Concat(documents))
-            if (file.Length > maxFileSize)
-                return BadRequest(new { success = false, message = $"{file.FileName} exceeds the 4MB limit." });
+        var fileError = ComplaintFileRules.Validate(images, documents, 5);
+        if (fileError != null) return BadRequest(new { success = false, message = fileError });
 
         var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "complaint-attachments");
         Directory.CreateDirectory(saveDir);
@@ -594,14 +585,13 @@ public class PortalComplaintController : ControllerBase
         var agentId = GetUserId();
         var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.EscalatedToAgentId == agentId);
         if (complaint == null) return NotFound(new { success = false, message = "Complaint not found or not escalated to you." });
+        if (complaint.Status == "Closed") return BadRequest(new { success = false, message = "This complaint is already closed." });
 
         images ??= new List<IFormFile>();
         documents ??= new List<IFormFile>();
 
-        const long maxFileSize = 4 * 1024 * 1024;
-        foreach (var file in images.Concat(documents))
-            if (file.Length > maxFileSize)
-                return BadRequest(new { success = false, message = $"{file.FileName} exceeds the 4MB limit." });
+        var fileError = ComplaintFileRules.Validate(images, documents, 5);
+        if (fileError != null) return BadRequest(new { success = false, message = fileError });
 
         var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "complaint-attachments");
         Directory.CreateDirectory(saveDir);
@@ -653,6 +643,7 @@ public class PortalComplaintController : ControllerBase
         var agentId = GetUserId();
         var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.EscalatedToAgentId == agentId);
         if (complaint == null) return NotFound(new { success = false, message = "Complaint not found or not escalated to you." });
+        if (complaint.Status == "Closed") return BadRequest(new { success = false, message = "This complaint is already closed." });
         if (string.IsNullOrWhiteSpace(dto.Notes)) return BadRequest(new { success = false, message = "Completion notes are required." });
 
         var submittedAt = DateTime.UtcNow;
@@ -807,6 +798,7 @@ public class PortalComplaintController : ControllerBase
         var tenantId = GetUserId();
         var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
         if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        if (complaint.Status == "Closed") return BadRequest(new { success = false, message = "This complaint is already closed." });
         if (complaint.AgentCompletedAt == null) return BadRequest(new { success = false, message = "No completed work to verify yet." });
 
         var currentAttemptNumber = complaint.AgentRedoCount + 1;

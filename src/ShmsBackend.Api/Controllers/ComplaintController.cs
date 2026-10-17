@@ -400,6 +400,11 @@ public class ComplaintController : ControllerBase
             return BadRequest(new { success = false, message = "This complaint is closed. Reopen it first." });
         if (complaint.EscalatedToAgentId != null)
             return BadRequest(new { success = false, message = "This complaint is already escalated for repair — inspection is no longer needed." });
+        if (complaint.CurrentApprovalStepOrder != null || complaint.Status == "Approved")
+            return BadRequest(new { success = false, message = "The billing decision is already in the approval process — an inspection can only be requested before billing is decided." });
+        if (complaint.IsBillable == true && complaint.BillableTarget == "Management" && complaint.LandlordDecision == null
+            && !complaint.NeedsResubmission)
+            return BadRequest(new { success = false, message = "The billing decision is awaiting the landlord — an inspection can only be requested before billing is decided." });
         if (string.IsNullOrWhiteSpace(dto.Notes))
             return BadRequest(new { success = false, message = "Inspection instructions are required." });
         if (await _context.ComplaintInspections.AnyAsync(i => i.ComplaintId == id && i.ReportedAt == null))
@@ -532,6 +537,8 @@ public class ComplaintController : ControllerBase
     {
         var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
         if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        if (complaint.Status == "Closed")
+            return BadRequest(new { success = false, message = "This complaint is already closed." });
 
         var canClose = complaint.TenantVerificationStatus == "Verified"
             || (complaint.EscalatedToAgentId == null
