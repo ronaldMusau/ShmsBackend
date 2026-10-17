@@ -191,7 +191,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
         var landlordGroups = complaints
             .Where(c => c.IsBillable == true && c.BillableTarget == "Management"
                         && c.CurrentApprovalStepOrder == null && c.LandlordDecision == null
-                        && !c.NeedsResubmission && c.Status != "Closed" && c.Status != "Approved")
+                        && !c.NeedsResubmission && c.Status != "Closed")
             .GroupBy(c => c.LandlordId);
         foreach (var group in landlordGroups)
         {
