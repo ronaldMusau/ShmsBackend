@@ -58,6 +58,58 @@ public class ComplaintAnalyticsService
         };
     }
 
+    /// <summary>
+    /// Management-only: where the money on billable complaints stands. Tenant-billed complaints are split by
+    /// whether the tenant accepted, paid (and who paid), or declined; landlord-billed ("Management" target)
+    /// complaints by the landlord's decision (an approved one becomes a deduction from rent).
+    /// </summary>
+    public async Task<AnalyticsBreakdownResult> GetChargesBreakdownAsync(ComplaintFilters filters)
+    {
+        var rows = await _complaintQueryService.BuildFilteredQuery(filters)
+            .Where(c => c.IsBillable == true)
+            .Select(c => new { c.BillableTarget, Amount = c.BillableAmount ?? 0m, c.TenantChargeDecision, c.TenantChargePaidAt, c.TenantChargePaidBy, c.LandlordDecision })
+            .ToListAsync();
+
+        string Bucket(string? target, string? tenantDecision, DateTime? paidAt, string? paidBy, string? landlordDecision)
+        {
+            if (target == "Tenant")
+            {
+                if (paidAt != null) return paidBy == "Management" ? "Tenant charge – paid by management" : "Tenant charge – paid by tenant";
+                if (tenantDecision == "Declined") return "Tenant charge – declined";
+                if (tenantDecision == "Accepted") return "Tenant charge – awaiting payment";
+                return "Tenant charge – awaiting tenant decision";
+            }
+            if (landlordDecision == "Approved") return "Landlord deduction – approved";
+            if (landlordDecision == null) return "Landlord deduction – awaiting landlord";
+            return "Landlord deduction – not approved";
+        }
+
+        string[] order =
+        {
+            "Tenant charge – paid by tenant", "Tenant charge – paid by management", "Tenant charge – awaiting payment",
+            "Tenant charge – awaiting tenant decision", "Tenant charge – declined",
+            "Landlord deduction – approved", "Landlord deduction – awaiting landlord", "Landlord deduction – not approved"
+        };
+
+        var grouped = rows
+            .GroupBy(r => Bucket(r.BillableTarget, r.TenantChargeDecision, r.TenantChargePaidAt, r.TenantChargePaidBy, r.LandlordDecision))
+            .ToDictionary(g => g.Key, g => (Count: g.Count(), Amount: g.Sum(x => x.Amount)));
+
+        var items = order.Select(label => new AnalyticsCategoryItem
+        {
+            Label = label,
+            Count = grouped.TryGetValue(label, out var v) ? v.Count : 0,
+            Amount = grouped.TryGetValue(label, out var v2) ? v2.Amount : 0m
+        }).ToList();
+
+        return new AnalyticsBreakdownResult
+        {
+            Items = items,
+            TotalCount = items.Sum(i => i.Count),
+            TotalAmount = items.Sum(i => i.Amount ?? 0m)
+        };
+    }
+
     public async Task<AnalyticsBreakdownResult> GetTypeBreakdownAsync(ComplaintFilters filters)
     {
         var baseQuery = _complaintQueryService.BuildFilteredQuery(filters);

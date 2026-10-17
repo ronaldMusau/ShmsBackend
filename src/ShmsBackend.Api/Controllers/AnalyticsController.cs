@@ -194,6 +194,17 @@ public class AnalyticsController : ControllerBase
         return Ok(new { success = true, data });
     }
 
+    // GET /api/analytics/complaints/charges — Management only (landlord-scoped analytics never see charge handling)
+    [HttpGet("complaints/charges")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetComplaintCharges([FromQuery] ComplaintFilters filters)
+    {
+        filters.LandlordId = null;
+        ApplyDefaultDateRange(filters);
+        var data = await _complaintAnalyticsService.GetChargesBreakdownAsync(filters);
+        return Ok(new { success = true, data });
+    }
+
     // GET /api/analytics/complaints/by-type
     [HttpGet("complaints/by-type")]
     [Authorize(Roles = "SuperAdmin,Admin,Accountant")]

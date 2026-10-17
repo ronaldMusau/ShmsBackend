@@ -37,7 +37,7 @@ public class ServiceChargeAnalyticsService
             {
                 Label = g.Key.ToString(),
                 Count = g.Count(),
-                Amount = g.Sum(p => p.ServiceChargeAmount ?? 0m)
+                Amount = g.Sum(p => p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m)
             })
             .ToListAsync();
 
@@ -53,7 +53,8 @@ public class ServiceChargeAnalyticsService
                 ?? new AnalyticsCategoryItem { Label = status, Count = 0, Amount = 0m })
             .ToList();
 
-        var totalAmount = await baseQuery.SumAsync(p => p.ServiceChargeAmount ?? 0m);
+        // Prorated by what was actually paid (same basis as Financial Standing), so a partial payment only counts its paid share.
+        var totalAmount = await baseQuery.SumAsync(p => p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m);
 
         return new AnalyticsBreakdownResult
         {
@@ -72,7 +73,7 @@ public class ServiceChargeAnalyticsService
         var baseQuery = BaseQuery(filters);
         var rows = await baseQuery
             .Where(p => p.PaidAt != null && p.PaidAt >= fromDate && p.PaidAt <= toDate.AddDays(1))
-            .Select(p => new { PaidAt = p.PaidAt!.Value, ServiceChargeAmount = p.ServiceChargeAmount ?? 0m })
+            .Select(p => new { PaidAt = p.PaidAt!.Value, ServiceChargeAmount = p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m })
             .ToListAsync();
 
         var entries = rows.Select(r => (Date: r.PaidAt, Amount: r.ServiceChargeAmount)).ToList();
