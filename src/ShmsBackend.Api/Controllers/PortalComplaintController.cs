@@ -69,6 +69,12 @@ public class PortalComplaintController : ControllerBase
         if (complaintType == null)
             return BadRequest(new { success = false, message = "Invalid complaint type." });
 
+        dto.Description = (dto.Description ?? string.Empty).Trim();
+        if (dto.Description.Length < 10)
+            return BadRequest(new { success = false, message = "Please describe the problem in at least 10 characters." });
+        if (dto.Description.Length > 2000)
+            return BadRequest(new { success = false, message = "The description is too long (maximum 2000 characters)." });
+
         var ticketNumber = await TicketNumberHelper.GenerateAsync(_context, tenant.House.HouseNumber);
 
         var complaint = new Complaint

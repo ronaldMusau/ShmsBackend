@@ -1,3 +1,4 @@
+using ShmsBackend.Api.Helpers;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
@@ -143,12 +144,31 @@ public class ComplaintReminderSchedulerService : BackgroundService
         }
 
         // Agent — one grouped email per distinct escalated agent, containing only their own complaints.
-        var agentGroups = complaints.Where(c => c.EscalatedToAgentId.HasValue).GroupBy(c => c.EscalatedToAgentId!.Value);
-        foreach (var group in agentGroups)
+        // Only work that is genuinely waiting on the agent: repairs not yet submitted (or sent back by the
+        // tenant) and inspections that have no report yet. Work already submitted and awaiting the tenant's
+        // verification is NOT the agent's to action.
+        var overdueIds = complaints.Select(c => c.Id).ToList();
+        var pendingInspections = await context.ComplaintInspections
+            .Where(i => i.ReportedAt == null && overdueIds.Contains(i.ComplaintId))
+            .Select(i => new { i.AgentId, i.ComplaintId }).ToListAsync();
+        var agentWork = new Dictionary<Guid, List<Complaint>>();
+        foreach (var c in complaints.Where(c => c.EscalatedToAgentId.HasValue
+                     && (c.AgentCompletedAt == null || c.TenantVerificationStatus == "Rejected")))
+        {
+            if (!agentWork.TryGetValue(c.EscalatedToAgentId!.Value, out var l)) agentWork[c.EscalatedToAgentId.Value] = l = new List<Complaint>();
+            l.Add(c);
+        }
+        foreach (var pi in pendingInspections)
+        {
+            var c = complaints.First(x => x.Id == pi.ComplaintId);
+            if (!agentWork.TryGetValue(pi.AgentId, out var l)) agentWork[pi.AgentId] = l = new List<Complaint>();
+            if (!l.Contains(c)) l.Add(c);
+        }
+        foreach (var group in agentWork)
         {
             var agent = await context.Agents.FirstOrDefaultAsync(a => a.Id == group.Key);
             if (agent == null) continue;
-            var groupItems = group.ToList();
+            var groupItems = group.Value;
             try { await emailService.SendComplaintOverdueAgentGroupedEmailAsync(agent.Email, agent.FirstName, groupItems.Select(ToItem).ToList(), agent.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to agent {Email}", agent.Email); }
 
@@ -165,7 +185,12 @@ public class ComplaintReminderSchedulerService : BackgroundService
         // Landlord — one grouped email per distinct landlord, for complaints billable to Management
         // awaiting their decision. Complaint already carries its own scalar LandlordId column
         // directly (confirmed from the entity), so it's used as-is — no House/Flat join needed.
-        var landlordGroups = complaints.Where(c => c.BillableTarget == "Management").GroupBy(c => c.LandlordId);
+        // Only tickets whose internal approval is finished and that are really waiting on the landlord's sign-off.
+        var landlordGroups = complaints
+            .Where(c => c.IsBillable == true && c.BillableTarget == "Management"
+                        && c.CurrentApprovalStepOrder == null && c.LandlordDecision == null
+                        && !c.NeedsResubmission && c.Status != "Closed" && c.Status != "Approved")
+            .GroupBy(c => c.LandlordId);
         foreach (var group in landlordGroups)
         {
             var landlord = await context.Landlords.FirstOrDefaultAsync(l => l.Id == group.Key);
@@ -182,6 +207,32 @@ public class ComplaintReminderSchedulerService : BackgroundService
                     "property", "Complaint", null);
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to landlord {Email}", landlord.Email); }
+        }
+
+        // Tenant — things only the tenant can move forward: a billed repair awaiting their decision, an
+        // accepted charge still unpaid, or finished work waiting for their verification.
+        var tenantGroups = complaints
+            .Select(c => new
+            {
+                Complaint = c,
+                Reason = ComplaintChargeHelper.IsTenantBilled(c) && c.Status == "Approved" && c.CurrentApprovalStepOrder == null && c.TenantChargeDecision == null
+                            ? "needs your decision (fix through the system, or decline)"
+                         : ComplaintChargeHelper.IsChargeOutstanding(c)
+                            ? $"has a KES {c.BillableAmount:N0} charge waiting for payment"
+                         : c.AgentCompletedAt != null && c.TenantVerificationStatus == null
+                            ? "has completed work waiting for your verification"
+                            : null
+            })
+            .Where(x => x.Reason != null)
+            .GroupBy(x => x.Complaint.TenantId);
+        foreach (var group in tenantGroups)
+        {
+            var lines = group.Select(x => $"{x.Complaint.TicketNumber} {x.Reason}").ToList();
+            var summary = string.Join("; ", lines.Take(5)) + (lines.Count > 5 ? $" +{lines.Count - 5} more" : "");
+            await ComplaintMail.ToTenantAsync(context, emailService, _logger, group.Key,
+                group.First().Complaint.TicketNumber, "Complaint Reminder", $"Reminder: {summary}. Please open the portal to continue.");
+            try { await notificationService.SendToUserAsync(group.Key.ToString(), $"Complaint reminder: {summary}", "property", "Complaint", null); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send complaint reminder notification to tenant"); }
         }
 
         await context.SaveChangesAsync();
