@@ -617,6 +617,27 @@ namespace ShmsBackend.Data.Migrations
                     b.Property<int>("TenancyCycle")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("TenantChargeDecidedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TenantChargeDecision")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TenantChargeDeclineReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("TenantChargePaidAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("TenantChargePaidBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("TenantChargePaidByAdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("TenantChargeReceipt")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("TenantCompletedAt")
                         .HasColumnType("datetime2");
 
@@ -716,6 +737,104 @@ namespace ShmsBackend.Data.Migrations
                     b.HasIndex("ComplaintId");
 
                     b.ToTable("ComplaintAttachments");
+                });
+
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.ComplaintCheckoutAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("AttemptStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CheckoutRequestId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid>("ComplaintId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("InitiatedByAdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("MpesaReceiptNumber")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PaidBy")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ProcessedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ResultCode")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResultDesc")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("RetryCount")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckoutRequestId");
+
+                    b.HasIndex("ComplaintId");
+
+                    b.ToTable("ComplaintCheckoutAttempts");
+                });
+
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.ComplaintInspection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ComplaintId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Instructions")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ReportNotes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ReportedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("RequestedByAdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("RoundNumber")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId");
+
+                    b.HasIndex("ComplaintId", "RoundNumber");
+
+                    b.ToTable("ComplaintInspections");
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.ComplaintLandlordDecision", b =>
@@ -3227,6 +3346,28 @@ namespace ShmsBackend.Data.Migrations
                     b.Navigation("Complaint");
                 });
 
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.ComplaintCheckoutAttempt", b =>
+                {
+                    b.HasOne("ShmsBackend.Data.Models.Entities.Portal.Complaint", "Complaint")
+                        .WithMany()
+                        .HasForeignKey("ComplaintId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Complaint");
+                });
+
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.ComplaintInspection", b =>
+                {
+                    b.HasOne("ShmsBackend.Data.Models.Entities.Portal.Complaint", "Complaint")
+                        .WithMany("Inspections")
+                        .HasForeignKey("ComplaintId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Complaint");
+                });
+
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Portal.ComplaintLandlordDecision", b =>
                 {
                     b.HasOne("ShmsBackend.Data.Models.Entities.Portal.Complaint", "Complaint")
@@ -3718,6 +3859,8 @@ namespace ShmsBackend.Data.Migrations
                     b.Navigation("ApprovalActions");
 
                     b.Navigation("Attachments");
+
+                    b.Navigation("Inspections");
 
                     b.Navigation("LandlordDecisions");
 

@@ -43,6 +43,15 @@ public class Complaint : ISoftDelete
     public DateTime? ClosedAt { get; set; }
     public DateTime? RevokedAt { get; set; }
     public DateTime? LastReminderSentAt { get; set; }
+    // Tenant-billed complaints: tenant chooses to have it fixed through the system (and pays) or to decline.
+    public string? TenantChargeDecision { get; set; }          // null | "Accepted" | "Declined"
+    public DateTime? TenantChargeDecidedAt { get; set; }
+    public string? TenantChargeDeclineReason { get; set; }
+    public DateTime? TenantChargePaidAt { get; set; }
+    public string? TenantChargeReceipt { get; set; }
+    public string? TenantChargePaidBy { get; set; }            // "Tenant" | "Management"
+    public Guid? TenantChargePaidByAdminId { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
     public bool IsDeleted { get; set; } = false;
@@ -51,5 +60,6 @@ public class Complaint : ISoftDelete
     public ICollection<ComplaintApprovalAction> ApprovalActions { get; set; } = new List<ComplaintApprovalAction>();
     public ICollection<ComplaintStatusHistoryEntry> StatusHistory { get; set; } = new List<ComplaintStatusHistoryEntry>();
     public ICollection<ComplaintWorkAttempt> WorkAttempts { get; set; } = new List<ComplaintWorkAttempt>();
+    public ICollection<ComplaintInspection> Inspections { get; set; } = new List<ComplaintInspection>();
     public ICollection<ComplaintLandlordDecision> LandlordDecisions { get; set; } = new List<ComplaintLandlordDecision>();
 }

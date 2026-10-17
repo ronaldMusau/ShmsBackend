@@ -7,7 +7,7 @@ namespace ShmsBackend.Api.Controllers;
 
 public static class ComplaintDetailHelper
 {
-    public static async Task<object> BuildAsync(ShmsDbContext context, Complaint complaint, string viewerRole)
+    public static async Task<object> BuildAsync(ShmsDbContext context, Complaint complaint, string viewerRole, Guid? agentViewerId = null)
     {
         var house = await context.Houses.FirstOrDefaultAsync(h => h.Id == complaint.HouseId);
         var flat = await context.Flats.FirstOrDefaultAsync(f => f.Id == complaint.FlatId);
@@ -49,6 +49,29 @@ public static class ComplaintDetailHelper
                 withinGracePeriod = monthsSinceStart < flat.BillableGracePeriodMonths;
             }
         }
+
+        var inspections = complaint.Inspections.Count > 0
+            ? (IEnumerable<ComplaintInspection>)complaint.Inspections
+            : await context.ComplaintInspections.Where(i => i.ComplaintId == complaint.Id).ToListAsync();
+        var inspectionAgentIds = inspections.Select(i => i.AgentId).Distinct().ToList();
+        var inspectionAgents = await context.Agents.Where(a => inspectionAgentIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, a => a.FirstName + " " + a.LastName);
+        // An agent only sees their own inspection rounds.
+        var visibleInspections = viewerRole == "Agent" && agentViewerId.HasValue
+            ? inspections.Where(i => i.AgentId == agentViewerId.Value)
+            : inspections;
+        List<object> inspectionsResponse = visibleInspections.OrderBy(i => i.RoundNumber).Select(i => (object)new
+        {
+            i.RoundNumber,
+            AgentName = inspectionAgents.TryGetValue(i.AgentId, out var an) ? an : null,
+            i.Instructions,
+            i.RequestedAt,
+            i.ReportNotes,
+            i.ReportedAt,
+            Attachments = attachments
+                .Where(a => a.Stage == "Inspection" && a.AttemptNumber == i.RoundNumber)
+                .Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt })
+        }).ToList();
 
         List<object>? workAttemptsResponse = workAttempts.OrderBy(w => w.AttemptNumber).Select(w => (object)new
         {
@@ -125,6 +148,13 @@ public static class ComplaintDetailHelper
             complaint.TenantRejectionReason,
             complaint.TenantCompletedAt,
             complaint.AgentRedoCount,
+            // Tenant-charge payment details are private to tenant + management (never landlord/agent).
+            TenantChargeDecision = viewerRole == "Management" || viewerRole == "Tenant" ? complaint.TenantChargeDecision : null,
+            TenantChargeDecidedAt = viewerRole == "Management" || viewerRole == "Tenant" ? complaint.TenantChargeDecidedAt : null,
+            TenantChargeDeclineReason = viewerRole == "Management" || viewerRole == "Tenant" ? complaint.TenantChargeDeclineReason : null,
+            TenantChargePaidAt = viewerRole == "Management" || viewerRole == "Tenant" ? complaint.TenantChargePaidAt : null,
+            TenantChargeReceipt = viewerRole == "Management" || viewerRole == "Tenant" ? complaint.TenantChargeReceipt : null,
+            TenantChargePaidBy = viewerRole == "Management" || viewerRole == "Tenant" ? complaint.TenantChargePaidBy : null,
             complaint.ClosedAt,
             ClosingComment = closeHistoryEntry?.Notes,
             ReopenedAt = reopenHistoryEntry?.ChangedAt,
@@ -134,6 +164,7 @@ public static class ComplaintDetailHelper
             complaint.LandlordActionedAt,
             Attachments = attachments.Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt, a.Stage, a.AttemptNumber }),
             WorkAttempts = workAttemptsResponse,
+            Inspections = inspectionsResponse,
             LandlordDecisionHistory = landlordDecisionHistoryResponse,
             ApprovalHistory = approvalHistoryResponse,
             complaint.NeedsResubmission,

@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using ShmsBackend.Api.Helpers;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
@@ -21,13 +23,16 @@ public class PortalComplaintController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<PortalComplaintController> _logger;
+    private readonly IMpesaService _mpesaService;
 
     public PortalComplaintController(
         ShmsDbContext context,
         IEmailService emailService,
         INotificationService notificationService,
-        ILogger<PortalComplaintController> logger)
+        ILogger<PortalComplaintController> logger,
+        IMpesaService mpesaService)
     {
+        _mpesaService = mpesaService;
         _context = context;
         _emailService = emailService;
         _notificationService = notificationService;
@@ -388,12 +393,13 @@ public class PortalComplaintController : ControllerBase
         var complaint = await _context.Complaints
             .Include(c => c.ComplaintType)
             .Include(c => c.Attachments)
-            .FirstOrDefaultAsync(c => c.Id == id && c.EscalatedToAgentId == agentId);
+            .FirstOrDefaultAsync(c => c.Id == id && (c.EscalatedToAgentId == agentId
+                || _context.ComplaintInspections.Any(i => i.ComplaintId == c.Id && i.AgentId == agentId)));
 
         if (complaint == null)
-            return NotFound(new { success = false, message = "Complaint not found or not escalated to you." });
+            return NotFound(new { success = false, message = "Complaint not found or not assigned to you." });
 
-        var result = await ComplaintDetailHelper.BuildAsync(_context, complaint, "Agent");
+        var result = await ComplaintDetailHelper.BuildAsync(_context, complaint, "Agent", agentId);
         return Ok(new { success = true, data = result });
     }
 
@@ -454,6 +460,79 @@ public class PortalComplaintController : ControllerBase
         return Ok(new { success = true, attachmentCount = savedAttachments.Count });
     }
 
+    // POST /api/portalcomplaint/{id}/inspection-evidence — agent uploads photos/documents for their open inspection
+    [HttpPost("{id}/inspection-evidence")]
+    [Authorize(Roles = "Agent")]
+    [RequestSizeLimit(25_000_000)]
+    public async Task<IActionResult> UploadInspectionEvidence(Guid id, [FromForm] List<IFormFile> images, [FromForm] List<IFormFile> documents)
+    {
+        var agentId = GetUserId();
+        var inspection = await _context.ComplaintInspections
+            .FirstOrDefaultAsync(i => i.ComplaintId == id && i.AgentId == agentId && i.ReportedAt == null);
+        if (inspection == null) return NotFound(new { success = false, message = "No open inspection found for you on this complaint." });
+
+        images ??= new List<IFormFile>();
+        documents ??= new List<IFormFile>();
+        const long maxFileSize = 4 * 1024 * 1024;
+        foreach (var file in images.Concat(documents))
+            if (file.Length > maxFileSize)
+                return BadRequest(new { success = false, message = $"{file.FileName} exceeds the 4MB limit." });
+
+        var saveDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "complaint-attachments");
+        Directory.CreateDirectory(saveDir);
+        foreach (var (file, type) in images.Select(f => (f, "Image")).Concat(documents.Select(f => (f, "Document"))))
+        {
+            var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+            using (var stream = new FileStream(Path.Combine(saveDir, fileName), FileMode.Create))
+                await file.CopyToAsync(stream);
+            _context.ComplaintAttachments.Add(new ComplaintAttachment
+            {
+                Id = Guid.NewGuid(), ComplaintId = id, FilePath = $"/complaint-attachments/{fileName}",
+                FileType = type, FileSizeBytes = file.Length, UploadedAt = DateTime.UtcNow,
+                Stage = "Inspection", AttemptNumber = inspection.RoundNumber
+            });
+        }
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true });
+    }
+
+    // PATCH /api/portalcomplaint/{id}/inspection-report — agent submits findings; management then sets the billable amount
+    [HttpPatch("{id}/inspection-report")]
+    [Authorize(Roles = "Agent")]
+    public async Task<IActionResult> SubmitInspectionReport(Guid id, [FromBody] AgentCompleteDto dto)
+    {
+        var agentId = GetUserId();
+        var inspection = await _context.ComplaintInspections
+            .FirstOrDefaultAsync(i => i.ComplaintId == id && i.AgentId == agentId && i.ReportedAt == null);
+        if (inspection == null) return NotFound(new { success = false, message = "No open inspection found for you on this complaint." });
+        if (string.IsNullOrWhiteSpace(dto.Notes)) return BadRequest(new { success = false, message = "Inspection findings are required." });
+
+        var complaint = await _context.Complaints.FirstAsync(c => c.Id == id);
+        inspection.ReportNotes = dto.Notes.Trim();
+        inspection.ReportedAt = DateTime.UtcNow;
+        _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+        {
+            Id = Guid.NewGuid(), ComplaintId = id, FromStatus = complaint.Status, ToStatus = complaint.Status,
+            ChangedByAgentId = agentId, Notes = $"Inspection #{inspection.RoundNumber} report submitted.", ChangedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                $"Inspection report received for complaint {complaint.TicketNumber} — you can now set the billable amount.",
+                "property", "Complaint", complaint.Id.ToString());
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of inspection report"); }
+        await ComplaintMail.ToManagementAsync(_context, _emailService, _logger, complaint.TicketNumber, "Inspection Report Received",
+            "The agent has submitted their inspection findings. Review them and set the billing decision and amount.");
+        try { await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"The inspection for complaint {complaint.TicketNumber} is complete. Management will review the findings.", "property", "Complaint", complaint.Id.ToString()); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of inspection report"); }
+
+        return Ok(new { success = true, message = "Inspection report submitted." });
+    }
+
     // GET /api/portalcomplaint/agent/my-escalated
     [HttpGet("agent/my-escalated")]
     [Authorize(Roles = "Agent")]
@@ -462,8 +541,13 @@ public class PortalComplaintController : ControllerBase
         var agentId = GetUserId();
         var complaints = await _context.Complaints
             .Include(c => c.ComplaintType)
-            .Where(c => c.EscalatedToAgentId == agentId)
-            .OrderByDescending(c => c.EscalatedAt)
+            .Where(c => c.EscalatedToAgentId == agentId
+                || _context.ComplaintInspections.Any(i => i.ComplaintId == c.Id && i.AgentId == agentId))
+            .OrderByDescending(c => c.EscalatedAt ?? c.CreatedAt)
+            .ToListAsync();
+        var complaintIds = complaints.Select(c => c.Id).ToList();
+        var myInspections = await _context.ComplaintInspections
+            .Where(i => i.AgentId == agentId && complaintIds.Contains(i.ComplaintId))
             .ToListAsync();
 
         var houseIds = complaints.Select(c => c.HouseId).Distinct().ToList();
@@ -486,7 +570,16 @@ public class PortalComplaintController : ControllerBase
             c.AgentCompletedAt,
             c.TenantVerificationStatus,
             c.TenantRejectionReason,
-            c.AgentRedoCount
+            c.AgentRedoCount,
+            c.CreatedAt,
+            RepairAssignedToMe = c.EscalatedToAgentId == agentId,
+            PendingInspection = myInspections.Any(i => i.ComplaintId == c.Id && i.ReportedAt == null),
+            InspectionInstructions = myInspections.Where(i => i.ComplaintId == c.Id && i.ReportedAt == null).Select(i => i.Instructions).FirstOrDefault(),
+            InspectionRequestedAt = myInspections.Where(i => i.ComplaintId == c.Id).Max(i => (DateTime?)i.RequestedAt),
+            InspectionCount = myInspections.Count(i => i.ComplaintId == c.Id),
+            // What the agent should do now: Inspection (assess only) vs Repair (physical fix) — never mixed.
+            WorkType = myInspections.Any(i => i.ComplaintId == c.Id && i.ReportedAt == null) ? "Inspection"
+                     : c.EscalatedToAgentId == agentId ? "Repair" : "InspectionDone"
         });
 
         return Ok(new { success = true, complaints = data });
@@ -595,6 +688,117 @@ public class PortalComplaintController : ControllerBase
         return Ok(new { success = true, message = "Marked as completed. Awaiting tenant verification." });
     }
 
+    // PATCH /api/portalcomplaint/{id}/charge-decision — tenant accepts (fix through the system) or declines a tenant-billed complaint
+    [HttpPatch("{id}/charge-decision")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> ChargeDecision(Guid id, [FromBody] ComplaintChargeDecisionDto dto)
+    {
+        var tenantId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        if (!ComplaintChargeHelper.IsTenantBilled(complaint) || complaint.Status != "Approved" || complaint.CurrentApprovalStepOrder != null)
+            return BadRequest(new { success = false, message = "This complaint is not waiting for your decision." });
+        if (complaint.TenantChargeDecision != null)
+            return BadRequest(new { success = false, message = "You have already made a decision on this complaint." });
+        if (!dto.Accept && string.IsNullOrWhiteSpace(dto.Reason))
+            return BadRequest(new { success = false, message = "Please tell us why you are declining." });
+
+        var now = DateTime.UtcNow;
+        complaint.TenantChargeDecidedAt = now;
+        var originalStatus = complaint.Status;
+        if (dto.Accept)
+        {
+            complaint.TenantChargeDecision = "Accepted";
+        }
+        else
+        {
+            complaint.TenantChargeDecision = "Declined";
+            complaint.TenantChargeDeclineReason = dto.Reason!.Trim();
+            complaint.Status = "Closed";
+            complaint.ClosedAt = now;
+        }
+        _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = complaint.Id,
+            FromStatus = originalStatus,
+            ToStatus = complaint.Status,
+            ChangedByTenantId = tenantId,
+            Notes = dto.Accept
+                ? "Tenant chose to have this fixed through the system."
+                : $"Tenant declined to fix this through the system: {complaint.TenantChargeDeclineReason}",
+            ChangedAt = now
+        });
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _notificationService.SendToRolesAsync(
+                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
+                dto.Accept
+                    ? $"Tenant accepted the fix for complaint {complaint.TicketNumber}{(ComplaintChargeHelper.HasChargeAmount(complaint) ? " — awaiting payment of KES " + complaint.BillableAmount!.Value.ToString("N2") : " — ready to escalate")}."
+                    : $"Tenant declined to fix complaint {complaint.TicketNumber} through the system. The ticket is closed.",
+                "property", "Complaint", complaint.Id.ToString());
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of tenant charge decision"); }
+
+        await ComplaintMail.ToManagementAsync(_context, _emailService, _logger, complaint.TicketNumber,
+            dto.Accept ? "Tenant Accepted the Fix" : "Tenant Declined the Fix",
+            dto.Accept
+                ? (ComplaintChargeHelper.HasChargeAmount(complaint) ? $"The tenant chose to fix this through the system and must pay KES {complaint.BillableAmount!.Value:N2} (management can pay on their behalf)." : "The tenant chose to fix this through the system. It is ready to escalate to the agent.")
+                : $"The tenant declined to fix this through the system. The ticket has been closed. Reason: {complaint.TenantChargeDeclineReason}");
+
+        return Ok(new { success = true, message = dto.Accept
+            ? (ComplaintChargeHelper.HasChargeAmount(complaint) ? "Accepted. Please complete the payment to proceed." : "Accepted. Management will arrange the fix.")
+            : "Declined. This complaint has been closed." });
+    }
+
+    // POST /api/portalcomplaint/{id}/charge/pay — tenant pays the complaint charge by M-Pesa
+    [HttpPost("{id}/charge/pay")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> PayCharge(Guid id, [FromBody] ComplaintChargePayDto dto)
+    {
+        var tenantId = GetUserId();
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id && c.TenantId == tenantId);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+
+        var (attempt, error) = await ComplaintChargeHelper.StartAsync(_context, _mpesaService, complaint, dto.PhoneNumber, "Tenant", null);
+        if (attempt == null) return BadRequest(new { success = false, message = error });
+        return Ok(new { success = true, message = "Payment initiated. Please check your phone.", data = new { checkoutRequestId = attempt.CheckoutRequestId, amount = attempt.Amount } });
+    }
+
+    // GET /api/portalcomplaint/charge/checkout-status/{checkoutRequestId}
+    [HttpGet("charge/checkout-status/{checkoutRequestId}")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> GetChargeCheckoutStatus(string checkoutRequestId)
+    {
+        var tenantId = GetUserId();
+        var attempt = await _context.ComplaintCheckoutAttempts.Include(a => a.Complaint)
+            .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+        if (attempt == null) return Ok(new { success = true, data = new { attemptStatus = "Processing" } });
+        if (attempt.Complaint?.TenantId != tenantId) return Forbid();
+        return Ok(new { success = true, data = new { attemptStatus = attempt.AttemptStatus, attempt.ResultDesc, paidAt = attempt.Complaint?.TenantChargePaidAt } });
+    }
+
+    // POST /api/portalcomplaint/charge/mark-timeout/{checkoutRequestId}
+    [HttpPost("charge/mark-timeout/{checkoutRequestId}")]
+    [Authorize(Roles = "Tenant")]
+    public async Task<IActionResult> MarkChargeTimeout(string checkoutRequestId)
+    {
+        var tenantId = GetUserId();
+        var attempt = await _context.ComplaintCheckoutAttempts.Include(a => a.Complaint)
+            .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+        if (attempt == null) return NotFound(new { success = false, message = "Checkout attempt not found." });
+        if (attempt.Complaint?.TenantId != tenantId) return Forbid();
+        if (attempt.ProcessedAt == null && attempt.AttemptStatus == "Processing")
+        {
+            attempt.AttemptStatus = "Failed";
+            attempt.ResultDesc = "Timed out — no callback received";
+            await _context.SaveChangesAsync();
+        }
+        return Ok(new { success = true, attemptStatus = attempt.AttemptStatus });
+    }
+
     // PATCH /api/portalcomplaint/{id}/tenant-verify
     [HttpPatch("{id}/tenant-verify")]
     [Authorize(Roles = "Tenant")]
@@ -696,6 +900,8 @@ public class PortalComplaintController : ControllerBase
             return BadRequest(new { success = false, message = "This complaint does not require your approval." });
         if (complaint.CurrentApprovalStepOrder != null)
             return BadRequest(new { success = false, message = "Internal approval is still in progress." });
+        if (!dto.Approved && string.IsNullOrWhiteSpace(dto.Notes))
+            return BadRequest(new { success = false, message = "Please give a reason for rejecting." });
         var existingDecision = await _context.ComplaintLandlordDecisions
             .FirstOrDefaultAsync(d => d.ComplaintId == complaint.Id && d.ApprovalAttemptNumber == complaint.ApprovalAttemptNumber);
         if (existingDecision != null)
@@ -976,3 +1182,9 @@ public class TenantVerifyDto
 }
 
 public class LandlordApprovalDto { public bool Approved { get; set; } public string? Notes { get; set; } }
+
+public class ComplaintChargeDecisionDto
+{
+    public bool Accept { get; set; }
+    public string? Reason { get; set; }
+}

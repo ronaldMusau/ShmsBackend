@@ -48,6 +48,7 @@ public interface IEmailService
     Task SendComplaintConfirmationEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string? userId = null, bool isPortalUser = false);
     Task SendComplaintManagementAlertEmailAsync(string toEmail, string firstName, string ticketNumber, string complaintTypeName, string tenantName, string houseNumber, string flatName, string? userId = null, bool isPortalUser = false);
     Task SendComplaintClosedEmailAsync(string toEmail, string firstName, string ticketNumber, string resolutionNotes, string? userId = null, bool isPortalUser = false);
+    Task SendComplaintUpdateEmailAsync(string toEmail, string firstName, string ticketNumber, string subject, string message, string? userId = null, bool isPortalUser = false);
     Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false);
     Task SendApprovalStepEmailAsync(string toEmail, string firstName, string ticketNumber, int stepOrder, string? userId = null, bool isPortalUser = false);
     Task SendApprovalRejectedEmailAsync(string toEmail, string firstName, string ticketNumber, string rejectionReason, string? userId = null, bool isPortalUser = false);

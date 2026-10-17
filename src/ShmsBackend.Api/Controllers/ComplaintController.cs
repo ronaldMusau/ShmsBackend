@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ShmsBackend.Api.Services.Email;
+using ShmsBackend.Api.Helpers;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
@@ -20,13 +22,16 @@ public class ComplaintController : ControllerBase
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<ComplaintController> _logger;
+    private readonly IMpesaService _mpesaService;
 
     public ComplaintController(
         ShmsDbContext context,
         IEmailService emailService,
         INotificationService notificationService,
-        ILogger<ComplaintController> logger)
+        ILogger<ComplaintController> logger,
+        IMpesaService mpesaService)
     {
+        _mpesaService = mpesaService;
         _context = context;
         _emailService = emailService;
         _notificationService = notificationService;
@@ -194,6 +199,20 @@ public class ComplaintController : ControllerBase
 
         var adminId = GetUserId();
 
+        if (complaint.Status == "Closed")
+            return BadRequest(new { success = false, message = "This complaint is closed. Reopen it before changing the billing decision." });
+        if (complaint.CurrentApprovalStepOrder != null)
+            return BadRequest(new { success = false, message = "The internal approval sequence is in progress — the billing decision can't be changed now." });
+        if (complaint.EscalatedToAgentId != null || complaint.TenantChargePaidAt != null)
+            return BadRequest(new { success = false, message = "This complaint has already been escalated or paid — the billing decision can no longer be changed." });
+        if (complaint.Status == "Approved")
+            return BadRequest(new { success = false, message = "This complaint is already approved. The billing decision can't be changed." });
+
+        // A fresh billing decision wipes any earlier tenant fix-through-system choice.
+        complaint.TenantChargeDecision = null;
+        complaint.TenantChargeDecidedAt = null;
+        complaint.TenantChargeDeclineReason = null;
+
         if (!dto.IsBillable)
         {
             if (string.IsNullOrWhiteSpace(dto.ResolutionNotes))
@@ -335,7 +354,14 @@ public class ComplaintController : ControllerBase
             return BadRequest(new { success = false, message = "This complaint is not closed." });
 
         var adminId = GetUserId();
-        var newStatus = complaint.IsBillable == true ? "UnderReview" : "Open";
+        var declinedReopen = complaint.TenantChargeDecision == "Declined" && ComplaintChargeHelper.IsTenantBilled(complaint);
+        var newStatus = declinedReopen ? "Approved" : (complaint.IsBillable == true ? "UnderReview" : "Open");
+        if (declinedReopen)
+        {
+            complaint.TenantChargeDecision = null;
+            complaint.TenantChargeDecidedAt = null;
+            complaint.TenantChargeDeclineReason = null;
+        }
 
         complaint.Status = newStatus;
         complaint.ClosedAt = null;
@@ -363,6 +389,69 @@ public class ComplaintController : ControllerBase
         return Ok(new { success = true, message = "Complaint reopened.", newStatus });
     }
 
+    // POST /api/complaint/{id}/inspect — send the flat's agent to assess damage BEFORE billing (no payment gate)
+    [HttpPost("{id}/inspect")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> RequestInspection(Guid id, [FromBody] EscalateDto dto)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        if (complaint.Status == "Closed")
+            return BadRequest(new { success = false, message = "This complaint is closed. Reopen it first." });
+        if (complaint.EscalatedToAgentId != null)
+            return BadRequest(new { success = false, message = "This complaint is already escalated for repair — inspection is no longer needed." });
+        if (string.IsNullOrWhiteSpace(dto.Notes))
+            return BadRequest(new { success = false, message = "Inspection instructions are required." });
+        if (await _context.ComplaintInspections.AnyAsync(i => i.ComplaintId == id && i.ReportedAt == null))
+            return BadRequest(new { success = false, message = "An inspection is already waiting for the agent's report." });
+
+        var assignment = await _context.AgentFlats.Where(af => af.FlatId == complaint.FlatId)
+            .OrderByDescending(af => af.AssignedAt).FirstOrDefaultAsync();
+        if (assignment == null)
+            return BadRequest(new { success = false, message = "No agent is assigned to this flat." });
+        var agent = await _context.Agents.FirstOrDefaultAsync(a => a.Id == assignment.AgentId);
+        if (agent == null)
+            return BadRequest(new { success = false, message = "The agent assigned to this flat could not be found. Please reassign an agent first." });
+
+        var round = (await _context.ComplaintInspections.Where(i => i.ComplaintId == id).MaxAsync(i => (int?)i.RoundNumber) ?? 0) + 1;
+        var adminId = GetUserId();
+        _context.ComplaintInspections.Add(new ComplaintInspection
+        {
+            ComplaintId = id,
+            RoundNumber = round,
+            AgentId = agent.Id,
+            RequestedByAdminId = adminId,
+            Instructions = dto.Notes.Trim(),
+            RequestedAt = DateTime.UtcNow
+        });
+        _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+        {
+            Id = Guid.NewGuid(),
+            ComplaintId = id,
+            FromStatus = complaint.Status,
+            ToStatus = complaint.Status,
+            ChangedByAdminId = adminId,
+            Notes = $"Inspection #{round} requested (site visit to assess damage before billing). {dto.Notes.Trim()}",
+            ChangedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        try { await _notificationService.SendToUserAsync(agent.Id.ToString(), $"Inspection requested for complaint {complaint.TicketNumber} — please assess the damage and submit a report.", "property", "Complaint", complaint.Id.ToString()); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify agent of inspection"); }
+        await ComplaintMail.ToAgentAsync(_context, _emailService, _logger, agent.Id, complaint.TicketNumber, "Inspection Requested",
+            "Management has asked you to visit and inspect the reported damage so it can be billed accurately. This is an inspection only — no repair yet. Please submit your findings and photos through the agent portal.");
+
+        try { await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"An agent will visit to inspect the issue on complaint {complaint.TicketNumber}. Please be available.", "property", "Complaint", complaint.Id.ToString()); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of inspection"); }
+        await ComplaintMail.ToTenantAsync(_context, _emailService, _logger, complaint.TenantId, complaint.TicketNumber, "Inspection Visit Scheduled",
+            "An agent has been asked to visit your house to inspect the reported issue. This is an assessment only. Please be available and give them access.");
+
+        try { await _notificationService.SendToUserAsync(complaint.LandlordId.ToString(), $"An agent inspection has been requested for complaint {complaint.TicketNumber}.", "property", "Complaint", complaint.Id.ToString()); }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify landlord of inspection"); }
+
+        return Ok(new { success = true, message = $"Inspection requested from {agent.FirstName} {agent.LastName}." });
+    }
+
     // POST /api/complaint/{id}/escalate
     [HttpPost("{id}/escalate")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
@@ -384,11 +473,34 @@ public class ComplaintController : ControllerBase
 
         var adminId = GetUserId();
 
-        if (complaint.Status == "Closed")
+        // Not-billable tickets close straight away but may still be escalated for a physical fix (optional).
+        var notBillableClosed = complaint.Status == "Closed" && complaint.IsBillable == false && complaint.EscalatedToAgentId == null;
+        if (complaint.Status == "Closed" && !notBillableClosed)
             return BadRequest(new { success = false, message = "This complaint is closed. Reopen it first." });
-        if (complaint.Status != "Approved")
+        if (complaint.Status != "Approved" && !notBillableClosed)
             return BadRequest(new { success = false, message = $"This complaint cannot be escalated while its status is '{complaint.Status}'. It must be Approved first." });
+        if (complaint.IsBillable == true && complaint.BillableTarget == "Management" && complaint.LandlordDecision != "Approved")
+            return BadRequest(new { success = false, message = "Awaiting the landlord's approval before this can be escalated." });
+        if (!ComplaintChargeHelper.ChargeSettledForEscalation(complaint))
+            return BadRequest(new { success = false, message = complaint.TenantChargeDecision == null
+                ? "The tenant has not yet chosen to fix this through the system."
+                : complaint.TenantChargeDecision == "Declined"
+                    ? "The tenant declined to fix this through the system."
+                    : "The tenant's charge has not been paid yet. Wait for payment, or pay on the tenant's behalf." });
+        if (complaint.EscalatedToAgentId != null && complaint.TenantVerificationStatus != "Rejected" && complaint.AgentCompletedAt == null)
+            return BadRequest(new { success = false, message = "This complaint is already escalated to an agent." });
+        if (string.IsNullOrWhiteSpace(dto.Notes))
+            return BadRequest(new { success = false, message = "Escalation notes are required." });
+        if (await _context.ComplaintInspections.AnyAsync(i => i.ComplaintId == id && i.ReportedAt == null))
+            return BadRequest(new { success = false, message = "An inspection is still waiting for the agent's report. Wait for it before escalating for repair." });
 
+        var statusBeforeEscalation = complaint.Status;
+        if (notBillableClosed)
+        {
+            complaint.Status = "Approved";
+            complaint.ClosedAt = null;
+            complaint.ClosedByAdminId = null;
+        }
         complaint.EscalatedToAgentId = assignment.AgentId;
         complaint.EscalatedAt = DateTime.UtcNow;
         complaint.EscalationNotes = dto.Notes;
@@ -397,7 +509,7 @@ public class ComplaintController : ControllerBase
         {
             Id = Guid.NewGuid(),
             ComplaintId = complaint.Id,
-            FromStatus = complaint.Status,
+            FromStatus = statusBeforeEscalation,
             ToStatus = complaint.Status,
             ChangedByAdminId = adminId,
             Notes = $"Escalated to agent for physical resolution. {dto.Notes}",
@@ -425,7 +537,9 @@ public class ComplaintController : ControllerBase
             || (complaint.EscalatedToAgentId == null
                 && complaint.CurrentApprovalStepOrder == null
                 && complaint.IsBillable == true
-                && (complaint.BillableTarget == "Tenant" || complaint.LandlordDecision != null));
+                && (complaint.BillableTarget == "Tenant"
+                        ? (complaint.TenantChargeDecision == "Accepted" && (!ComplaintChargeHelper.HasChargeAmount(complaint) || complaint.TenantChargePaidAt != null))
+                        : complaint.LandlordDecision != null));
 
         if (!canClose)
         {
@@ -434,6 +548,10 @@ public class ComplaintController : ControllerBase
                 closeBlockReason = "Cannot close — the internal approval sequence is still in progress.";
             else if (complaint.EscalatedToAgentId != null)
                 closeBlockReason = "Cannot close — the complaint is escalated to an agent and the tenant has not verified the completed work.";
+            else if (complaint.IsBillable == true && complaint.BillableTarget == "Tenant" && complaint.TenantChargeDecision != "Accepted")
+                closeBlockReason = "Cannot close — the tenant has not yet chosen to fix this through the system (or decline).";
+            else if (complaint.IsBillable == true && complaint.BillableTarget == "Tenant" && complaint.TenantChargePaidAt == null)
+                closeBlockReason = "Cannot close — the tenant's charge has not been paid yet.";
             else if (complaint.IsBillable == true && complaint.BillableTarget == "Management" && complaint.LandlordDecision == null)
                 closeBlockReason = "Cannot close — awaiting the landlord's final decision.";
             else
@@ -470,6 +588,99 @@ public class ComplaintController : ControllerBase
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of final close"); }
         }
         return Ok(new { success = true, message = "Complaint closed." });
+    }
+
+    // POST /api/complaint/{id}/charge/pay-on-behalf — management pays the tenant's complaint charge via STK push
+    [HttpPost("{id}/charge/pay-on-behalf")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> PayChargeOnBehalf(Guid id, [FromBody] ComplaintChargePayDto dto)
+    {
+        var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.Id == id);
+        if (complaint == null) return NotFound(new { success = false, message = "Complaint not found." });
+        if (complaint.TenantChargeDecision == null && ComplaintChargeHelper.IsTenantBilled(complaint))
+            return BadRequest(new { success = false, message = "The tenant has not yet chosen to fix this through the system." });
+
+        var (attempt, error) = await ComplaintChargeHelper.StartAsync(_context, _mpesaService, complaint, dto.PhoneNumber, "Management", GetUserId());
+        if (attempt == null) return BadRequest(new { success = false, message = error });
+        return Ok(new { success = true, message = "Payment request sent. Ask the payer to check their phone.", data = new { checkoutRequestId = attempt.CheckoutRequestId, amount = attempt.Amount } });
+    }
+
+    // GET /api/complaint/charge/checkout-status/{checkoutRequestId}
+    [HttpGet("charge/checkout-status/{checkoutRequestId}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetChargeCheckoutStatus(string checkoutRequestId)
+    {
+        var attempt = await _context.ComplaintCheckoutAttempts.Include(a => a.Complaint)
+            .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+        if (attempt == null) return Ok(new { success = true, data = new { attemptStatus = "Processing" } });
+        return Ok(new { success = true, data = new { attemptStatus = attempt.AttemptStatus, attempt.ResultDesc, paidAt = attempt.Complaint?.TenantChargePaidAt } });
+    }
+
+    // POST /api/complaint/charge/mark-timeout/{checkoutRequestId}
+    [HttpPost("charge/mark-timeout/{checkoutRequestId}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    public async Task<IActionResult> MarkChargeTimeout(string checkoutRequestId)
+    {
+        var attempt = await _context.ComplaintCheckoutAttempts.FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+        if (attempt == null) return NotFound(new { success = false, message = "Checkout attempt not found." });
+        if (attempt.ProcessedAt == null && attempt.AttemptStatus == "Processing")
+        {
+            attempt.AttemptStatus = "Failed";
+            attempt.ResultDesc = "Timed out — no callback received";
+            await _context.SaveChangesAsync();
+        }
+        return Ok(new { success = true, attemptStatus = attempt.AttemptStatus });
+    }
+
+    // GET /api/complaint/charge-payments — management list of complaint charge payments (never exposed to landlords)
+    [HttpGet("charge-payments")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetChargePayments(
+        [FromQuery] string? state = null,   // Outstanding | Paid | AwaitingTenant | Declined
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? flatId = null,
+        [FromQuery] DateTime? fromDate = null,
+        [FromQuery] DateTime? toDate = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 50)
+    {
+        var q = _context.Complaints.Where(c => c.IsBillable == true && c.BillableTarget == "Tenant" && c.Status != "Rejected"
+                                               && (c.CurrentApprovalStepOrder == null));
+        if (flatId.HasValue) q = q.Where(c => c.FlatId == flatId.Value);
+        if (fromDate.HasValue) q = q.Where(c => c.CreatedAt >= fromDate.Value);
+        if (toDate.HasValue) q = q.Where(c => c.CreatedAt <= toDate.Value.AddDays(1));
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim();
+            q = q.Where(c => c.TicketNumber.Contains(s)
+                || _context.Tenants.Any(t => t.Id == c.TenantId && (t.FirstName.Contains(s) || t.LastName.Contains(s)))
+                || _context.Houses.Any(h => h.Id == c.HouseId && h.HouseNumber.Contains(s)));
+        }
+        q = state switch
+        {
+            "Paid" => q.Where(c => c.TenantChargePaidAt != null),
+            "Outstanding" => q.Where(c => c.TenantChargeDecision == "Accepted" && c.TenantChargePaidAt == null && c.BillableAmount > 0),
+            "AwaitingTenant" => q.Where(c => c.TenantChargeDecision == null && c.Status == "Approved"),
+            "Declined" => q.Where(c => c.TenantChargeDecision == "Declined"),
+            _ => q
+        };
+
+        var total = await q.CountAsync();
+        var totalPaid = await q.Where(c => c.TenantChargePaidAt != null).SumAsync(c => (decimal?)c.BillableAmount) ?? 0m;
+        var totalOutstanding = await q.Where(c => c.TenantChargeDecision == "Accepted" && c.TenantChargePaidAt == null).SumAsync(c => (decimal?)c.BillableAmount) ?? 0m;
+        var rows = await q.OrderByDescending(c => c.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(c => new
+            {
+                c.Id, c.TicketNumber, c.Status, c.BillableAmount, c.BillableExplanation,
+                c.TenantChargeDecision, c.TenantChargeDecidedAt, c.TenantChargeDeclineReason,
+                c.TenantChargePaidAt, c.TenantChargeReceipt, c.TenantChargePaidBy, c.EscalatedToAgentId, c.CreatedAt,
+                TenantName = _context.Tenants.Where(t => t.Id == c.TenantId).Select(t => t.FirstName + " " + t.LastName).FirstOrDefault(),
+                TenantPhone = _context.Tenants.Where(t => t.Id == c.TenantId).Select(t => t.PhoneNumber).FirstOrDefault(),
+                HouseNumber = _context.Houses.Where(h => h.Id == c.HouseId).Select(h => h.HouseNumber).FirstOrDefault(),
+                FlatName = _context.Flats.Where(f => f.Id == c.FlatId).Select(f => f.FlatName).FirstOrDefault()
+            }).ToListAsync();
+
+        return Ok(new { success = true, data = rows, total, totalPaid, totalOutstanding, page, pageSize });
     }
 
     // PATCH /api/complaint/{id}/approval-action
@@ -563,8 +774,14 @@ public class ComplaintController : ControllerBase
             complaint.Status = "Approved";
             if (complaint.BillableTarget == "Tenant")
             {
-                // Transparency-only for landlord — no action needed, ticket effectively done with the internal process
+                // Transparency-only for landlord — no action needed. The tenant now decides whether to fix it through the system.
                 await _context.SaveChangesAsync();
+                var billedTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
+                var amtText = ComplaintChargeHelper.HasChargeAmount(complaint) ? $" A charge of KES {complaint.BillableAmount!.Value:N2} applies." : "";
+                try { await _notificationService.SendToUserAsync(complaint.TenantId.ToString(), $"Complaint {complaint.TicketNumber} has been approved for a fix, billed to you.{amtText} Please open it to accept the fix through the system or decline.", "property", "Complaint", complaint.Id.ToString()); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of billed complaint"); }
+                await ComplaintMail.ToTenantAsync(_context, _emailService, _logger, complaint.TenantId, complaint.TicketNumber, "Your Decision Is Needed",
+                    $"Your complaint has been approved for a fix and is billed to you.{amtText} Please open it in your portal and choose to fix it through the system, or decline."); 
                 return Ok(new { success = true, message = "Approved. Internal sequence complete — billed to tenant, no landlord action required." });
             }
             else
@@ -760,3 +977,8 @@ public class FinalCloseDto
 public class ApprovalActionDto { public bool Approved { get; set; } public string? Notes { get; set; } }
 
 public class ComplaintMessageDto { public string Message { get; set; } = string.Empty; }
+
+public class ComplaintChargePayDto
+{
+    public string PhoneNumber { get; set; } = string.Empty;
+}

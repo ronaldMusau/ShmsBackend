@@ -327,6 +327,100 @@ public class PaymentService : IPaymentService
         var wasTimeoutMarked = checkoutAttempt != null
             && (checkoutAttempt.AttemptStatus == "Failed" || checkoutAttempt.AttemptStatus == "Cancelled");
 
+        // ── Complaint Charge Branch (tenant-billed complaint paid by tenant or on their behalf) ──
+        if (checkoutAttempt == null)
+        {
+            var complaintAttempt = await _context.ComplaintCheckoutAttempts
+                .Include(a => a.Complaint)
+                .FirstOrDefaultAsync(a => a.CheckoutRequestId == checkoutRequestId);
+
+            if (complaintAttempt != null)
+            {
+                if (complaintAttempt.ProcessedAt != null)
+                {
+                    _logger.LogWarning("Duplicate callback for already-processed complaint CheckoutRequestId: {CheckoutRequestId} — ignoring.", checkoutRequestId);
+                    return;
+                }
+
+                var cmp = complaintAttempt.Complaint!;
+                complaintAttempt.ProcessedAt = DateTime.UtcNow;
+                complaintAttempt.ResultCode = details.ResultCode.ToString();
+                complaintAttempt.ResultDesc = details.ResultDescription;
+
+                if (details.IsSuccess)
+                {
+                    complaintAttempt.AttemptStatus = "Success";
+                    complaintAttempt.MpesaReceiptNumber = details.MpesaReceiptNumber;
+
+                    if (cmp.TenantChargePaidAt != null)
+                    {
+                        await _context.SaveChangesAsync();
+                        _logger.LogWarning("Late SUCCESS for already-paid complaint {Ticket} (CheckoutRequestId {Id}) — possible duplicate charge, not re-applied.", cmp.TicketNumber, checkoutRequestId);
+                        try
+                        {
+                            await _notificationService.SendToRolesAsync(
+                                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Manager, NotificationAudience.Accountant },
+                                $"Possible duplicate M-Pesa charge on complaint {cmp.TicketNumber} — it was already paid. Please verify and reconcile manually. Receipt: {details.MpesaReceiptNumber}",
+                                "payment", "Complaint", cmp.Id.ToString());
+                        }
+                        catch (Exception ex) { _logger.LogError(ex, "Failed to send complaint duplicate-charge notification"); }
+                        return;
+                    }
+
+                    cmp.TenantChargePaidAt = DateTime.UtcNow;
+                    cmp.TenantChargeReceipt = details.MpesaReceiptNumber;
+                    cmp.TenantChargePaidBy = complaintAttempt.PaidBy;
+                    cmp.TenantChargePaidByAdminId = complaintAttempt.InitiatedByAdminId;
+                    _context.ComplaintStatusHistory.Add(new ComplaintStatusHistoryEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        ComplaintId = cmp.Id,
+                        FromStatus = cmp.Status,
+                        ToStatus = cmp.Status,
+                        ChangedByTenantId = complaintAttempt.PaidBy == "Tenant" ? (Guid?)cmp.TenantId : null,
+                        ChangedByAdminId = complaintAttempt.PaidBy == "Management" ? complaintAttempt.InitiatedByAdminId : (Guid?)null,
+                        Notes = $"Complaint charge of KES {complaintAttempt.Amount:N2} paid ({(complaintAttempt.PaidBy == "Tenant" ? "by tenant" : "by management on tenant's behalf")}). Receipt {details.MpesaReceiptNumber}",
+                        ChangedAt = DateTime.UtcNow
+                    });
+                    await _context.SaveChangesAsync();
+
+                    try { await _notificationService.SendToUserAsync(cmp.TenantId.ToString(), $"Your payment of KES {complaintAttempt.Amount:N2} for complaint {cmp.TicketNumber} has been received.", "property", "Complaint", cmp.Id.ToString()); }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of complaint charge payment"); }
+                    try
+                    {
+                        await _notificationService.SendToRolesAsync(
+                            new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager, NotificationAudience.Accountant },
+                            $"Complaint {cmp.TicketNumber} charge of KES {complaintAttempt.Amount:N2} has been paid — it can now be escalated to the agent.",
+                            "property", "Complaint", cmp.Id.ToString());
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of complaint charge payment"); }
+                }
+                else
+                {
+                    var mappedDesc = details.ResultCode switch
+                    {
+                        1 or 1001 => "Insufficient M-Pesa balance",
+                        1002      => "M-Pesa transaction limit exceeded",
+                        1032      => "Payment cancelled on the phone",
+                        2001      => "Wrong M-Pesa PIN entered",
+                        1037      => "Payment timed out — phone not reached",
+                        _         => !string.IsNullOrWhiteSpace(details.ResultDescription) ? details.ResultDescription : "Payment failed"
+                    };
+                    complaintAttempt.AttemptStatus = "Failed";
+                    complaintAttempt.ResultDesc = mappedDesc;
+                    complaintAttempt.RetryCount++;
+                    await _context.SaveChangesAsync();
+
+                    if (complaintAttempt.PaidBy == "Tenant")
+                    {
+                        try { await _notificationService.SendToUserAsync(cmp.TenantId.ToString(), $"Your payment for complaint {cmp.TicketNumber} failed: {mappedDesc}. Please try again.", "property", "Complaint", cmp.Id.ToString()); }
+                        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of complaint charge failure"); }
+                    }
+                }
+                return;
+            }
+        }
+
         // ── Vacate Settlement Branch ─────────────────────────────────────────────
         if (checkoutAttempt == null)
         {

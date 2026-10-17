@@ -530,6 +530,30 @@ public class EmailService : IEmailService
             GetComplaintClosedTemplate(firstName, ticketNumber, resolutionNotes));
     }
 
+    /// <summary>Generic complaint lifecycle email (inspection requested/reported, tenant fix decision, charge paid…).</summary>
+    public async Task SendComplaintUpdateEmailAsync(string toEmail, string firstName, string ticketNumber, string subject, string message, string? userId = null, bool isPortalUser = false)
+    {
+        if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;
+        var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending complaint update email '{Subject}' to: {Email}", subject, toEmail);
+        var safeMessage = System.Net.WebUtility.HtmlEncode(message);
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para(safeMessage)}
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>TICKET NUMBER</p>
+  <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
+    {ticketNumber}
+  </span>
+")}
+{Para("Open the Romah Estates portal to view the details and take any action needed.")}
+{Divider()}
+{SmallNote("This is an automated alert from the Romah Estates Smart Housing Management System.")}";
+        await SendEmail(toEmail, $"{subject} — {ticketNumber}", WrapInLayout($"{subject} — {ticketNumber}", inner));
+    }
+
     public async Task SendComplaintEscalatedAgentEmailAsync(string toEmail, string firstName, string ticketNumber, string? userId = null, bool isPortalUser = false)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Complaints")) return;

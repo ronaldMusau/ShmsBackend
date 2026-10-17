@@ -83,6 +83,8 @@ public class ShmsDbContext : DbContext
     public DbSet<ComplaintStatusHistoryEntry> ComplaintStatusHistory { get; set; }
     public DbSet<ComplaintMessage> ComplaintMessages { get; set; }
     public DbSet<ComplaintWorkAttempt> ComplaintWorkAttempts { get; set; }
+    public DbSet<ComplaintCheckoutAttempt> ComplaintCheckoutAttempts { get; set; }
+    public DbSet<ComplaintInspection> ComplaintInspections { get; set; }
     public DbSet<ComplaintLandlordDecision> ComplaintLandlordDecisions { get; set; }
     public DbSet<Deduction> Deductions { get; set; }
     public DbSet<Expense> Expenses { get; set; }
@@ -647,6 +649,30 @@ public class ShmsDbContext : DbContext
             entity.HasIndex(e => e.ComplaintId);
             entity.HasOne(e => e.Complaint)
                   .WithMany()
+                  .HasForeignKey(e => e.ComplaintId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ComplaintCheckoutAttempt Configuration ───────────────────────────────
+        modelBuilder.Entity<ComplaintCheckoutAttempt>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Amount).HasPrecision(18, 2);
+            entity.HasIndex(e => e.CheckoutRequestId);
+            entity.HasOne(e => e.Complaint)
+                  .WithMany()
+                  .HasForeignKey(e => e.ComplaintId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── ComplaintInspection Configuration ────────────────────────────────────
+        modelBuilder.Entity<ComplaintInspection>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.ComplaintId, e.RoundNumber });
+            entity.HasIndex(e => e.AgentId);
+            entity.HasOne(e => e.Complaint)
+                  .WithMany(c => c.Inspections)
                   .HasForeignKey(e => e.ComplaintId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
