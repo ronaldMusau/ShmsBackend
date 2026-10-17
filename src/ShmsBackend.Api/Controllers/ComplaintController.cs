@@ -45,6 +45,16 @@ public class ComplaintController : ControllerBase
     }
 
     // GET /api/complaint/all
+    // POST /api/complaint/run-reminders?force=true — SuperAdmin-only manual trigger of the daily overdue-complaint
+    // reminders (management, agent, landlord and tenant). force=true ignores the ReminderDays / 3-day-repeat filters.
+    [HttpPost("run-reminders")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> RunReminders([FromQuery] bool force, [FromServices] ComplaintReminderSchedulerService scheduler)
+    {
+        var count = await scheduler.RunComplaintReminders(force);
+        return Ok(new { success = true, message = $"Reminders sent for {count} complaint(s).", data = new { count } });
+    }
+
     [HttpGet("all")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
     public async Task<IActionResult> GetAll(

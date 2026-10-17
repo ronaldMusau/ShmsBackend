@@ -54,7 +54,9 @@ public class ComplaintReminderSchedulerService : BackgroundService
         }
     }
 
-    private async Task RunComplaintReminders()
+    /// <summary>Sends the overdue-complaint reminders. <paramref name="ignoreThresholds"/> skips the
+    /// ReminderDays / 3-day-repeat filters (used by the SuperAdmin "run now" endpoint for testing).</summary>
+    public async Task<int> RunComplaintReminders(bool ignoreThresholds = false)
     {
         _logger.LogInformation("Running complaint overdue reminders");
         using var scope = _serviceProvider.CreateScope();
@@ -69,15 +71,15 @@ public class ComplaintReminderSchedulerService : BackgroundService
             .Where(c => !c.IsDeleted && c.Status != "Closed")
             .ToListAsync();
 
-        var complaints = allActiveComplaints.Where(c =>
-            (now - c.CreatedAt).Days >= c.ComplaintType.ReminderDays &&
-            (c.LastReminderSentAt == null || (now - c.LastReminderSentAt.Value).Days >= 3)
+        var complaints = allActiveComplaints.Where(c => ignoreThresholds ||
+            ((now - c.CreatedAt).Days >= c.ComplaintType.ReminderDays &&
+            (c.LastReminderSentAt == null || (now - c.LastReminderSentAt.Value).Days >= 3))
         ).ToList();
 
         if (!complaints.Any())
         {
             _logger.LogInformation("No overdue complaints require reminders");
-            return;
+            return 0;
         }
 
         // Fetch management users once before the loop
@@ -237,5 +239,6 @@ public class ComplaintReminderSchedulerService : BackgroundService
 
         await context.SaveChangesAsync();
         _logger.LogInformation("Sent grouped reminders for {Count} overdue complaints", complaints.Count);
+        return complaints.Count;
     }
 }
