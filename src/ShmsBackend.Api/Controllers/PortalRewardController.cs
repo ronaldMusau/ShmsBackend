@@ -87,14 +87,18 @@ public class PortalRewardController : ControllerBase
         var tenantId = GetUserId();
         var result = await _rewardService.RedeemPointsAsync(tenantId, dto.Points);
 
-        return Ok(new
+        var body = new
         {
             result.Success,
             result.Message,
             result.RedemptionReference,
             result.KesAmount,
             itemized = result.Itemized?.Select(i => new { month = i.month, year = i.year, applied = i.applied })
-        });
+        };
+
+        // A refused redemption (cap exceeded, rewards disabled, insufficient points) is a client error,
+        // not a success — same body, 400 status so callers can rely on the HTTP code.
+        return result.Success ? Ok(body) : BadRequest(body);
     }
 }
 

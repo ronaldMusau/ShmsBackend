@@ -360,6 +360,8 @@ public class PortalFlatController : ControllerBase
         var result = await _context.Flats
             .Include(f => f.Houses)
                 .ThenInclude(h => h.HouseTypeRef)
+            .Include(f => f.Houses)
+                .ThenInclude(h => h.Tenants)
             .FirstOrDefaultAsync(f => f.Id == id);
 
         if (result == null) return NotFound(new { success = false, message = "Flat not found." });
@@ -400,6 +402,15 @@ public class PortalFlatController : ControllerBase
                 h.IsAwaitingExistingTenant,
                 PaymentStatus = h.PaymentStatus.ToString(),
                 h.CreatedAt,
+                CurrentTenant = ResolveCurrentTenant(h.Tenants) is { } ct ? new
+                {
+                    ct.Id,
+                    ct.FirstName,
+                    ct.LastName,
+                    ct.PhoneNumber,
+                    ct.Email,
+                    ct.CreatedAt
+                } : null,
                 Images = defaultTypeImages.Where(ti => ti.HouseTypeId == h.HouseTypeId)
                                            .Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                 ScheduledRentChange = defaultPendingRentChanges.TryGetValue(h.Id, out var defaultPrc) ? new

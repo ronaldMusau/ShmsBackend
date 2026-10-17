@@ -48,6 +48,7 @@ public class PaymentController : ControllerBase
     {
         try
         {
+            using var tenantLock = await ShmsBackend.Api.Helpers.TenantPaymentLock.AcquireAsync(dto.TenantId);
             if (User.IsInRole("Agent"))
             {
                 var agentIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -245,6 +246,8 @@ public class PaymentController : ControllerBase
 
             if (payment.PaymentStatus == PaymentTransactionStatus.Paid)
                 return BadRequest(new { success = false, message = "Payment is already completed." });
+
+            using var tenantLock = await ShmsBackend.Api.Helpers.TenantPaymentLock.AcquireAsync(payment.TenantId);
 
             // Checked before the row is reset below — clearing CheckoutRequestId/RequestedDistributionAmount under a
             // push that's still in flight would misroute its callback.

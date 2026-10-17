@@ -195,6 +195,7 @@ public class PortalPaymentController : ControllerBase
         if (!Guid.TryParse(userIdStr, out var userId))
             return Unauthorized();
 
+        using var tenantLock = await ShmsBackend.Api.Helpers.TenantPaymentLock.AcquireAsync(userId);
         try
         {
             if (dto.Amount.HasValue && dto.Amount.Value <= 0)

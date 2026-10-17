@@ -11,6 +11,7 @@ using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Models.Enums;
 
 namespace ShmsBackend.Api.Services.Portal;
 
@@ -260,6 +261,8 @@ public class FlatService
             .Include(f => f.Landlord)
             .Include(f => f.Houses)
                 .ThenInclude(h => h.HouseTypeRef)
+            .Include(f => f.Houses)
+                .ThenInclude(h => h.Tenants)
             .Include(f => f.AgentFlats)
                 .ThenInclude(af => af.Agent)
             .FirstOrDefaultAsync(f => f.Id == id);
@@ -323,6 +326,9 @@ public class FlatService
                 h.CreatedAt,
                 Images = typeImages.Where(ti => ti.HouseTypeId == h.HouseTypeId).Select(ti => new { ti.Id, ti.ImagePath }).ToList(),
                 EverOccupied = everOccupiedSet.Contains(h.Id),
+                CurrentTenant = h.Tenants.OrderByDescending(t => t.CreatedAt).ToList() is { Count: > 0 } tl
+                    && (tl.FirstOrDefault(t => t.TenantStatus != TenantStatus.SettlingVacate) ?? tl[0]) is { } ct
+                    ? new { ct.Id, ct.FirstName, ct.LastName, ct.PhoneNumber, ct.Email, ct.CreatedAt } : null,
                 ScheduledRentChange = pendingRentChangesByHouse.TryGetValue(h.Id, out var prc) ? new
                 {
                     prc.Id,
