@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.Analytics;
 using ShmsBackend.Api.Services;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Data.Models.Entities.Portal;
+using ShmsBackend.Data.Models.Enums;
 
 namespace ShmsBackend.Api.Services.Analytics;
 
@@ -16,6 +18,53 @@ public class LandlordPortfolioResult
     public int TotalHouses { get; set; }
     public int TotalTenants { get; set; }
     public decimal TotalCollected { get; set; }
+}
+
+public class ExpectationMonthRow
+{
+    public string Label { get; set; } = "";
+    public decimal Expected { get; set; }
+    public decimal Collected { get; set; }
+    public decimal Shortfall { get; set; }
+    public decimal CollectionPercent { get; set; }
+    public bool InProgress { get; set; }
+}
+
+public class ExpectationFlatRow
+{
+    public Guid FlatId { get; set; }
+    public string FlatName { get; set; } = "";
+    public int TotalHouses { get; set; }
+    public int OccupiedHouses { get; set; }
+    public int VacantHouses { get; set; }
+    public decimal OccupancyPercent { get; set; }
+    public decimal ExpectedMonthly { get; set; }
+    public decimal PotentialMonthly { get; set; }
+    public decimal VacantLossMonthly { get; set; }
+    public decimal ManagementFeePercentage { get; set; }
+    public decimal Collected { get; set; }
+    public decimal ExpectedInRange { get; set; }
+    public decimal CollectionPercent { get; set; }
+}
+
+public class ExpectationResult
+{
+    public int TotalHouses { get; set; }
+    public int OccupiedHouses { get; set; }
+    public int VacantHouses { get; set; }
+    public decimal OccupancyPercent { get; set; }
+    /// <summary>Monthly rent if every house were let.</summary>
+    public decimal PotentialMonthly { get; set; }
+    /// <summary>Monthly rent expected from houses that are occupied right now.</summary>
+    public decimal ExpectedMonthly { get; set; }
+    public decimal VacantLossMonthly { get; set; }
+    public decimal VacantLossPercent { get; set; }
+    public decimal ExpectedInRange { get; set; }
+    public decimal CollectedInRange { get; set; }
+    public decimal CollectionPercent { get; set; }
+    public decimal OutstandingInRange { get; set; }
+    public List<ExpectationMonthRow> Months { get; set; } = new();
+    public List<ExpectationFlatRow> Flats { get; set; } = new();
 }
 
 public class LandlordAnalyticsService
@@ -44,7 +93,9 @@ public class LandlordAnalyticsService
         if (landlordId.HasValue) housesQuery = housesQuery.Where(h => h.Flat!.LandlordId == landlordId.Value);
         var totalHouses = await housesQuery.CountAsync();
 
-        var tenantsQuery = _context.Tenants.Where(t => t.House != null && t.House.Flat != null);
+        // Only tenants actually living in a house count (Active); Pending/Inactive/PaymentFailed records are not occupants.
+        var tenantsQuery = _context.Tenants.Where(t => t.House != null && t.House.Flat != null
+            && (t.TenantStatus == TenantStatus.Active || t.TenantStatus == TenantStatus.SettlingVacate));
         if (landlordId.HasValue) tenantsQuery = tenantsQuery.Where(t => t.House!.Flat!.LandlordId == landlordId.Value);
         var totalTenants = await tenantsQuery.CountAsync();
 
@@ -126,5 +177,91 @@ public class LandlordAnalyticsService
         }
 
         return new AnalyticsTrendResult { Labels = labels, AmountValues = values, Granularity = "monthly" };
+    }
+
+    /// <summary>
+    /// Expected vs collected rent. "Expected" = rent of the houses that are occupied now (stays the same
+    /// every month until a house is let or vacated); "potential" = rent if every house were let. Collected
+    /// uses the same RentCollectionHelper figure as Financial Standing, bucketed by when the money moved.
+    /// The expected figure is a snapshot of current occupancy (history of occupancy is not recorded).
+    /// </summary>
+    public async Task<ExpectationResult> GetExpectationAsync(Guid? landlordId, DateTime? fromDate, DateTime? toDate)
+    {
+        var now = DateTime.UtcNow;
+        var fromD = (fromDate ?? new DateTime(now.Year, now.Month, 1)).Date;
+        var toD = (toDate ?? now).Date;
+
+        var houses = await _context.Houses
+            .Where(h => !h.IsDeleted && h.Flat != null && !h.Flat.IsDeleted && (!landlordId.HasValue || h.Flat.LandlordId == landlordId.Value))
+            .Select(h => new { h.FlatId, FlatName = h.Flat!.FlatName, h.RentFee, h.OccupancyStatus, Fee = h.Flat.ManagementFeePercentage })
+            .ToListAsync();
+
+        var payments = await _paymentQueryService.BuildFilteredQuery(new PaymentFilters { LandlordId = landlordId, FromDate = fromD, ToDate = toD })
+            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid)
+            .Where(p => p.Amount > 0)
+            .Select(p => new { p.FlatId, p.PaidAt, Rent = (p.RentAmount ?? 0m) / p.Amount * p.AmountPaid })
+            .ToListAsync();
+
+        static decimal Pct(decimal part, decimal whole) => whole <= 0 ? 0m : Math.Round(part / whole * 100m, 1);
+
+        var months = new List<DateTime>();
+        for (var m = new DateTime(fromD.Year, fromD.Month, 1); m <= new DateTime(toD.Year, toD.Month, 1); m = m.AddMonths(1)) months.Add(m);
+
+        decimal expectedAll = houses.Where(h => h.OccupancyStatus == OccupancyStatus.Occupied).Sum(h => h.RentFee);
+        var result = new ExpectationResult
+        {
+            TotalHouses = houses.Count,
+            OccupiedHouses = houses.Count(h => h.OccupancyStatus == OccupancyStatus.Occupied),
+            PotentialMonthly = houses.Sum(h => h.RentFee),
+            ExpectedMonthly = expectedAll
+        };
+        result.VacantHouses = result.TotalHouses - result.OccupiedHouses;
+        result.OccupancyPercent = Pct(result.OccupiedHouses, result.TotalHouses);
+        result.VacantLossMonthly = result.PotentialMonthly - result.ExpectedMonthly;
+        result.VacantLossPercent = Pct(result.VacantLossMonthly, result.PotentialMonthly);
+
+        foreach (var m in months)
+        {
+            var collected = payments.Where(p => p.PaidAt.HasValue && p.PaidAt.Value.Year == m.Year && p.PaidAt.Value.Month == m.Month).Sum(p => p.Rent);
+            result.Months.Add(new ExpectationMonthRow
+            {
+                Label = m.ToString("MMM yyyy", CultureInfo.InvariantCulture),
+                Expected = expectedAll,
+                Collected = Math.Round(collected, 2),
+                Shortfall = Math.Max(0m, Math.Round(expectedAll - collected, 2)),
+                CollectionPercent = Pct(collected, expectedAll),
+                InProgress = m.Year == now.Year && m.Month == now.Month
+            });
+        }
+
+        result.ExpectedInRange = expectedAll * months.Count;
+        result.CollectedInRange = Math.Round(payments.Sum(p => p.Rent), 2);
+        result.OutstandingInRange = Math.Max(0m, result.ExpectedInRange - result.CollectedInRange);
+        result.CollectionPercent = Pct(result.CollectedInRange, result.ExpectedInRange);
+
+        foreach (var g in houses.GroupBy(h => new { h.FlatId, h.FlatName, h.Fee }).OrderBy(g => g.Key.FlatName))
+        {
+            var occ = g.Where(h => h.OccupancyStatus == OccupancyStatus.Occupied).ToList();
+            var expected = occ.Sum(h => h.RentFee);
+            var potential = g.Sum(h => h.RentFee);
+            var collected = payments.Where(p => p.FlatId == g.Key.FlatId).Sum(p => p.Rent);
+            result.Flats.Add(new ExpectationFlatRow
+            {
+                FlatId = g.Key.FlatId,
+                FlatName = g.Key.FlatName,
+                TotalHouses = g.Count(),
+                OccupiedHouses = occ.Count,
+                VacantHouses = g.Count() - occ.Count,
+                OccupancyPercent = Pct(occ.Count, g.Count()),
+                ExpectedMonthly = expected,
+                PotentialMonthly = potential,
+                VacantLossMonthly = potential - expected,
+                ManagementFeePercentage = g.Key.Fee ?? 0m,
+                Collected = Math.Round(collected, 2),
+                ExpectedInRange = expected * months.Count,
+                CollectionPercent = Pct(collected, expected * months.Count)
+            });
+        }
+        return result;
     }
 }

@@ -313,35 +313,7 @@ public class AnalyticsController : ControllerBase
         return Ok(new { success = true, data });
     }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // Refunds — landlord-scoped
-    // ═══════════════════════════════════════════════════════════════════
-
-    // GET /api/analytics/landlord/refunds/breakdown
-    [HttpGet("landlord/refunds/breakdown")]
-    [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordRefundsBreakdown([FromQuery] RefundFilters filters)
-    {
-        var landlordId = GetLandlordId();
-        if (landlordId == null) return Unauthorized();
-        filters.LandlordId = landlordId;
-        ApplyDefaultDateRange(filters);
-        var data = await _refundAnalyticsService.GetStatusBreakdownAsync(filters);
-        return Ok(new { success = true, data });
-    }
-
-    // GET /api/analytics/landlord/refunds/trend
-    [HttpGet("landlord/refunds/trend")]
-    [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordRefundsTrend([FromQuery] RefundFilters filters)
-    {
-        var landlordId = GetLandlordId();
-        if (landlordId == null) return Unauthorized();
-        filters.LandlordId = landlordId;
-        ApplyDefaultDateRange(filters);
-        var data = await _refundAnalyticsService.GetTrendAsync(filters);
-        return Ok(new { success = true, data });
-    }
+    // Refunds are a Management-only figure — there is deliberately NO landlord-scoped refunds analytics.
 
     // ═══════════════════════════════════════════════════════════════════
     // Deductions — admin-wide (roles match ReportsController's deductions/preview,export actions exactly)
@@ -786,6 +758,28 @@ public class AnalyticsController : ControllerBase
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
         var data = await _landlordAnalyticsService.GetCollectionTrendAsync(landlordId, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlords/expectation?landlordId=... — expected vs collected rent, occupancy (management)
+    [HttpGet("landlords/expectation")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> GetLandlordExpectation([FromQuery] Guid? landlordId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _landlordAnalyticsService.GetExpectationAsync(landlordId, from, to);
+        return Ok(new { success = true, data });
+    }
+
+    // GET /api/analytics/landlord/expectation — the signed-in landlord's own expected vs collected rent and occupancy
+    [HttpGet("landlord/expectation")]
+    [Authorize(Roles = "Landlord")]
+    public async Task<IActionResult> GetMyExpectation([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    {
+        var landlordId = GetLandlordId();
+        if (landlordId == null) return Unauthorized();
+        var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
+        var data = await _landlordAnalyticsService.GetExpectationAsync(landlordId, from, to);
         return Ok(new { success = true, data });
     }
 }

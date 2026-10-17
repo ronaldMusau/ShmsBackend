@@ -23,6 +23,7 @@ public class PaymentAnalyticsService
         // Need to see every status here (including Pending/Processing/Failed/Cancelled), not just the
         // default Paid/PartiallyPaid/Overdue subset — opt in via the new flag.
         filters.IncludeAllStatuses = true;
+        filters.UnpaidByDueDate = true;
         var baseQuery = _paymentQueryService.BuildFilteredQuery(filters);
 
         var grouped = await baseQuery

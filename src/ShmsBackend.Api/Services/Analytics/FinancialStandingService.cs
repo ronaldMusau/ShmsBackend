@@ -78,7 +78,9 @@ public class FinancialStandingService
         }
 
         // ── Step 3: reuse the existing query services for the rest ──
-        var totalRefunds = await _refundQueryService.BuildFilteredQuery(new RefundFilters
+        decimal? totalRefunds = null;
+        if (includeManagementOnlyFigures)
+            totalRefunds = await _refundQueryService.BuildFilteredQuery(new RefundFilters
         {
             FlatId = filters.FlatId,
             LandlordId = filters.LandlordId,
@@ -118,12 +120,12 @@ public class FinancialStandingService
 
         return new FinancialStandingResult
         {
-            TotalRentCollected = totalRent,
-            TotalServiceCharge = includeManagementOnlyFigures ? totalServiceCharge : null,
+            TotalRentCollected = Math.Round(totalRent, 2),
+            TotalServiceCharge = includeManagementOnlyFigures ? Math.Round(totalServiceCharge, 2) : null,
             TotalExpenses = totalExpenses,
             TotalRefunds = totalRefunds,
             TotalDeductions = totalDeductions,
-            TotalManagementFee = totalFee,
+            TotalManagementFee = Math.Round(totalFee, 2),
             TotalRewardsRedeemed = totalRewardsRedeemed
         };
     }

@@ -24,6 +24,7 @@ public class PaymentFilters
     public bool? IsInitialPayment { get; set; }
     public Guid? LandlordId { get; set; }   // set server-side only, never bound from a client filter param
     public int? TenancyCycle { get; set; }  // set server-side only for tenant-scoped actions, never bound from a client filter param
+    public bool UnpaidByDueDate { get; set; } = false;  // opt-in: payments with no PaidAt yet (overdue/pending/partial-unpaid) fall in the date range by DueDate instead of being dropped
     public bool IncludeAllStatuses { get; set; } = false;  // opt-in bypass of the default Paid/PartiallyPaid/Overdue restriction below; existing callers never set this, so their behavior is unchanged
 }
 
@@ -89,11 +90,33 @@ public class PaymentQueryService
         // Date range applies to PaidAt (mirrors GetLandlordPayments), not CreatedAt (GetAllPayments'
         // convention) — a report is about when money moved, which matters more for a landlord-scoped
         // payments report than when the row was first created.
-        if (filters.FromDate.HasValue)
-            query = query.Where(p => p.PaidAt >= filters.FromDate.Value);
-
+        var fromDate = filters.FromDate;
+        DateTime? toExclusive = null;
         if (filters.ToDate.HasValue)
-            query = query.Where(p => p.PaidAt <= filters.ToDate.Value);
+        {
+            // A date-only "to" (midnight) means "through the end of that day" — otherwise every payment made
+            // on the last day of the range is silently dropped from totals and charts.
+            toExclusive = filters.ToDate.Value.TimeOfDay == TimeSpan.Zero
+                ? filters.ToDate.Value.Date.AddDays(1)
+                : filters.ToDate.Value.AddTicks(1);
+        }
+
+        if (filters.UnpaidByDueDate)
+        {
+            // Status views must also show what is still owed: rows never paid (PaidAt null) belong to the
+            // range by their due date, rows that were paid belong by when the money moved.
+            query = query.Where(p =>
+                (p.PaidAt != null
+                    ? (fromDate == null || p.PaidAt >= fromDate) && (toExclusive == null || p.PaidAt < toExclusive)
+                    : (fromDate == null || p.DueDate >= fromDate) && (toExclusive == null || p.DueDate < toExclusive)));
+        }
+        else
+        {
+            if (fromDate.HasValue)
+                query = query.Where(p => p.PaidAt >= fromDate.Value);
+            if (toExclusive.HasValue)
+                query = query.Where(p => p.PaidAt < toExclusive.Value);
+        }
 
         if (filters.MinAmount.HasValue)
             query = query.Where(p => p.Amount >= filters.MinAmount.Value);
