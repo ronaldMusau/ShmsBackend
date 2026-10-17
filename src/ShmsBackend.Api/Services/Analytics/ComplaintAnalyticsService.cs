@@ -74,21 +74,21 @@ public class ComplaintAnalyticsService
         {
             if (target == "Tenant")
             {
-                if (paidAt != null) return paidBy == "Management" ? "Tenant charge – paid by management" : "Tenant charge – paid by tenant";
-                if (tenantDecision == "Declined") return "Tenant charge – declined";
-                if (tenantDecision == "Accepted") return "Tenant charge – awaiting payment";
-                return "Tenant charge – awaiting tenant decision";
+                if (paidAt != null) return paidBy == "Management" ? "Tenant: paid by management" : "Tenant: paid by tenant";
+                if (tenantDecision == "Declined") return "Tenant: declined";
+                if (tenantDecision == "Accepted") return "Tenant: awaiting payment";
+                return "Tenant: awaiting decision";
             }
-            if (landlordDecision == "Approved") return "Landlord deduction – approved";
-            if (landlordDecision == null) return "Landlord deduction – awaiting landlord";
-            return "Landlord deduction – not approved";
+            if (landlordDecision == "Approved") return "Landlord: deduction approved";
+            if (landlordDecision == null) return "Landlord: awaiting decision";
+            return "Landlord: not approved";
         }
 
         string[] order =
         {
-            "Tenant charge – paid by tenant", "Tenant charge – paid by management", "Tenant charge – awaiting payment",
-            "Tenant charge – awaiting tenant decision", "Tenant charge – declined",
-            "Landlord deduction – approved", "Landlord deduction – awaiting landlord", "Landlord deduction – not approved"
+            "Tenant: paid by tenant", "Tenant: paid by management", "Tenant: awaiting payment",
+            "Tenant: awaiting decision", "Tenant: declined",
+            "Landlord: deduction approved", "Landlord: awaiting decision", "Landlord: not approved"
         };
 
         var grouped = rows
