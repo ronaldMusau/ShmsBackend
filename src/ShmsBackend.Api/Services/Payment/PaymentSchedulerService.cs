@@ -153,10 +153,21 @@ public class PaymentSchedulerService : BackgroundService
         var toFlip = tenants.Where(t => vacatingTenantIds.Contains(t.Id)).ToList();
 
         foreach (var tenant in toFlip)
+        {
             tenant.TenantStatus = TenantStatus.SettlingVacate;
+            // Portal access ends with the move-out month; balances are settled by staff on their behalf.
+            tenant.RefreshToken = null;
+            tenant.RefreshTokenExpiryTime = null;
+        }
 
         if (toFlip.Count > 0)
+        {
             await dbContext.SaveChangesAsync();
+            // The house is released now (public listing / vacant) unless a successor already holds it.
+            var closure = scope.ServiceProvider.GetRequiredService<VacateClosureService>();
+            foreach (var tenant in toFlip)
+                await closure.ReleaseHouseAsync(tenant.Id);
+        }
 
         _logger.LogInformation("Flipped {Count} tenants to SettlingVacate", toFlip.Count);
     }

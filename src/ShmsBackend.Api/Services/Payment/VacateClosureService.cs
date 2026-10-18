@@ -85,6 +85,28 @@ public class VacateClosureService
         return true;
     }
 
+    /// <summary>
+    /// Frees the house of a tenant who has entered SettlingVacate (move-out month passed). The house becomes
+    /// Vacant unless someone else (e.g. a pre-registered successor) is attached to it.
+    /// </summary>
+    public async Task ReleaseHouseAsync(Guid tenantId)
+    {
+        var tenant = await _context.Tenants.Include(t => t.House)
+            .FirstOrDefaultAsync(t => t.Id == tenantId && !t.IsDeleted);
+        if (tenant?.House == null) return;
+
+        var hasOtherOccupant = await _context.Tenants.AnyAsync(t =>
+            t.Id != tenant.Id && t.HouseId == tenant.House.Id && !t.IsDeleted
+            && t.TenantStatus != TenantStatus.SettlingVacate);
+        if (hasOtherOccupant) return;
+
+        tenant.House.OccupancyStatus = OccupancyStatus.Vacant;
+        tenant.House.PaymentStatus = PaymentStatus.NotPaid;
+        tenant.House.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        await _cacheHelper.InvalidatePublicListingsCacheAsync();
+    }
+
     public async Task CloseAsync(VacateRequest vacateRequest, Tenant tenant, Guid? closedByAdminId)
     {
         var houseNumber = "";
@@ -180,6 +202,9 @@ public class VacateClosureService
                     .OrderByDescending(v => v.CreatedAt)
                     .FirstOrDefaultAsync();
                 if (request == null) continue;
+
+                // Idempotent: makes sure the house is released even for tenants flipped before this rule existed.
+                await ReleaseHouseAsync(tenant.Id);
 
                 if (!await IsClearableAsync(request, tenant)) continue;
 

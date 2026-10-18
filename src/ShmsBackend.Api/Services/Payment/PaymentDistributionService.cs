@@ -281,7 +281,8 @@ public class PaymentDistributionService : IPaymentDistributionService
             .OrderByDescending(p => p.CreatedAt)
             .FirstOrDefaultAsync();
 
-        if (currentMonthPayment != null)
+        var tenantIsOutgoing = await _context.Tenants.AnyAsync(t => t.Id == tenantId && t.TenantStatus == ShmsBackend.Data.Models.Enums.TenantStatus.SettlingVacate);
+        if (currentMonthPayment != null && !tenantIsOutgoing)
         {
             house.PaymentStatus = currentMonthPayment.Balance <= 0
                 ? PaymentStatus.Paid

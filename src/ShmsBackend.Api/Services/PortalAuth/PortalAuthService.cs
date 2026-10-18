@@ -120,6 +120,13 @@ public class PortalAuthService : IPortalAuthService
                     "Your account has been deactivated. Please contact management.");
             }
 
+            // A tenant whose move-out month has passed can no longer log in: the house is released and any
+            // balance left is settled by management/agents on their behalf.
+            if (user is Data.Models.Entities.Portal.Tenant leaving
+                && leaving.TenantStatus == Data.Models.Enums.TenantStatus.SettlingVacate)
+                return ApiResponse<PortalAuthResponse>.FailureResponse(
+                    "Your tenancy has ended, so portal access is closed. Please contact management for any balance or refund.");
+
             if (!user.IsEmailVerified)
             {
                 _logger.LogWarning("Portal login attempt for unverified email: {Email}", dto.Email);
@@ -287,6 +294,10 @@ public class PortalAuthService : IPortalAuthService
                 _logger.LogWarning("Portal refresh: invalid refresh token");
                 return ApiResponse<PortalAuthResponse>.FailureResponse("Invalid refresh token.");
             }
+
+            if (user is Data.Models.Entities.Portal.Tenant leavingT
+                && leavingT.TenantStatus == Data.Models.Enums.TenantStatus.SettlingVacate)
+                return ApiResponse<PortalAuthResponse>.FailureResponse("Account is no longer active.");
 
             if (!user.IsActive || user.IsDeleted || user.IsLockedOut)
             {

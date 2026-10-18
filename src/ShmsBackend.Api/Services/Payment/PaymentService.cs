@@ -666,9 +666,13 @@ public class PaymentService : IPaymentService
             {
                 payment.PaymentStatus = PaymentTransactionStatus.Paid;
                 var house = payment.House!;
-                house.PaymentStatus = PaymentStatus.Paid;
-                house.OccupancyStatus = OccupancyStatus.Occupied;
-                house.UpdatedAt = DateTime.UtcNow;
+                // An outgoing (SettlingVacate) tenant's late payment must not touch the released house.
+                if (!await _context.Tenants.AnyAsync(t => t.Id == payment.TenantId && t.TenantStatus == TenantStatus.SettlingVacate))
+                {
+                    house.PaymentStatus = PaymentStatus.Paid;
+                    house.OccupancyStatus = OccupancyStatus.Occupied;
+                    house.UpdatedAt = DateTime.UtcNow;
+                }
 
                 if (payment.IsInitialPayment)
                 {
@@ -789,8 +793,11 @@ public class PaymentService : IPaymentService
             {
                 payment.PaymentStatus = PaymentTransactionStatus.PartiallyPaid;
                 var house = payment.House!;
-                house.PaymentStatus = PaymentStatus.PartiallyPaid;
-                house.UpdatedAt = DateTime.UtcNow;
+                if (!await _context.Tenants.AnyAsync(t => t.Id == payment.TenantId && t.TenantStatus == TenantStatus.SettlingVacate))
+                {
+                    house.PaymentStatus = PaymentStatus.PartiallyPaid;
+                    house.UpdatedAt = DateTime.UtcNow;
+                }
             }
 
             if (checkoutAttempt != null)
@@ -1277,7 +1284,7 @@ public class PaymentService : IPaymentService
 
             var firstRow = orderedRows.First();
             var house = firstRow.House;
-            if (house != null)
+            if (house != null && !await _context.Tenants.AnyAsync(t => t.Id == firstRow.TenantId && t.TenantStatus == TenantStatus.SettlingVacate))
             {
                 house.PaymentStatus = PaymentStatus.Overdue;
                 house.UpdatedAt = DateTime.UtcNow;
