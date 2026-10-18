@@ -11,3 +11,10 @@ WHERE Email IN ('test-tenant-advancecredit@shms-test.invalid', 'test-tenant-rewa
 SELECT Email, TenantStatus FROM PortalUsers
 WHERE Email IN ('test-tenant-advancecredit@shms-test.invalid', 'test-tenant-rewards@shms-test.invalid');
 GO
+
+-- 72-hour expiry test: back-date the UNPAID explorer-converted tenant (zz.xd@example.com on ZNW2) by 4 days.
+-- The pre-registration expiry sweep runs when the backend starts (then every 6 hours), so restart the
+-- backend after running this. Expected: tenant disappears, ZedXD's explorer interest returns to Pending.
+UPDATE PortalUsers SET CreatedAt = DATEADD(day, -4, GETUTCDATE())
+WHERE Email = 'zz.xd@example.com' AND IsDeleted = 0;
+GO
