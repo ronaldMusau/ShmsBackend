@@ -255,7 +255,7 @@ public class ReportRenderer : IReportRenderer
                 var totalsPara = section.AddParagraph(totalsLine);
                 totalsPara.Format.Font.Size = Unit.FromPoint(10);
                 totalsPara.Format.Font.Bold = true;
-                totalsPara.Format.Shading.Color = Color.FromRgb(238, 238, 238);
+                totalsPara.Format.Shading.Color = MigraDoc.DocumentObjectModel.Color.FromRgb(238, 238, 238);
                 totalsPara.Format.Borders.Distance = Unit.FromPoint(4);
                 totalsPara.Format.Borders.Width = 0.5;
                 totalsPara.Format.Borders.Color = Colors.Gray;
