@@ -2810,7 +2810,7 @@ public class EmailService : IEmailService
         return WrapInLayout($"FYI — Explorer Interested in {houseNumber}", inner);
     }
 
-    public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false)
+    public async Task SendSessionCapacityAlertEmailAsync(string toEmail, string firstName, string agentName, string scheduledDate, string? userId = null, bool isPortalUser = false, int maxSessionsPerDay = 5)
     {
         if (!await ShouldSendEmailAsync(userId, isPortalUser, "Properties")) return;
         var palette = await ResolveEmailPaletteAsync(userId, isPortalUser);
@@ -2818,14 +2818,14 @@ public class EmailService : IEmailService
         SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending session capacity alert to management: {Email}", toEmail);
         await SendEmail(toEmail, $"Agent Capacity Alert — {scheduledDate}",
-            GetSessionCapacityAlertTemplate(firstName, agentName, scheduledDate));
+            GetSessionCapacityAlertTemplate(firstName, agentName, scheduledDate, maxSessionsPerDay));
     }
 
-    private string GetSessionCapacityAlertTemplate(string firstName, string agentName, string scheduledDate)
+    private string GetSessionCapacityAlertTemplate(string firstName, string agentName, string scheduledDate, int maxSessionsPerDay)
     {
         var inner = $@"
 {H2($"Hello {firstName},")}
-{Para($"An agent on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has reached 5 or more live viewing sessions on a single day. Reassignment may be appropriate.")}
+{Para($"An agent on the <strong style='color:{ColourGold};'>Romah Estates</strong> system has reached {maxSessionsPerDay} or more live viewing sessions on a single day. Reassignment may be appropriate.")}
 {GoldBox($@"
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>AGENT</p>
   <span style='font-size:18px;font-weight:700;color:{ColourGold};'>

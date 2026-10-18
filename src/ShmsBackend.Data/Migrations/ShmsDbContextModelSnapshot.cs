@@ -476,6 +476,9 @@ namespace ShmsBackend.Data.Migrations
                     b.Property<string>("LogoPath")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int>("MaxSessionsPerAgentPerDay")
+                        .HasColumnType("int");
+
                     b.Property<string>("Phone")
                         .HasColumnType("nvarchar(max)");
 

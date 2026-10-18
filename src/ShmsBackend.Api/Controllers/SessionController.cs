@@ -46,15 +46,25 @@ public class SessionController : ControllerBase
     // agentDayCount/loadLevel elsewhere in this controller (same-day sessions in Pending/Accepted/
     // AwaitingFeedback) — as a correlated subquery here since this has to run pre-pagination, unlike
     // the batch dictionary used for display decoration further down.
-    private Expression<Func<ListingViewingSession, bool>> NeedsReassignmentPredicate()
+    private Expression<Func<ListingViewingSession, bool>> NeedsReassignmentPredicate(int cap)
     {
         return s => s.Status == "Declined" ||
             ((s.Status == "Pending" || s.Status == "Accepted") &&
              _context.ListingViewingSessions.Count(o =>
                  o.AgentId == s.AgentId &&
                  o.ScheduledAt.Date == s.ScheduledAt.Date &&
-                 (o.Status == "Pending" || o.Status == "Accepted" || o.Status == "AwaitingFeedback")) > 5);
+                 (o.Status == "Pending" || o.Status == "Accepted" || o.Status == "AwaitingFeedback")) > cap);
     }
+
+    // Configurable in Company Settings; falls back to 5 until management sets it.
+    private async Task<int> GetMaxSessionsPerDayAsync()
+    {
+        var cap = await _context.CompanySettings.Select(c => (int?)c.MaxSessionsPerAgentPerDay).FirstOrDefaultAsync();
+        return cap is > 0 ? cap.Value : 5;
+    }
+
+    private static string LoadLevelFor(int count, int cap) =>
+        count >= cap ? "Red" : count == cap - 1 ? "Amber" : "Green";
 
     // POST /api/sessions
     [HttpPost]
@@ -98,7 +108,8 @@ public class SessionController : ControllerBase
         _context.ListingViewingSessions.Add(session);
         await _context.SaveChangesAsync();
 
-        // Capacity-crossing check — fire exactly at the 5 mark
+        // Capacity-crossing check — fire exactly when the agent reaches the configured daily cap
+        var maxPerDay = await GetMaxSessionsPerDayAsync();
         var targetDate = dto.ScheduledAt.Date;
         var nextDate = targetDate.AddDays(1);
         var liveCount = await _context.ListingViewingSessions.CountAsync(s =>
@@ -107,7 +118,7 @@ public class SessionController : ControllerBase
             s.ScheduledAt < nextDate &&
             (s.Status == "Pending" || s.Status == "Accepted" || s.Status == "AwaitingFeedback"));
 
-        if (liveCount == 5)
+        if (liveCount == maxPerDay)
         {
             var agentName = $"{agentFlat.Agent.FirstName} {agentFlat.Agent.LastName}".Trim();
             var scheduledDate = targetDate.ToString("yyyy-MM-dd");
@@ -116,7 +127,7 @@ public class SessionController : ControllerBase
             {
                 await _notificationService.SendToRolesAsync(
                     new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
-                    $"Agent {agentName} now has 5+ sessions on {scheduledDate}, consider reassigning.",
+                    $"Agent {agentName} now has {maxPerDay}+ sessions on {scheduledDate}, consider reassigning.",
                     "property");
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of agent capacity crossing"); }
@@ -130,7 +141,7 @@ public class SessionController : ControllerBase
                 var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
                 foreach (var mgr in managementUsers)
                 {
-                    try { await _emailService.SendSessionCapacityAlertEmailAsync(mgr.Email, mgr.FirstName, agentName, scheduledDate, mgr.Id.ToString(), false); }
+                    try { await _emailService.SendSessionCapacityAlertEmailAsync(mgr.Email, mgr.FirstName, agentName, scheduledDate, mgr.Id.ToString(), false, maxPerDay); }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to send capacity alert email to {Email}", mgr.Email); }
                 }
             }
@@ -785,7 +796,7 @@ public class SessionController : ControllerBase
         var query = _context.ListingViewingSessions.AsQueryable();
 
         if (needsReassignment == true)
-            query = query.Where(NeedsReassignmentPredicate());
+            query = query.Where(NeedsReassignmentPredicate(await GetMaxSessionsPerDayAsync()));
         if (!string.IsNullOrEmpty(status))
             query = query.Where(s => s.Status == status);
 
@@ -867,6 +878,7 @@ public class SessionController : ControllerBase
             liveSessionData = liveRaw.Select(x => (x.AgentId, x.ScheduledAt.Date)).ToList();
         }
 
+        var maxPerDayForLoad = await GetMaxSessionsPerDayAsync();
         var loadCountDict = liveSessionData
             .GroupBy(x => (x.AgentId, x.Date))
             .ToDictionary(g => g.Key, g => g.Count());
@@ -877,7 +889,7 @@ public class SessionController : ControllerBase
             agentDict.TryGetValue(s.AgentId, out var agent);
             explorerDict.TryGetValue(s.ExplorerId, out var explorer);
             var agentDayCount = loadCountDict.TryGetValue((s.AgentId, s.ScheduledAt.Date), out var cnt) ? cnt : 0;
-            var loadLevel = agentDayCount > 4 ? "Red" : agentDayCount == 4 ? "Amber" : "Green";
+            var loadLevel = LoadLevelFor(agentDayCount, maxPerDayForLoad);
             return (object)new
             {
                 id = s.Id,
@@ -900,7 +912,7 @@ public class SessionController : ControllerBase
             totalPending = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Pending"),
             totalAccepted = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Accepted"),
             totalAwaitingFeedback = await _context.ListingViewingSessions.CountAsync(s => s.Status == "AwaitingFeedback"),
-            totalDeclinedNeedsReassignment = await _context.ListingViewingSessions.CountAsync(NeedsReassignmentPredicate())
+            totalDeclinedNeedsReassignment = await _context.ListingViewingSessions.CountAsync(NeedsReassignmentPredicate(await GetMaxSessionsPerDayAsync()))
         };
 
         return Ok(new
@@ -923,6 +935,7 @@ public class SessionController : ControllerBase
         [FromQuery] DateTime fromDate,
         [FromQuery] DateTime toDate)
     {
+        var maxPerDayCal = await GetMaxSessionsPerDayAsync();
         var fromStart = fromDate.Date;
         var toEnd = toDate.Date.AddDays(1);
 
@@ -953,7 +966,7 @@ public class SessionController : ControllerBase
                 {
                     date = g.Key,
                     count,
-                    loadLevel = count > 4 ? "Red" : count == 4 ? "Amber" : "Green",
+                    loadLevel = LoadLevelFor(count, maxPerDayCal),
                     sessions = g.OrderBy(s => s.ScheduledAt).Select(s => new
                     {
                         houseNumber = houses.GetValueOrDefault(s.HouseId),

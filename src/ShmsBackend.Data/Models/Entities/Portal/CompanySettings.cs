@@ -16,6 +16,8 @@ namespace ShmsBackend.Data.Models.Entities.Portal
         public string? FacebookUrl { get; set; }
         public string? TwitterUrl { get; set; }
         public string? InstagramUrl { get; set; }
+        // Live viewing sessions per agent per day before the agent counts as at capacity
+        public int MaxSessionsPerAgentPerDay { get; set; } = 5;
         public Guid? UpdatedByUserId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

@@ -75,6 +75,7 @@ public class CompanySettingsController : ControllerBase
                 settings.FacebookUrl,
                 settings.TwitterUrl,
                 settings.InstagramUrl,
+                settings.MaxSessionsPerAgentPerDay,
                 settings.UpdatedByUserId,
                 settings.CreatedAt,
                 settings.UpdatedAt
@@ -151,6 +152,12 @@ public class CompanySettingsController : ControllerBase
         settings.FacebookUrl = dto.FacebookUrl;
         settings.TwitterUrl = dto.TwitterUrl;
         settings.InstagramUrl = dto.InstagramUrl;
+        if (dto.MaxSessionsPerAgentPerDay.HasValue)
+        {
+            if (dto.MaxSessionsPerAgentPerDay.Value < 1 || dto.MaxSessionsPerAgentPerDay.Value > 50)
+                return BadRequest(new { success = false, message = "Sessions per agent per day must be between 1 and 50." });
+            settings.MaxSessionsPerAgentPerDay = dto.MaxSessionsPerAgentPerDay.Value;
+        }
         settings.UpdatedByUserId = GetUserId();
         settings.UpdatedAt = DateTime.UtcNow;
 
@@ -173,6 +180,7 @@ public class CompanySettingsController : ControllerBase
                 settings.FacebookUrl,
                 settings.TwitterUrl,
                 settings.InstagramUrl,
+                settings.MaxSessionsPerAgentPerDay,
                 settings.UpdatedByUserId,
                 settings.CreatedAt,
                 settings.UpdatedAt
@@ -327,4 +335,5 @@ public class UpdateCompanySettingsDto
     public string? FacebookUrl { get; set; }
     public string? TwitterUrl { get; set; }
     public string? InstagramUrl { get; set; }
+    public int? MaxSessionsPerAgentPerDay { get; set; }
 }
