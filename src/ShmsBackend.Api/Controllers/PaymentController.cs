@@ -18,14 +18,17 @@ public class PaymentController : ControllerBase
     private readonly ShmsDbContext _context;
     private readonly ILogger<PaymentController> _logger;
     private readonly ServiceChargeQueryService _serviceChargeQueryService;
+    private readonly VacateClosureService _vacateClosureService;
 
     public PaymentController(
         IPaymentService paymentService,
         IMpesaService mpesaService,
         ShmsDbContext context,
         ILogger<PaymentController> logger,
-        ServiceChargeQueryService serviceChargeQueryService)
+        ServiceChargeQueryService serviceChargeQueryService,
+        VacateClosureService vacateClosureService)
     {
+        _vacateClosureService = vacateClosureService;
         _serviceChargeQueryService = serviceChargeQueryService;
         _paymentService = paymentService;
         _mpesaService = mpesaService;
@@ -81,6 +84,12 @@ public class PaymentController : ControllerBase
                 ? null
                 : await _paymentService.GetOwedThroughMonthAsync(
                     dto.TenantId, activeVacate.HouseId, activeVacate.TenancyCycle, activeVacate.VacateMonth, activeVacate.VacateYear);
+
+            // A leaving (SettlingVacate) tenant can only be charged what is actually overdue — the same figure
+            // the Leaving Tenants pages show — never a future month's estimate.
+            if (vacateOwed != null
+                && await _context.Tenants.AnyAsync(t => t.Id == dto.TenantId && t.TenantStatus == ShmsBackend.Data.Models.Enums.TenantStatus.SettlingVacate))
+                vacateOwed.Total = vacateOwed.Overdue;
 
             Payment payment;
             decimal? arrearsLumpSum = null;
@@ -313,6 +322,23 @@ public class PaymentController : ControllerBase
                 callback.Body.stkCallback.ResultCode);
 
             await _paymentService.ProcessCallbackAsync(callback);
+
+            // A leaving tenant whose last balance this payment just cleared moves to Vacated right away
+            // (no wait for the 15-minute sweep). No-op for everyone else.
+            try
+            {
+                var checkoutId = callback.Body.stkCallback.CheckoutRequestID;
+                var paidTenantId = await _context.PaymentCheckoutAttempts
+                    .Where(a => a.CheckoutRequestId == checkoutId && a.Payment != null)
+                    .Select(a => (Guid?)a.Payment!.TenantId)
+                    .FirstOrDefaultAsync();
+                if (paidTenantId.HasValue)
+                    await _vacateClosureService.TryCloseForTenantAsync(paidTenantId.Value);
+            }
+            catch (Exception closeEx)
+            {
+                _logger.LogError(closeEx, "Post-payment vacate closure check failed");
+            }
 
             return Ok(new { ResultCode = 0, ResultDesc = "Accepted" });
         }
