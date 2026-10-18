@@ -837,16 +837,27 @@ public class PaymentController : ControllerBase
         if (!ServiceChargeQueryService.IsValidSource(source))
             return BadRequest(new { success = false, message = "source must be Rent, Complaint or Vacate." });
 
-        var all = await _serviceChargeQueryService.GetEntriesAsync(new ServiceChargeFilters
+        var filters = new ServiceChargeFilters
         {
             TenantId = tenantId, HouseId = houseId, FlatId = flatId, Month = month, Year = year,
             FromDate = fromDate, ToDate = toDate, MinAmount = minAmount, MaxAmount = maxAmount,
             Source = source, Search = search
-        });
+        };
+        var all = await _serviceChargeQueryService.GetEntriesAsync(filters);
+
+        // Per-source chips always show every source for the current filters, whichever source is selected.
+        var forChips = string.IsNullOrWhiteSpace(source)
+            ? all
+            : await _serviceChargeQueryService.GetEntriesAsync(new ServiceChargeFilters
+            {
+                TenantId = tenantId, HouseId = houseId, FlatId = flatId, Month = month, Year = year,
+                FromDate = fromDate, ToDate = toDate, MinAmount = minAmount, MaxAmount = maxAmount,
+                Search = search
+            });
 
         var total = all.Count;
         var totalServiceChargeCollected = all.Sum(e => e.ServiceChargeAmount);
-        var bySource = all.GroupBy(e => e.Source)
+        var bySource = forChips.GroupBy(e => e.Source)
             .ToDictionary(g => g.Key, g => new { count = g.Count(), amount = g.Sum(e => e.ServiceChargeAmount) });
 
         var payments = all.Skip((page - 1) * pageSize).Take(pageSize).Select(e => new
