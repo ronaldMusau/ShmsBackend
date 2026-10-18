@@ -28,6 +28,7 @@ public class VacateController : ControllerBase
     private readonly IMpesaService _mpesaService;
     private readonly ICacheHelper _cacheHelper;
     private readonly VacateOwedCalculator _vacateOwedCalculator;
+    private readonly VacateClosureService _vacateClosureService;
 
     public VacateController(
         ShmsDbContext context,
@@ -37,7 +38,8 @@ public class VacateController : ControllerBase
         IPaymentService paymentService,
         IMpesaService mpesaService,
         ICacheHelper cacheHelper,
-        VacateOwedCalculator vacateOwedCalculator)
+        VacateOwedCalculator vacateOwedCalculator,
+        VacateClosureService vacateClosureService)
     {
         _context = context;
         _emailService = emailService;
@@ -47,6 +49,7 @@ public class VacateController : ControllerBase
         _mpesaService = mpesaService;
         _cacheHelper = cacheHelper;
         _vacateOwedCalculator = vacateOwedCalculator;
+        _vacateClosureService = vacateClosureService;
     }
 
     private Guid GetCallerId()
@@ -2346,6 +2349,16 @@ public class VacateController : ControllerBase
         });
     }
 
+    // POST /api/vacate/run-auto-close — runs the same sweep the scheduler runs daily at 10:05:
+    // tenancies whose vacate month has passed and who owe nothing are closed out (moved to Vacated).
+    [HttpPost("run-auto-close")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> RunAutoClose()
+    {
+        var closed = await _vacateClosureService.RunAutoCloseSweepAsync();
+        return Ok(new { success = true, closed });
+    }
+
     // PATCH /api/vacate/{id}/clear
     [HttpPatch("{id:guid}/clear")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
@@ -2387,67 +2400,7 @@ public class VacateController : ControllerBase
         if (settlement != null && settlement.Direction == "TenantOwes" && settlement.PaidAt == null)
             return BadRequest(new { success = false, message = "Tenant still owes a settlement payment. This must be paid before clearance." });
 
-        var houseNumber = "";
-
-        if (tenant.House != null)
-        {
-            houseNumber = tenant.House.HouseNumber;
-            var hasOtherActiveTenant = await _context.Tenants.AnyAsync(t =>
-                t.Id != tenant.Id
-                && t.HouseId == tenant.House.Id
-                && !t.IsDeleted
-                && t.TenantStatus == TenantStatus.Active);
-
-            if (!hasOtherActiveTenant)
-            {
-                tenant.House.OccupancyStatus = OccupancyStatus.Vacant;
-                tenant.House.PaymentStatus = PaymentStatus.NotPaid;
-                tenant.House.UpdatedAt = DateTime.UtcNow;
-            }
-        }
-
-        var openHistory = await _context.TenantHouseHistories
-            .Where(h => h.TenantId == tenant.Id && h.RemovedAt == null)
-            .FirstOrDefaultAsync();
-        if (openHistory != null)
-            openHistory.RemovedAt = DateTime.UtcNow;
-
-        tenant.IsDeleted = true;
-        tenant.DeletedAt = DateTime.UtcNow;
-        tenant.IsActive = false;
-
-        vacateRequest.ClosedAt = DateTime.UtcNow;
-        vacateRequest.ClosedByAdminId = GetCallerId();
-
-        await _context.SaveChangesAsync();
-        await _cacheHelper.InvalidatePublicListingsCacheAsync();
-
-        try { await _notificationService.SendToUserAsync(tenant.Id.ToString(), "Your tenancy has been formally closed out. Thank you for your tenancy.", "property", "Vacate", vacateRequest.Id.ToString()); }
-        catch (Exception ex) { _logger.LogError(ex, "Failed to notify tenant of vacate clearance"); }
-
-        try
-        {
-            await _notificationService.SendToRolesAsync(
-                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
-                $"Vacate request for house {houseNumber} has been fully closed out.",
-                "property", "Vacate", vacateRequest.Id.ToString());
-        }
-        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of vacate clearance"); }
-
-        try
-        {
-            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
-            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
-            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
-            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
-            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
-            foreach (var mgr in managementUsers)
-            {
-                try { await _emailService.SendVacateClosedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate closed email to {Email}", mgr.Email); }
-            }
-        }
-        catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate closed email"); }
+        await _vacateClosureService.CloseAsync(vacateRequest, tenant, GetCallerId());
 
         return Ok(new { success = true, message = "Vacate request closed out successfully." });
     }

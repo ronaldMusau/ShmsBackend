@@ -291,8 +291,11 @@ public class ExplorerInterestController : ControllerBase
             success = true,
             data = new
             {
+                id = tenant.Id,
                 tenantId = tenant.Id,
                 houseId = house.Id,
+                firstName = tenant.FirstName,
+                lastName = tenant.LastName,
                 fullName = $"{tenant.FirstName} {tenant.LastName}".Trim()
             }
         });

@@ -14,6 +14,7 @@ public class PaymentSchedulerService : BackgroundService
     private DateTime? _lastOverdueCheckDate;
     private DateTime? _lastReminderDate;
     private DateTime? _lastVacateStatusFlipDate;
+    private DateTime? _lastVacateAutoCloseDate;
     private DateTime? _lastRentReminderDate;
 
     public PaymentSchedulerService(
@@ -74,6 +75,15 @@ public class PaymentSchedulerService : BackgroundService
                     _lastVacateStatusFlipDate = now.Date;
                 }
 
+                // Auto-close tenancies whose vacate month has passed and who owe nothing, daily at 10:05
+                // (just after the 10:00 SettlingVacate flip). They move to the Vacated list.
+                if (now.Hour == 10 && now.Minute >= 5 && now.Minute < 8
+                    && _lastVacateAutoCloseDate?.Date != now.Date)
+                {
+                    await RunVacateAutoClose();
+                    _lastVacateAutoCloseDate = now.Date;
+                }
+
                 // Auto-timeout payments stuck in Processing on every tick
                 await RunStuckPaymentTimeout();
 
@@ -125,7 +135,8 @@ public class PaymentSchedulerService : BackgroundService
         var now = DateTime.UtcNow;
 
         var tenants = await dbContext.Tenants
-            .Where(t => t.TenantStatus == TenantStatus.Active && !t.IsDeleted)
+            .Where(t => (t.TenantStatus == TenantStatus.Active || t.TenantStatus == TenantStatus.Pending)
+                && t.HasCompletedInitialPayment && !t.IsDeleted)
             .ToListAsync();
 
         var tenantIds = tenants.Select(t => t.Id).ToList();
@@ -148,6 +159,14 @@ public class PaymentSchedulerService : BackgroundService
             await dbContext.SaveChangesAsync();
 
         _logger.LogInformation("Flipped {Count} tenants to SettlingVacate", toFlip.Count);
+    }
+
+    private async Task RunVacateAutoClose()
+    {
+        _logger.LogInformation("Running vacate auto-close sweep");
+        using var scope = _serviceProvider.CreateScope();
+        var closure = scope.ServiceProvider.GetRequiredService<VacateClosureService>();
+        await closure.RunAutoCloseSweepAsync();
     }
 
     private async Task RunStuckPaymentTimeout()
