@@ -76,6 +76,22 @@ public class PreRegistrationExpirySchedulerService : BackgroundService
             return;
         }
 
+        // An explorer-converted registration that expires goes back to the explorer's Pending interest,
+        // same as TenantService.CreateAsync does when a new registration replaces it — otherwise the
+        // explorer would stay "Converted" with no tenant behind it and management could not re-convert.
+        var interestIds = staleTenants
+            .Where(t => t.SourceExplorerInterestId.HasValue)
+            .Select(t => t.SourceExplorerInterestId!.Value)
+            .ToList();
+        if (interestIds.Count > 0)
+        {
+            var interests = await context.ExplorerInterests
+                .Where(ei => interestIds.Contains(ei.Id) && ei.Status == "Converted")
+                .ToListAsync();
+            foreach (var interest in interests)
+                interest.Status = "Pending";
+        }
+
         foreach (var tenant in staleTenants)
         {
             tenant.IsDeleted = true;
