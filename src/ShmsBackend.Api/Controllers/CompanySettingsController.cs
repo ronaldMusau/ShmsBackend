@@ -130,6 +130,35 @@ public class CompanySettingsController : ControllerBase
         });
     }
 
+    // GET /api/companysettings/operations — operational limits (not company information)
+    [HttpGet("operations")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> GetOperations()
+    {
+        var cap = await _context.CompanySettings.Select(c => (int?)c.MaxSessionsPerAgentPerDay).FirstOrDefaultAsync();
+        return Ok(new { success = true, data = new { maxSessionsPerAgentPerDay = cap is > 0 ? cap.Value : 5 } });
+    }
+
+    // PUT /api/companysettings/operations
+    [HttpPut("operations")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    public async Task<IActionResult> UpdateOperations([FromBody] UpdateOperationsSettingsDto dto)
+    {
+        if (dto.MaxSessionsPerAgentPerDay < 1 || dto.MaxSessionsPerAgentPerDay > 50)
+            return BadRequest(new { success = false, message = "Sessions per agent per day must be between 1 and 50." });
+        var settings = await _context.CompanySettings.FirstOrDefaultAsync();
+        if (settings == null)
+        {
+            settings = new CompanySettings { Id = Guid.NewGuid(), CreatedAt = DateTime.UtcNow };
+            _context.CompanySettings.Add(settings);
+        }
+        settings.MaxSessionsPerAgentPerDay = dto.MaxSessionsPerAgentPerDay;
+        settings.UpdatedByUserId = GetUserId();
+        settings.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(new { success = true, data = new { maxSessionsPerAgentPerDay = settings.MaxSessionsPerAgentPerDay } });
+    }
+
     // PUT /api/companysettings
     [HttpPut]
     [Authorize(Roles = "SuperAdmin,Admin")]
@@ -321,6 +350,11 @@ public class CompanySettingsController : ControllerBase
 
         return $"{subfolder}/{fileName}";
     }
+}
+
+public class UpdateOperationsSettingsDto
+{
+    public int MaxSessionsPerAgentPerDay { get; set; }
 }
 
 public class UpdateCompanySettingsDto
