@@ -101,11 +101,50 @@ public class ReportRenderer : IReportRenderer
     }
 
     private static System.Collections.Generic.List<double> DistributeColumnWidths(
-        System.Collections.Generic.IReadOnlyList<ReportColumn> columns, double availableWidth)
+        System.Collections.Generic.IReadOnlyList<ReportColumn> columns, double availableWidth,
+        System.Collections.Generic.IReadOnlyList<double>? minWidths = null)
     {
         var weights = columns.Select(c => ColumnWeight(c.Header)).ToList();
         var totalWeight = weights.Sum();
-        return weights.Select(w => availableWidth * w / totalWeight).ToList();
+        var widths = weights.Select(w => availableWidth * w / totalWeight).ToList();
+        if (minWidths == null) return widths;
+
+        // Money columns must never wrap or clip when figures grow (millions / billions): give each one
+        // at least the width its widest formatted value (or the total) needs, and take the extra
+        // space proportionally from the text columns.
+        var lacking = 0.0;
+        var elastic = 0.0;
+        for (var i = 0; i < widths.Count; i++)
+        {
+            if (minWidths[i] > widths[i]) { lacking += minWidths[i] - widths[i]; widths[i] = minWidths[i]; }
+            else if (minWidths[i] <= 0) elastic += widths[i];
+        }
+        if (lacking > 0 && elastic > 0)
+        {
+            var factor = Math.Max(0.35, (elastic - lacking) / elastic);
+            for (var i = 0; i < widths.Count; i++)
+                if (minWidths[i] <= 0) widths[i] *= factor;
+            var sum = widths.Sum();
+            if (sum > availableWidth) { var f = availableWidth / sum; for (var i = 0; i < widths.Count; i++) widths[i] *= f; }
+        }
+        return widths;
+    }
+
+    /// <summary>Minimum width per column (same unit as <paramref name="perChar"/>): only money columns, sized to the widest formatted value or total.</summary>
+    private static System.Collections.Generic.List<double> NumericMinWidths(ReportData data, double perChar, double padding)
+    {
+        var totals = data.Totals;
+        var result = new System.Collections.Generic.List<double>();
+        foreach (var col in data.Columns)
+        {
+            if (!col.SumTotal) { result.Add(0); continue; }
+            var maxLen = col.Header.Split(' ').Max(w => w.Length);   // header may wrap on spaces, not within a word
+            if (totals.TryGetValue(col.Key, out var t)) maxLen = Math.Max(maxLen, t.ToString("N2").Length);
+            foreach (var row in data.Rows)
+                maxLen = Math.Max(maxLen, (CellText(row, col.Key) ?? "").Length);
+            result.Add(maxLen * perChar + padding);
+        }
+        return result;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -229,7 +268,7 @@ public class ReportRenderer : IReportRenderer
             // is correct in both portrait and the landscape switch above. MigraDoc wraps paragraph text
             // by default within a properly-widthed cell — nothing here disables that. ──
             var availableWidth = (section.PageSetup.PageWidth - section.PageSetup.LeftMargin - section.PageSetup.RightMargin).Point;
-            var columnWidths = DistributeColumnWidths(data.Columns, availableWidth);
+            var columnWidths = DistributeColumnWidths(data.Columns, availableWidth, NumericMinWidths(data, 5.6, 10));
 
             var table = section.AddTable();
             table.Borders.Width = 0.5;
@@ -497,7 +536,7 @@ public class ReportRenderer : IReportRenderer
             var pageWidthDxa = isWideReport ? a4HeightDxa : a4WidthDxa;
             var pageHeightDxa = isWideReport ? a4WidthDxa : a4HeightDxa;
             var availableWidthDxa = pageWidthDxa - leftMarginDxa - rightMarginDxa;
-            var columnWidthsDxa = DistributeColumnWidths(data.Columns, availableWidthDxa)
+            var columnWidthsDxa = DistributeColumnWidths(data.Columns, availableWidthDxa, NumericMinWidths(data, 5.6 * 20, 10 * 20))
                 .Select(w => (int)Math.Round(w))
                 .ToList();
 
