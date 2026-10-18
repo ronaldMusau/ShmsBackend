@@ -831,7 +831,7 @@ public class VacateController : ControllerBase
         {
             var s = search.Trim();
             query = query.Where(v =>
-                _context.Tenants.Any(t => t.Id == v.TenantId && (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
+                _context.Tenants.IgnoreQueryFilters().Any(t => t.Id == v.TenantId && (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
                 _context.Houses.Any(h => h.Id == v.HouseId && h.HouseNumber.Contains(s)) ||
                 _context.Flats.Any(f => f.Id == v.FlatId && f.FlatName.Contains(s)) ||
                 v.Status.Contains(s));
@@ -1971,7 +1971,7 @@ public class VacateController : ControllerBase
             // Paid/Refundable is a label derived from PaidAt elsewhere (e.g. RefundReportBuilder),
             // so we match that same derived label here rather than inventing a column.
             query = query.Where(x =>
-                _context.Tenants.Any(t => t.Id == x.TenantId &&
+                _context.Tenants.IgnoreQueryFilters().Any(t => t.Id == x.TenantId &&
                     (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
                 _context.Houses.Any(h => h.Id == x.HouseId && h.HouseNumber.Contains(s)) ||
                 (x.Description != null && x.Description.Contains(s)) ||
@@ -1988,7 +1988,7 @@ public class VacateController : ControllerBase
         var paged = await query.OrderByDescending(s => s.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
         var tenantIds = paged.Select(s => s.TenantId).Distinct().ToList();
-        var tenants = await _context.Tenants
+        var tenants = await _context.Tenants.IgnoreQueryFilters()
             .Where(t => tenantIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
 
@@ -2002,9 +2002,12 @@ public class VacateController : ControllerBase
             .Where(f => flatIds.Contains(f.Id))
             .ToDictionaryAsync(f => f.Id, f => f.FlatName);
 
-        var tenantContacts = await _context.Tenants
+        var tenantContacts = await _context.Tenants.IgnoreQueryFilters()
             .Where(t => tenantIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, t => new { t.PhoneNumber, t.Email });
+        var tenantVacatedIds = (await _context.Tenants.IgnoreQueryFilters()
+            .Where(t => tenantIds.Contains(t.Id) && t.IsDeleted)
+            .Select(t => t.Id).ToListAsync()).ToHashSet();
 
         var data = paged.Select(s => new
         {
@@ -2012,6 +2015,7 @@ public class VacateController : ControllerBase
             s.TenantId,
             s.VacateRequestId,
             tenantName = tenants.GetValueOrDefault(s.TenantId, "-"),
+            tenantVacated = tenantVacatedIds.Contains(s.TenantId),
             tenantPhone = tenantContacts.ContainsKey(s.TenantId) ? tenantContacts[s.TenantId].PhoneNumber : null,
             tenantEmail = tenantContacts.ContainsKey(s.TenantId) ? tenantContacts[s.TenantId].Email : null,
             houseNumber = houses.GetValueOrDefault(s.HouseId, "-"),
@@ -2073,7 +2077,7 @@ public class VacateController : ControllerBase
         var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
         var houseNumber = house?.HouseNumber ?? "";
 
-        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
+        var tenant = await _context.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
         if (tenant != null)
         {
             try { await _notificationService.SendToUserAsync(settlement.TenantId.ToString(), $"Management has processed your vacate refund for house {houseNumber}. Please check your portal for details.", "property", "Vacate", settlement.VacateRequestId.ToString()); }
@@ -2293,7 +2297,7 @@ public class VacateController : ControllerBase
         if (vacateRequest == null)
             return NotFound(new { success = false, message = "Vacate request not found." });
 
-        var tenant = await _context.Tenants
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId && !t.IsDeleted);
         if (tenant == null)
             return NotFound(new { success = false, message = "Tenant not found." });
@@ -2369,7 +2373,7 @@ public class VacateController : ControllerBase
         if (vacateRequest == null)
             return NotFound(new { success = false, message = "Vacate request not found." });
 
-        var tenant = await _context.Tenants
+        var tenant = await _context.Tenants.IgnoreQueryFilters()
             .Include(t => t.House)
             .FirstOrDefaultAsync(t => t.Id == vacateRequest.TenantId && !t.IsDeleted);
         if (tenant == null)
@@ -2439,7 +2443,7 @@ public class VacateController : ControllerBase
             // the entity), so unlike Refunds/Deductions there is nothing free-text to match beyond
             // Tenant/House — Amount is skipped per the same no-numeric-search convention as Deductions.
             query = query.Where(x =>
-                _context.Tenants.Any(t => t.Id == x.TenantId &&
+                _context.Tenants.IgnoreQueryFilters().Any(t => t.Id == x.TenantId &&
                     (t.FirstName.Contains(s) || t.LastName.Contains(s) || t.Email.Contains(s))) ||
                 _context.Houses.Any(h => h.Id == x.HouseId && h.HouseNumber.Contains(s)));
         }
@@ -2452,7 +2456,7 @@ public class VacateController : ControllerBase
         var paged = await query.OrderByDescending(f => f.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
         var tenantIds = paged.Select(f => f.TenantId).Distinct().ToList();
-        var tenants = await _context.Tenants
+        var tenants = await _context.Tenants.IgnoreQueryFilters()
             .Where(t => tenantIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
 
@@ -2465,15 +2469,19 @@ public class VacateController : ControllerBase
         var flatsF = await _context.Flats
             .Where(fl => flatIdsF.Contains(fl.Id))
             .ToDictionaryAsync(fl => fl.Id, fl => fl.FlatName);
-        var tenantEmails = await _context.Tenants
+        var tenantEmails = await _context.Tenants.IgnoreQueryFilters()
             .Where(t => tenantIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, t => t.Email);
+        var tenantVacatedIdsF = (await _context.Tenants.IgnoreQueryFilters()
+            .Where(t => tenantIds.Contains(t.Id) && t.IsDeleted)
+            .Select(t => t.Id).ToListAsync()).ToHashSet();
 
         var data = paged.Select(f => new
         {
             f.Id,
             f.TenantId,
             tenantName = tenants.GetValueOrDefault(f.TenantId, "-"),
+            tenantVacated = tenantVacatedIdsF.Contains(f.TenantId),
             tenantEmail = tenantEmails.GetValueOrDefault(f.TenantId),
             houseNumber = houses.GetValueOrDefault(f.HouseId, "-"),
             flatName = flatsF.GetValueOrDefault(f.FlatId, "-"),

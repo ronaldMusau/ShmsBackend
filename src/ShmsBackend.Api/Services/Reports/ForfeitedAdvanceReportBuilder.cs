@@ -31,7 +31,7 @@ public class ForfeitedAdvanceReportBuilder
             .ToListAsync();
 
         var tenantIds = advances.Select(f => f.TenantId).Distinct().ToList();
-        var tenants = await _context.Tenants
+        var tenants = await _context.Tenants.IgnoreQueryFilters()
             .Where(t => tenantIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
 

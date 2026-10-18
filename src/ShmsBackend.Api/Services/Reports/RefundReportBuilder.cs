@@ -31,7 +31,7 @@ public class RefundReportBuilder
             .ToListAsync();
 
         var tenantIds = settlements.Select(s => s.TenantId).Distinct().ToList();
-        var tenants = await _context.Tenants
+        var tenants = await _context.Tenants.IgnoreQueryFilters()
             .Where(t => tenantIds.Contains(t.Id))
             .ToDictionaryAsync(t => t.Id, t => $"{t.FirstName} {t.LastName}");
 
