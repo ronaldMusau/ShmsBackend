@@ -69,6 +69,10 @@ public class PortalTenantController : ControllerBase
             HouseTypeName = h.HouseTypeRef != null ? h.HouseTypeRef.Name : null,
             OccupancyStatus = h.OccupancyStatus.ToString(),
             h.IsAwaitingExistingTenant,
+            // Pre-registered tenants are view-only until their move-in month arrives (computed, never stored).
+            ReadOnlyUntilMoveIn = TenantAccessHelper.IsReadOnlyUntilMoveIn(tenant),
+            MoveInMonth = tenant.LeaseStartMonth,
+            MoveInYear = tenant.LeaseStartYear,
             h.RentFee,
             h.DepositFee,
             PaymentStatus = h.PaymentStatus.ToString(),
