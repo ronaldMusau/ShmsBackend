@@ -1378,6 +1378,7 @@ public class VacateController : ControllerBase
 
         var vacateRequest = await _context.VacateRequests
             .Include(v => v.InspectionLines)
+                .ThenInclude(l => l.Attachments)
             .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
 
         if (vacateRequest == null)
@@ -1402,6 +1403,8 @@ public class VacateController : ControllerBase
                 status = vacateRequest.Status,
                 vacateMonth = vacateRequest.VacateMonth,
                 vacateYear = vacateRequest.VacateYear,
+                createdAt = vacateRequest.CreatedAt,
+                inspectionAssignedAt = vacateRequest.InspectionAssignedAt,
                 inspectionSubmittedAt = vacateRequest.InspectionSubmittedAt,
                 settledAt = vacateRequest.SettledAt,
                 finalRemarks = vacateRequest.FinalRemarks,
@@ -1410,7 +1413,22 @@ public class VacateController : ControllerBase
                 flatName = flat?.FlatName ?? "-",
                 tenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : "-",
                 assignedAgentName = agent != null ? $"{agent.FirstName} {agent.LastName}" : null,
-                inspectionLineCount = vacateRequest.InspectionLines.Count
+                inspectionLineCount = vacateRequest.InspectionLines.Count,
+                // Landlord sees what was found (description + photos) once the inspection is
+                // submitted, but never the assessed amounts.
+                inspectionLines = vacateRequest.InspectionSubmittedAt == null
+                    ? new List<object>()
+                    : vacateRequest.InspectionLines
+                        .OrderBy(l => l.LineOrder)
+                        .Select(l => (object)new
+                        {
+                            l.Id,
+                            l.Description,
+                            l.LineOrder,
+                            attachments = l.Attachments
+                                .OrderBy(a => a.UploadedAt)
+                                .Select(a => new { a.Id, a.FilePath, a.FileType })
+                        }).ToList()
             }
         });
     }
