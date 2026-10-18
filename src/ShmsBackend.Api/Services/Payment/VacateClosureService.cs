@@ -60,7 +60,29 @@ public class VacateClosureService
         if (await GetArrearsAsync(vacateRequest, tenant) > 0) return false;
         var settlement = await _context.VacateSettlements
             .FirstOrDefaultAsync(s => s.VacateRequestId == vacateRequest.Id && !s.IsVoided);
-        return settlement == null || settlement.Direction == "ManagementOwes" || settlement.PaidAt != null;
+        // A settlement either way (tenant owes, or management refunds) must be marked paid before the tenant
+        // is moved to Vacated. Refunds are paid outside the system and marked paid on the Refunds list.
+        return settlement == null || settlement.PaidAt != null;
+    }
+
+    /// <summary>
+    /// Closes one tenant straight away if they are in SettlingVacate and nothing is left to pay. Called when a
+    /// refund is marked paid so the tenant doesn't wait for the next sweep. Returns true if closed.
+    /// </summary>
+    public async Task<bool> TryCloseForTenantAsync(Guid tenantId)
+    {
+        var tenant = await _context.Tenants.Include(t => t.House)
+            .FirstOrDefaultAsync(t => t.Id == tenantId && !t.IsDeleted && t.TenantStatus == TenantStatus.SettlingVacate);
+        if (tenant == null) return false;
+
+        var request = await _context.VacateRequests
+            .Where(v => v.TenantId == tenant.Id && !v.IsDeleted && v.Status == "Approved" && v.ClosedAt == null)
+            .OrderByDescending(v => v.CreatedAt)
+            .FirstOrDefaultAsync();
+        if (request == null || !await IsClearableAsync(request, tenant)) return false;
+
+        await CloseAsync(request, tenant, null);
+        return true;
     }
 
     public async Task CloseAsync(VacateRequest vacateRequest, Tenant tenant, Guid? closedByAdminId)

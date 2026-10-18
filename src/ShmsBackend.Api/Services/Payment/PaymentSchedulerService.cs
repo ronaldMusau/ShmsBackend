@@ -14,7 +14,7 @@ public class PaymentSchedulerService : BackgroundService
     private DateTime? _lastOverdueCheckDate;
     private DateTime? _lastReminderDate;
     private DateTime? _lastVacateStatusFlipDate;
-    private DateTime? _lastVacateAutoCloseDate;
+    private DateTime? _lastVacateAutoCloseRun;
     private DateTime? _lastRentReminderDate;
 
     public PaymentSchedulerService(
@@ -75,13 +75,13 @@ public class PaymentSchedulerService : BackgroundService
                     _lastVacateStatusFlipDate = now.Date;
                 }
 
-                // Auto-close tenancies whose vacate month has passed and who owe nothing, daily at 10:05
-                // (just after the 10:00 SettlingVacate flip). They move to the Vacated list.
-                if (now.Hour == 10 && now.Minute >= 5 && now.Minute < 8
-                    && _lastVacateAutoCloseDate?.Date != now.Date)
+                // Auto-close tenancies whose vacate month has passed and who owe nothing (no arrears, settlement
+                // or refund marked paid). Every 15 minutes, so a tenant who clears their arrears or a refund
+                // is moved to the Vacated list shortly after, without anyone clicking anything.
+                if (_lastVacateAutoCloseRun == null || now - _lastVacateAutoCloseRun.Value >= TimeSpan.FromMinutes(15))
                 {
+                    _lastVacateAutoCloseRun = now;
                     await RunVacateAutoClose();
-                    _lastVacateAutoCloseDate = now.Date;
                 }
 
                 // Auto-timeout payments stuck in Processing on every tick

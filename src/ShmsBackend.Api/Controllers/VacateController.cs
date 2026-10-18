@@ -2074,6 +2074,12 @@ public class VacateController : ControllerBase
         settlement.PaidAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
+        // Nothing is left to pay once the refund is out: if the tenant's vacate month has passed and they
+        // have no arrears, they move to Vacated now rather than at the next sweep.
+        bool tenancyClosed = false;
+        try { tenancyClosed = await _vacateClosureService.TryCloseForTenantAsync(settlement.TenantId); }
+        catch (Exception ex) { _logger.LogError(ex, "Auto-close after refund paid failed for tenant {TenantId}", settlement.TenantId); }
+
         var house = await _context.Houses.FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
         var houseNumber = house?.HouseNumber ?? "";
 
@@ -2087,7 +2093,7 @@ public class VacateController : ControllerBase
             catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate refund paid email to tenant"); }
         }
 
-        return Ok(new { success = true, message = "Refund marked as paid." });
+        return Ok(new { success = true, message = "Refund marked as paid.", tenancyClosed });
     }
 
     // GET /api/vacate/{id}/messages
@@ -2330,9 +2336,7 @@ public class VacateController : ControllerBase
         var settlement = await _context.VacateSettlements
             .FirstOrDefaultAsync(s => s.VacateRequestId == id && !s.IsVoided);
 
-        var isSettlementClear = settlement == null
-            || settlement.Direction == "ManagementOwes"
-            || settlement.PaidAt != null;
+        var isSettlementClear = settlement == null || settlement.PaidAt != null;
 
         var canClear = arrears == 0 && isSettlementClear;
 
@@ -2353,7 +2357,7 @@ public class VacateController : ControllerBase
         });
     }
 
-    // POST /api/vacate/run-auto-close — runs the same sweep the scheduler runs daily at 10:05:
+    // POST /api/vacate/run-auto-close — runs the same sweep the scheduler runs every 15 minutes:
     // tenancies whose vacate month has passed and who owe nothing are closed out (moved to Vacated).
     [HttpPost("run-auto-close")]
     [Authorize(Roles = "SuperAdmin,Admin")]
@@ -2401,8 +2405,10 @@ public class VacateController : ControllerBase
         var settlement = await _context.VacateSettlements
             .FirstOrDefaultAsync(s => s.VacateRequestId == id && !s.IsVoided);
 
-        if (settlement != null && settlement.Direction == "TenantOwes" && settlement.PaidAt == null)
-            return BadRequest(new { success = false, message = "Tenant still owes a settlement payment. This must be paid before clearance." });
+        if (settlement != null && settlement.PaidAt == null)
+            return BadRequest(new { success = false, message = settlement.Direction == "TenantOwes"
+                ? "Tenant still owes a settlement payment. This must be paid before clearance."
+                : "The refund has not been marked as paid yet. Mark it paid on the Refunds list first." });
 
         await _vacateClosureService.CloseAsync(vacateRequest, tenant, GetCallerId());
 
