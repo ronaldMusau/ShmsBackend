@@ -5,11 +5,12 @@
 --   TEST-D  Rewards        : no successor (house must flip to Vacant and return to public listing)
 USE [shms_database];
 GO
-UPDATE PortalUsers SET TenantStatus = 4, UpdatedAt = GETUTCDATE()
-WHERE Email IN ('test-tenant-advancecredit@shms-test.invalid', 'test-tenant-rewards@shms-test.invalid')
-  AND IsDeleted = 0;
-SELECT Email, TenantStatus FROM PortalUsers
-WHERE Email IN ('test-tenant-advancecredit@shms-test.invalid', 'test-tenant-rewards@shms-test.invalid');
+UPDATE t SET t.TenantStatus = 4
+FROM Tenants t JOIN PortalUsers u ON u.Id = t.Id
+WHERE u.Email IN ('test-tenant-advancecredit@shms-test.invalid', 'test-tenant-rewards@shms-test.invalid')
+  AND u.IsDeleted = 0;
+SELECT u.Email, t.TenantStatus FROM Tenants t JOIN PortalUsers u ON u.Id = t.Id
+WHERE u.Email IN ('test-tenant-advancecredit@shms-test.invalid', 'test-tenant-rewards@shms-test.invalid');
 GO
 
 -- 72-hour expiry test: back-date the UNPAID explorer-converted tenant (zz.xd@example.com on ZNW2) by 4 days.
