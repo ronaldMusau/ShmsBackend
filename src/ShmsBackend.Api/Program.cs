@@ -128,6 +128,7 @@ builder.Services.AddScoped<LandlordReportBuilder>();
 builder.Services.AddScoped<AgentReportBuilder>();
 builder.Services.AddScoped<RewardReportBuilder>();
 builder.Services.AddScoped<ServiceChargeReportBuilder>();
+builder.Services.AddScoped<ComplaintChargeReportBuilder>();
 builder.Services.AddScoped<RefundReportBuilder>();
 builder.Services.AddScoped<DeductionReportBuilder>();
 builder.Services.AddScoped<ForfeitedAdvanceReportBuilder>();

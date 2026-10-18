@@ -48,6 +48,7 @@ public class ReportsController : ControllerBase
     private readonly AgentReportBuilder _agentReportBuilder;
     private readonly RewardReportBuilder _rewardReportBuilder;
     private readonly ServiceChargeReportBuilder _serviceChargeReportBuilder;
+    private readonly ComplaintChargeReportBuilder _complaintChargeReportBuilder;
     private readonly RefundReportBuilder _refundReportBuilder;
     private readonly DeductionReportBuilder _deductionReportBuilder;
     private readonly ForfeitedAdvanceReportBuilder _forfeitedAdvanceReportBuilder;
@@ -70,6 +71,7 @@ public class ReportsController : ControllerBase
         AgentReportBuilder agentReportBuilder,
         RewardReportBuilder rewardReportBuilder,
         ServiceChargeReportBuilder serviceChargeReportBuilder,
+        ComplaintChargeReportBuilder complaintChargeReportBuilder,
         RefundReportBuilder refundReportBuilder,
         DeductionReportBuilder deductionReportBuilder,
         ForfeitedAdvanceReportBuilder forfeitedAdvanceReportBuilder,
@@ -91,6 +93,7 @@ public class ReportsController : ControllerBase
         _agentReportBuilder = agentReportBuilder;
         _rewardReportBuilder = rewardReportBuilder;
         _serviceChargeReportBuilder = serviceChargeReportBuilder;
+        _complaintChargeReportBuilder = complaintChargeReportBuilder;
         _refundReportBuilder = refundReportBuilder;
         _deductionReportBuilder = deductionReportBuilder;
         _forfeitedAdvanceReportBuilder = forfeitedAdvanceReportBuilder;
@@ -555,6 +558,28 @@ public class ReportsController : ControllerBase
         var data = await _serviceChargeReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Service-Charge-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Complaint Charges — admin-wide (service charge never included)
+    // ═══════════════════════════════════════════════════════════════════
+
+    [HttpGet("complaint-charges/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> PreviewComplaintChargesReport([FromQuery] ComplaintChargeFilters filters)
+    {
+        var data = await _complaintChargeReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    [HttpGet("complaint-charges/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    public async Task<IActionResult> ExportComplaintChargesReport([FromQuery] ComplaintChargeFilters filters, [FromQuery] string format = "pdf")
+    {
+        var data = await _complaintChargeReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Complaint-Charges-Report", format);
     }
 
     // ═══════════════════════════════════════════════════════════════════

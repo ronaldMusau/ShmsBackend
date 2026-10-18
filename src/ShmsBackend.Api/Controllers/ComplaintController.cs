@@ -661,27 +661,8 @@ public class ComplaintController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50)
     {
-        var q = _context.Complaints.Where(c => c.IsBillable == true && c.BillableTarget == "Tenant" && c.Status != "Rejected"
-                                               && (c.CurrentApprovalStepOrder == null));
-        if (flatId.HasValue) q = q.Where(c => c.FlatId == flatId.Value);
-        if (fromDate.HasValue) q = q.Where(c => c.CreatedAt >= fromDate.Value);
-        if (toDate.HasValue) q = q.Where(c => c.CreatedAt <= toDate.Value.AddDays(1));
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var s = search.Trim();
-            q = q.Where(c => c.TicketNumber.Contains(s)
-                || _context.Tenants.Any(t => t.Id == c.TenantId && (t.FirstName.Contains(s) || t.LastName.Contains(s)))
-                || _context.Houses.Any(h => h.Id == c.HouseId && h.HouseNumber.Contains(s)));
-        }
-        q = state switch
-        {
-            "Paid" => q.Where(c => c.TenantChargePaidAt != null),
-            "Outstanding" => q.Where(c => c.TenantChargeDecision == "Accepted" && c.TenantChargePaidAt == null && c.BillableAmount > 0),
-            "AwaitingTenant" => q.Where(c => c.TenantChargeDecision == null && c.Status == "Approved"),
-            "Declined" => q.Where(c => c.TenantChargeDecision == "Declined"),
-            _ => q
-        };
-
+        var q = ShmsBackend.Api.Services.Reports.ComplaintChargeReportBuilder.ApplyFilters(_context,
+            new ShmsBackend.Api.Services.Reports.ComplaintChargeFilters { State = state, Search = search, FlatId = flatId, FromDate = fromDate, ToDate = toDate });
         var total = await q.CountAsync();
         var totalPaid = await q.Where(c => c.TenantChargePaidAt != null).SumAsync(c => (decimal?)c.BillableAmount) ?? 0m;
         var totalOutstanding = await q.Where(c => c.TenantChargeDecision == "Accepted" && c.TenantChargePaidAt == null).SumAsync(c => (decimal?)c.BillableAmount) ?? 0m;
