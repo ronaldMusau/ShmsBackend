@@ -123,8 +123,8 @@ public class HouseReportBuilder
                 new() { Key = "flatName", Header = "Flat" },
                 new() { Key = "houseType", Header = "House Type" },
                 new() { Key = "occupancyStatus", Header = "Occupancy Status" },
-                new() { Key = "rent", Header = "Rent" },
-                new() { Key = "deposit", Header = "Deposit" },
+                new() { Key = "rent", Header = "Rent", SumTotal = true },
+                new() { Key = "deposit", Header = "Deposit", SumTotal = true },
                 new() { Key = "currentTenant", Header = "Current Tenant" },
                 new() { Key = "monthlyStatus", Header = monthlyStatusHeader },
                 new() { Key = "awaitingTenant", Header = "Awaiting Tenant" }

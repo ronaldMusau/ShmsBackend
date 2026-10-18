@@ -80,7 +80,7 @@ public class VacateReportBuilder
                 new() { Key = "requestDate", Header = "Request Date" },
                 new() { Key = "status", Header = "Status" },
                 new() { Key = "period", Header = "Vacate Period" },
-                new() { Key = "sitDeposit", Header = "Sit Deposit" },
+                new() { Key = "sitDeposit", Header = "Sit Deposit", SumTotal = true },
                 new() { Key = "reason", Header = "Reason" },
                 new() { Key = "clearDate", Header = "Clear Date" }
             },

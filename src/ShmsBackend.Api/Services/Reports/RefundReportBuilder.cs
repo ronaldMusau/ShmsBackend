@@ -73,7 +73,7 @@ public class RefundReportBuilder
             {
                 new() { Key = "tenantName", Header = "Tenant Name" },
                 new() { Key = "flatUnit", Header = "Flat/Unit" },
-                new() { Key = "amount", Header = "Amount" },
+                new() { Key = "amount", Header = "Amount", SumTotal = true },
                 new() { Key = "description", Header = "Description" },
                 new() { Key = "status", Header = "Status" },
                 new() { Key = "paidDate", Header = "Paid Date" },

@@ -59,7 +59,7 @@ public class RewardReportBuilder
                 new() { Key = "tenantName", Header = "Tenant Name" },
                 new() { Key = "flatUnit", Header = "Flat/Unit" },
                 new() { Key = "transactionType", Header = "Transaction Type" },
-                new() { Key = "points", Header = "Points" },
+                new() { Key = "points", Header = "Points", SumTotal = true },
                 new() { Key = "balanceAfter", Header = "Balance After" },
                 new() { Key = "reference", Header = "Reference" },
                 new() { Key = "date", Header = "Date" }

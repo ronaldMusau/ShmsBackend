@@ -67,7 +67,7 @@ public class ExpenseReportBuilder
             {
                 new() { Key = "flat", Header = "Flat" },
                 new() { Key = "house", Header = "House" },
-                new() { Key = "amount", Header = "Amount" },
+                new() { Key = "amount", Header = "Amount", SumTotal = true },
                 new() { Key = "description", Header = "Description" },
                 new() { Key = "expenseDate", Header = "Expense Date" },
                 new() { Key = "loggedBy", Header = "Logged By" }

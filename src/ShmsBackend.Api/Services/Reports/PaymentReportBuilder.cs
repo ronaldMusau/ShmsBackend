@@ -58,9 +58,9 @@ public class PaymentReportBuilder
             {
                 new() { Key = "tenantName", Header = "Tenant Name" },
                 new() { Key = "flatUnit", Header = "Flat/Unit" },
-                new() { Key = "amount", Header = "Amount" },
-                new() { Key = "amountPaid", Header = "Amount Paid" },
-                new() { Key = "balance", Header = "Balance" },
+                new() { Key = "amount", Header = "Amount", SumTotal = true },
+                new() { Key = "amountPaid", Header = "Amount Paid", SumTotal = true },
+                new() { Key = "balance", Header = "Balance", SumTotal = true },
                 new() { Key = "method", Header = "Method" },
                 new() { Key = "mpesaReceipt", Header = "Mpesa Receipt" },
                 new() { Key = "status", Header = "Status" },

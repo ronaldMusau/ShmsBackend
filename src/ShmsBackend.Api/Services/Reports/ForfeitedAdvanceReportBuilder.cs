@@ -70,9 +70,9 @@ public class ForfeitedAdvanceReportBuilder
             {
                 new() { Key = "tenantName", Header = "Tenant Name" },
                 new() { Key = "houseUnit", Header = "House/Unit" },
-                new() { Key = "totalAdvance", Header = "Total Advance" },
-                new() { Key = "appliedToDamages", Header = "Applied to Damages" },
-                new() { Key = "forfeitedUnused", Header = "Forfeited (Unused)" },
+                new() { Key = "totalAdvance", Header = "Total Advance", SumTotal = true },
+                new() { Key = "appliedToDamages", Header = "Applied to Damages", SumTotal = true },
+                new() { Key = "forfeitedUnused", Header = "Forfeited (Unused)", SumTotal = true },
                 new() { Key = "closedDate", Header = "Closed Date" }
             },
             Rows = rows

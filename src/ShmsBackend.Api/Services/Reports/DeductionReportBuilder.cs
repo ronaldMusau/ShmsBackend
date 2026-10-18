@@ -80,7 +80,7 @@ public class DeductionReportBuilder
                 new() { Key = "landlordName", Header = "Landlord Name" },
                 new() { Key = "tenantName", Header = "Tenant Name" },
                 new() { Key = "houseUnit", Header = "House/Unit" },
-                new() { Key = "amount", Header = "Amount" },
+                new() { Key = "amount", Header = "Amount", SumTotal = true },
                 new() { Key = "description", Header = "Description" },
                 new() { Key = "monthYear", Header = "Month/Year" },
                 new() { Key = "createdDate", Header = "Created Date" }

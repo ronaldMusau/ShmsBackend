@@ -57,6 +57,28 @@ public class ReportRenderer : IReportRenderer
         };
     }
 
+    /// <summary>One-line summary shown above the table: "12 records | Amount: 1,000.00 | Paid: 900.00".</summary>
+    private static string? TotalsSummaryLine(ReportData data)
+    {
+        var totals = data.Totals;
+        if (totals.Count == 0) return null;
+        var parts = new System.Collections.Generic.List<string>
+        {
+            $"{data.RecordCount} record{(data.RecordCount == 1 ? "" : "s")}"
+        };
+        foreach (var col in data.Columns.Where(c => c.SumTotal))
+            parts.Add($"Total {col.Header}: {totals[col.Key]:N2}");
+        return string.Join("   |   ", parts);
+    }
+
+    private static string TotalCellText(ReportData data, int index, System.Collections.Generic.IReadOnlyDictionary<string, decimal> totals)
+    {
+        var col = data.Columns[index];
+        if (col.SumTotal && totals.TryGetValue(col.Key, out var t)) return t.ToString("N2");
+        if (index == 0) return $"TOTAL ({data.RecordCount})";
+        return "";
+    }
+
     private static string? CellText(System.Collections.Generic.Dictionary<string, object?> row, string key)
     {
         return row.TryGetValue(key, out var v) ? FormatValue(v) : "";
@@ -187,6 +209,15 @@ public class ReportRenderer : IReportRenderer
                 metaPara.Format.SpaceAfter = Unit.FromPoint(8);
             }
 
+            var totalsLine = TotalsSummaryLine(data);
+            if (totalsLine != null)
+            {
+                var totalsPara = section.AddParagraph(totalsLine);
+                totalsPara.Format.Font.Size = Unit.FromPoint(9);
+                totalsPara.Format.Font.Bold = true;
+                totalsPara.Format.SpaceAfter = Unit.FromPoint(6);
+            }
+
             // ── Data table — column widths are weighted by header content (see ColumnWeight) and
             // distributed across the actual available content width, not an assumed page size, so this
             // is correct in both portrait and the landscape switch above. MigraDoc wraps paragraph text
@@ -204,6 +235,7 @@ public class ReportRenderer : IReportRenderer
             tableHeaderRow.Shading.Color = Colors.LightGray;
             tableHeaderRow.Format.Font.Bold = true;
             tableHeaderRow.Format.Font.Size = Unit.FromPoint(9);
+            tableHeaderRow.HeadingFormat = true; // repeat header on every page of a long list
             for (var i = 0; i < data.Columns.Count; i++)
                 tableHeaderRow.Cells[i].AddParagraph(data.Columns[i].Header);
 
@@ -213,6 +245,17 @@ public class ReportRenderer : IReportRenderer
                 dataRow.Format.Font.Size = Unit.FromPoint(8);
                 for (var i = 0; i < data.Columns.Count; i++)
                     dataRow.Cells[i].AddParagraph(CellText(row, data.Columns[i].Key) ?? "");
+            }
+
+            var pdfTotals = data.Totals;
+            if (pdfTotals.Count > 0)
+            {
+                var totalRow = table.AddRow();
+                totalRow.Format.Font.Size = Unit.FromPoint(9);
+                totalRow.Format.Font.Bold = true;
+                totalRow.Shading.Color = Colors.LightGray;
+                for (var i = 0; i < data.Columns.Count; i++)
+                    totalRow.Cells[i].AddParagraph(TotalCellText(data, i, pdfTotals));
             }
 
             // ── Footer: page number + generated-by ──
@@ -297,7 +340,18 @@ public class ReportRenderer : IReportRenderer
         metaRange.Value = metaText;
         metaRange.Style.Font.FontSize = 8;
         metaRange.Style.Font.FontColor = XLColor.Gray;
-        row += 2;
+        row++;
+
+        var excelTotalsLine = TotalsSummaryLine(data);
+        if (excelTotalsLine != null)
+        {
+            var sumRange = ws.Range(row, 1, row, colCount).Merge();
+            sumRange.Value = excelTotalsLine;
+            sumRange.Style.Font.Bold = true;
+            sumRange.Style.Font.FontSize = 10;
+            row++;
+        }
+        row++;
 
         var headerRowIndex = row;
         for (var i = 0; i < data.Columns.Count; i++)
@@ -314,6 +368,30 @@ public class ReportRenderer : IReportRenderer
         {
             for (var i = 0; i < data.Columns.Count; i++)
                 ws.Cell(row, i + 1).Value = CellText(dataRow, data.Columns[i].Key);
+            row++;
+        }
+
+        var excelTotals = data.Totals;
+        if (excelTotals.Count > 0)
+        {
+            for (var i = 0; i < data.Columns.Count; i++)
+            {
+                var cell = ws.Cell(row, i + 1);
+                var col = data.Columns[i];
+                if (col.SumTotal && excelTotals.TryGetValue(col.Key, out var tv))
+                {
+                    cell.Value = tv;
+                    cell.Style.NumberFormat.Format = "#,##0.00";
+                    cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                }
+                else if (i == 0)
+                {
+                    cell.Value = $"TOTAL ({data.RecordCount})";
+                }
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.LightGray;
+                cell.Style.Border.TopBorder = XLBorderStyleValues.Thin;
+            }
             row++;
         }
 
@@ -367,6 +445,10 @@ public class ReportRenderer : IReportRenderer
             if (!string.IsNullOrWhiteSpace(data.FilterSummary))
                 body.AppendChild(BuildParagraph(data.FilterSummary, bold: false, sizeHalfPoints: "16", gray: true));
 
+            var wordTotalsLine = TotalsSummaryLine(data);
+            if (wordTotalsLine != null)
+                body.AppendChild(BuildParagraph(wordTotalsLine, bold: true, sizeHalfPoints: "18"));
+
             body.AppendChild(new WordParagraph());
 
             // A4 in dxa (1/20 pt): 11906 x 16838 portrait. Word does not auto-swap these when Orient is
@@ -404,7 +486,7 @@ public class ReportRenderer : IReportRenderer
             table.AppendChild(tableProps);
             table.AppendChild(new TableGrid(columnWidthsDxa.Select(w => new GridColumn { Width = w.ToString() })));
 
-            var headerRow = new TableRow();
+            var headerRow = new TableRow(new TableRowProperties(new TableHeader())); // repeats on each page
             for (var i = 0; i < data.Columns.Count; i++)
             {
                 var cell = new TableCell(
@@ -426,6 +508,21 @@ public class ReportRenderer : IReportRenderer
                         BuildParagraph(CellText(dataRow, data.Columns[i].Key) ?? "", bold: false, sizeHalfPoints: "16")));
                 }
                 table.Append(tr);
+            }
+
+            var wordTotals = data.Totals;
+            if (wordTotals.Count > 0)
+            {
+                var totalTr = new TableRow();
+                for (var i = 0; i < data.Columns.Count; i++)
+                {
+                    totalTr.Append(new TableCell(
+                        new TableCellProperties(
+                            new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() },
+                            new WordShading { Fill = "D9D9D9" }),
+                        BuildParagraph(TotalCellText(data, i, wordTotals), bold: true, sizeHalfPoints: "18")));
+                }
+                table.Append(totalTr);
             }
 
             body.AppendChild(table);

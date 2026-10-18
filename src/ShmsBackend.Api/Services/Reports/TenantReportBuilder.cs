@@ -85,8 +85,8 @@ public class TenantReportBuilder
                 new() { Key = "moveInDate", Header = "Move-in Date" },
                 new() { Key = "tenancyCycle", Header = "Tenancy Cycle" },
                 new() { Key = "status", Header = "Status" },
-                new() { Key = "rent", Header = "Rent" },
-                new() { Key = "deposit", Header = "Deposit" }
+                new() { Key = "rent", Header = "Rent", SumTotal = true },
+                new() { Key = "deposit", Header = "Deposit", SumTotal = true }
             },
             Rows = rows
         };

@@ -82,7 +82,7 @@ public class ComplaintReportBuilder
                 new() { Key = "flatUnit", Header = "Flat/Unit" },
                 new() { Key = "category", Header = "Category" },
                 new() { Key = "status", Header = "Status" },
-                new() { Key = "billableAmount", Header = "Billable Amount" },
+                new() { Key = "billableAmount", Header = "Billable Amount", SumTotal = true },
                 new() { Key = "raisedDate", Header = "Raised Date" },
                 new() { Key = "closedDate", Header = "Closed Date" }
             },

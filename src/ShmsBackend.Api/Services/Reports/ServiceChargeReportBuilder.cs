@@ -64,7 +64,7 @@ public class ServiceChargeReportBuilder
             {
                 new() { Key = "tenantName", Header = "Tenant Name" },
                 new() { Key = "flatUnit", Header = "Flat/Unit" },
-                new() { Key = "serviceChargeAmount", Header = "Service Charge Amount" },
+                new() { Key = "serviceChargeAmount", Header = "Service Charge Amount", SumTotal = true },
                 new() { Key = "mpesaReceipt", Header = "Mpesa Receipt" },
                 new() { Key = "paidDate", Header = "Paid Date" }
             },
