@@ -24,4 +24,9 @@ public class ReceiptData
     public string? PaymentMethod { get; set; }
     public string? MpesaReceiptNumber { get; set; }
     public string Status { get; set; } = "";
+
+    // Non-rent receipts (complaint charge, vacate settlement): a free-text reference replaces the
+    // month/year "Period" row, and Description says what the money was for.
+    public string? PeriodLabel { get; set; }
+    public string? Description { get; set; }
 }

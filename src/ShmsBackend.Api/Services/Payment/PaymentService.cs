@@ -499,6 +499,7 @@ public class PaymentService : IPaymentService
                 if (details.IsSuccess)
                 {
                     vacateAttempt.AttemptStatus = "Success";
+                    vacateAttempt.MpesaReceiptNumber = details.MpesaReceiptNumber;   // printed on the settlement receipt
                     settlement.PaidAt = DateTime.UtcNow;
                     await _context.SaveChangesAsync();
 

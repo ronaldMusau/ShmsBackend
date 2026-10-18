@@ -40,13 +40,14 @@ public static class ComplaintChargeHelper
             return (null, "A payment is already being processed for this complaint. Please wait a moment or check the phone.");
 
         var amount = complaint.BillableAmount!.Value;
+        var serviceCharge = await ServiceChargeLookup.ForHouseAsync(ctx, complaint.HouseId);
         STKPushResponse stk;
         try
         {
             stk = await mpesa.InitiateSTKPushAsync(new STKPushRequest
             {
                 PhoneNumber = phone,
-                Amount = amount,
+                Amount = amount + serviceCharge,   // tenant pays the fix + platform service charge
                 AccountReference = $"CMP-{complaint.TicketNumber}",
                 TransactionDesc = "Complaint fix",
                 TenantId = complaint.TenantId.ToString(),
@@ -59,6 +60,7 @@ public static class ComplaintChargeHelper
         {
             ComplaintId = complaint.Id,
             Amount = amount,
+            ServiceChargeAmount = serviceCharge,
             PhoneNumber = phone,
             PaidBy = paidBy,
             InitiatedByAdminId = adminId,

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Services;
 using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
@@ -16,13 +17,16 @@ public class PaymentController : ControllerBase
     private readonly IMpesaService _mpesaService;
     private readonly ShmsDbContext _context;
     private readonly ILogger<PaymentController> _logger;
+    private readonly ServiceChargeQueryService _serviceChargeQueryService;
 
     public PaymentController(
         IPaymentService paymentService,
         IMpesaService mpesaService,
         ShmsDbContext context,
-        ILogger<PaymentController> logger)
+        ILogger<PaymentController> logger,
+        ServiceChargeQueryService serviceChargeQueryService)
     {
+        _serviceChargeQueryService = serviceChargeQueryService;
         _paymentService = paymentService;
         _mpesaService = mpesaService;
         _context = context;
@@ -811,6 +815,8 @@ public class PaymentController : ControllerBase
     }
 
     // GET /api/payments/service-charges/all
+    // Every service charge collected — rent payments, complaint charges and vacate settlements.
+    // `source` = Rent | Complaint | Vacate filters by where the charge was collected.
     [HttpGet("service-charges/all")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetAllServiceChargesCollected(
@@ -825,70 +831,40 @@ public class PaymentController : ControllerBase
         [FromQuery] DateTime? toDate = null,
         [FromQuery] decimal? minAmount = null,
         [FromQuery] decimal? maxAmount = null,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] string? source = null)
     {
-        var query = _context.Payments
-            .Include(p => p.House)
-                .ThenInclude(h => h!.Flat)
-            .Include(p => p.Tenant)
-            .Where(p => p.ServiceChargeAmount > 0 && p.MpesaReceiptNumber != null)
-            .AsQueryable();
+        if (!ServiceChargeQueryService.IsValidSource(source))
+            return BadRequest(new { success = false, message = "source must be Rent, Complaint or Vacate." });
 
-        if (tenantId.HasValue) query = query.Where(p => p.TenantId == tenantId.Value);
-        if (houseId.HasValue) query = query.Where(p => p.HouseId == houseId.Value);
-        if (flatId.HasValue) query = query.Where(p => p.FlatId == flatId.Value);
-        if (month.HasValue) query = query.Where(p => p.Month == month.Value);
-        if (year.HasValue) query = query.Where(p => p.Year == year.Value);
-        if (fromDate.HasValue) query = query.Where(p => p.PaidAt >= fromDate.Value);
-        if (toDate.HasValue) query = query.Where(p => p.PaidAt < toDate.Value.Date.AddDays(1));
-        if (minAmount.HasValue) query = query.Where(p => p.ServiceChargeAmount >= minAmount.Value);
-        if (maxAmount.HasValue) query = query.Where(p => p.ServiceChargeAmount <= maxAmount.Value);
-
-        // Free-text search — same field set as GetAllPayments minus RedemptionReference (not applicable
-        // to service-charge rows) and ServiceChargeAmount (no numeric-as-text Contains convention exists
-        // anywhere in this codebase — amount filtering is always done via MinAmount/MaxAmount range
-        // params, as above, so introducing one here would be a new, inconsistent pattern).
-        if (!string.IsNullOrWhiteSpace(search))
+        var all = await _serviceChargeQueryService.GetEntriesAsync(new ServiceChargeFilters
         {
-            var s = search.Trim();
-            query = query.Where(p =>
-                (p.Tenant != null && (p.Tenant.FirstName.Contains(s) || p.Tenant.LastName.Contains(s) || p.Tenant.Email.Contains(s))) ||
-                (p.House != null && (p.House.HouseNumber.Contains(s) || (p.House.Flat != null && p.House.Flat.FlatName.Contains(s)))) ||
-                (p.MpesaReceiptNumber != null && p.MpesaReceiptNumber.Contains(s)));
-        }
+            TenantId = tenantId, HouseId = houseId, FlatId = flatId, Month = month, Year = year,
+            FromDate = fromDate, ToDate = toDate, MinAmount = minAmount, MaxAmount = maxAmount,
+            Source = source, Search = search
+        });
 
-        var total = await query.CountAsync();
-        var totalServiceChargeCollected = await query.SumAsync(p => p.ServiceChargeAmount ?? 0);
+        var total = all.Count;
+        var totalServiceChargeCollected = all.Sum(e => e.ServiceChargeAmount);
+        var bySource = all.GroupBy(e => e.Source)
+            .ToDictionary(g => g.Key, g => new { count = g.Count(), amount = g.Sum(e => e.ServiceChargeAmount) });
 
-        var paged = await query
-            .OrderByDescending(p => p.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        var tenantIds = paged.Select(p => p.TenantId).Distinct().ToList();
-        var tenantLookup = await _context.Tenants
-            .IgnoreQueryFilters()
-            .Where(t => tenantIds.Contains(t.Id))
-            .Select(t => new { t.Id, t.FirstName, t.LastName })
-            .ToDictionaryAsync(t => t.Id);
-
-        var payments = paged.Select(p =>
+        var payments = all.Skip((page - 1) * pageSize).Take(pageSize).Select(e => new
         {
-            tenantLookup.TryGetValue(p.TenantId, out var tenant);
-            return new
-            {
-                p.Id,
-                tenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}" : null,
-                houseNumber = p.House != null ? p.House.HouseNumber : null,
-                flatName = p.House != null && p.House.Flat != null ? p.House.Flat.FlatName : null,
-                p.Month,
-                p.Year,
-                p.RentAmount,
-                p.ServiceChargeAmount,
-                p.MpesaReceiptNumber,
-                p.PaidAt
-            };
+            e.Id,
+            source = e.Source,
+            sourceLabel = e.SourceLabel,
+            reference = e.Reference,
+            tenantName = e.TenantName,
+            houseNumber = e.HouseNumber,
+            flatName = e.FlatName,
+            e.Month,
+            e.Year,
+            rentAmount = e.BaseAmount,
+            baseAmount = e.BaseAmount,
+            e.ServiceChargeAmount,
+            e.MpesaReceiptNumber,
+            e.PaidAt
         }).ToList();
 
         return Ok(new
@@ -899,7 +875,7 @@ public class PaymentController : ControllerBase
             page,
             pageSize,
             totalPages = (int)Math.Ceiling((double)total / pageSize),
-            totals = new { totalServiceChargeCollected }
+            totals = new { totalServiceChargeCollected, bySource }
         });
     }
 
@@ -908,12 +884,8 @@ public class PaymentController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetServiceChargeYears()
     {
-        var years = await _context.Payments
-            .Where(p => p.ServiceChargeAmount > 0 && p.MpesaReceiptNumber != null)
-            .Select(p => p.Year)
-            .Distinct()
-            .OrderByDescending(y => y)
-            .ToListAsync();
+        var years = (await _serviceChargeQueryService.GetEntriesAsync(new ServiceChargeFilters()))
+            .Select(e => e.Year).Distinct().OrderByDescending(y => y).ToList();
 
         return Ok(new { success = true, data = years });
     }

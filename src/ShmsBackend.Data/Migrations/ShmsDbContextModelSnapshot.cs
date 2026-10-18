@@ -789,6 +789,10 @@ namespace ShmsBackend.Data.Migrations
                     b.Property<int>("RetryCount")
                         .HasColumnType("int");
 
+                    b.Property<decimal?>("ServiceChargeAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CheckoutRequestId");
@@ -2494,6 +2498,9 @@ namespace ShmsBackend.Data.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("MpesaReceiptNumber")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime?>("ProcessedAt")
                         .HasColumnType("datetime2");
 
@@ -2505,6 +2512,10 @@ namespace ShmsBackend.Data.Migrations
 
                     b.Property<int>("RetryCount")
                         .HasColumnType("int");
+
+                    b.Property<decimal?>("ServiceChargeAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<Guid>("VacateSettlementId")
                         .HasColumnType("uniqueidentifier");

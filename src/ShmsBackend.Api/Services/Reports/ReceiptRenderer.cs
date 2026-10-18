@@ -45,9 +45,12 @@ public class ReceiptRenderer : IReceiptRenderer
     {
         var rows = new List<(string, string)>
         {
-            ("Payment Type", data.PaymentType),
-            ("Period", new DateTime(data.Year, data.Month, 1).ToString("MMMM yyyy"))
+            ("Payment Type", data.PaymentType)
         };
+
+        if (!string.IsNullOrWhiteSpace(data.PeriodLabel)) rows.Add(("Reference", data.PeriodLabel!));
+        else if (data.Month >= 1 && data.Month <= 12) rows.Add(("Period", new DateTime(data.Year, data.Month, 1).ToString("MMMM yyyy")));
+        if (!string.IsNullOrWhiteSpace(data.Description)) rows.Add(("Description", data.Description!));
 
         if (data.RentAmount.HasValue) rows.Add(("Rent Amount", data.RentAmount.Value.ToString("N2")));
         if (data.DepositAmount.HasValue) rows.Add(("Deposit Amount", data.DepositAmount.Value.ToString("N2")));

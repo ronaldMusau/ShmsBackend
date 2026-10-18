@@ -658,11 +658,17 @@ public class ShmsDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Amount).HasPrecision(18, 2);
+            entity.Property(e => e.ServiceChargeAmount).HasPrecision(18, 2);
             entity.HasIndex(e => e.CheckoutRequestId);
             entity.HasOne(e => e.Complaint)
                   .WithMany()
                   .HasForeignKey(e => e.ComplaintId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VacateCheckoutAttempt>(entity =>
+        {
+            entity.Property(e => e.ServiceChargeAmount).HasPrecision(18, 2);
         });
 
         // ── ComplaintInspection Configuration ────────────────────────────────────

@@ -61,6 +61,152 @@ public class ReceiptsController : ControllerBase
         };
     }
 
+    // ── Complaint charge receipt ─────────────────────────────────────────────
+    // GET /api/receipts/complaint/{complaintId}/preview | /export?format=pdf|excel|word
+    // Tenant: own complaint only. Admin-side roles: any. The service charge line is admin-only.
+    [HttpGet("complaint/{complaintId:guid}/preview")]
+    public async Task<IActionResult> PreviewComplaintReceipt(Guid complaintId)
+    {
+        var (data, error) = await BuildComplaintReceiptAsync(complaintId);
+        if (error != null) return error;
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    [HttpGet("complaint/{complaintId:guid}/export")]
+    public async Task<IActionResult> ExportComplaintReceipt(Guid complaintId, [FromQuery] string format = "pdf")
+    {
+        var (data, error) = await BuildComplaintReceiptAsync(complaintId);
+        if (error != null) return error;
+        return await RenderReceiptAsync(data!, format);
+    }
+
+    // ── Vacate settlement receipt ────────────────────────────────────────────
+    // GET /api/receipts/vacate-settlement/{settlementId}/preview | /export?format=pdf|excel|word
+    [HttpGet("vacate-settlement/{settlementId:guid}/preview")]
+    public async Task<IActionResult> PreviewVacateSettlementReceipt(Guid settlementId)
+    {
+        var (data, error) = await BuildVacateReceiptAsync(settlementId);
+        if (error != null) return error;
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    [HttpGet("vacate-settlement/{settlementId:guid}/export")]
+    public async Task<IActionResult> ExportVacateSettlementReceipt(Guid settlementId, [FromQuery] string format = "pdf")
+    {
+        var (data, error) = await BuildVacateReceiptAsync(settlementId);
+        if (error != null) return error;
+        return await RenderReceiptAsync(data!, format);
+    }
+
+    private bool IsAdminSide(string role) =>
+        role is "SuperAdmin" or "Admin" or "Secretary" or "Manager" or "Accountant";
+
+    private bool CanSeeTenantReceipt(Guid tenantId)
+    {
+        var role = CallerRole();
+        if (IsAdminSide(role)) return true;
+        return role == "Tenant"
+            && Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid) && uid == tenantId;
+    }
+
+    private async Task<(ReceiptData? Data, IActionResult? Error)> BuildComplaintReceiptAsync(Guid complaintId)
+    {
+        var complaint = await _context.Complaints.Include(c => c.ComplaintType)
+            .FirstOrDefaultAsync(c => c.Id == complaintId);
+        if (complaint == null) return (null, NotFound(new { success = false, message = "Complaint not found." }));
+        if (!CanSeeTenantReceipt(complaint.TenantId))
+            return (null, StatusCode(403, new { success = false, message = "You do not have permission to view this receipt." }));
+        if (complaint.TenantChargePaidAt == null)
+            return (null, BadRequest(new { success = false, message = "No payment has been received for this complaint charge." }));
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == complaint.TenantId);
+        var house = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == complaint.HouseId);
+        var attempt = await _context.ComplaintCheckoutAttempts
+            .Where(a => a.ComplaintId == complaintId && a.AttemptStatus == "Success")
+            .OrderByDescending(a => a.ProcessedAt).FirstOrDefaultAsync();
+
+        var amount = attempt?.Amount ?? complaint.BillableAmount ?? 0m;
+        var receiptNo = !string.IsNullOrWhiteSpace(complaint.TenantChargeReceipt)
+            ? complaint.TenantChargeReceipt! : $"CMP-{complaint.TicketNumber}";
+
+        var data = new ReceiptData
+        {
+            ReceiptNumber = receiptNo,
+            PaidAt = complaint.TenantChargePaidAt,
+            TenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}".Trim() : "",
+            TenantPhone = tenant?.PhoneNumber,
+            TenantEmail = tenant?.Email,
+            FlatName = house?.Flat?.FlatName ?? "",
+            HouseNumber = house?.HouseNumber ?? "",
+            PaymentType = "Complaint Charge",
+            PeriodLabel = $"Complaint {complaint.TicketNumber}",
+            Description = complaint.ComplaintType?.Name,
+            Amount = amount,
+            AmountPaid = amount,
+            Balance = 0m,
+            PaymentMethod = "Mpesa",
+            MpesaReceiptNumber = complaint.TenantChargeReceipt,
+            Status = "Paid",
+            ServiceChargeAmount = IsAdminSide(CallerRole()) ? attempt?.ServiceChargeAmount : null
+        };
+        return (data, null);
+    }
+
+    private async Task<(ReceiptData? Data, IActionResult? Error)> BuildVacateReceiptAsync(Guid settlementId)
+    {
+        var settlement = await _context.VacateSettlements.FirstOrDefaultAsync(s => s.Id == settlementId);
+        if (settlement == null) return (null, NotFound(new { success = false, message = "Settlement not found." }));
+        if (!CanSeeTenantReceipt(settlement.TenantId))
+            return (null, StatusCode(403, new { success = false, message = "You do not have permission to view this receipt." }));
+        if (settlement.Direction != "TenantOwes" || settlement.PaidAt == null)
+            return (null, BadRequest(new { success = false, message = "No payment has been received for this settlement." }));
+
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == settlement.TenantId);
+        var house = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == settlement.HouseId);
+        var attempt = await _context.VacateCheckoutAttempts
+            .Where(a => a.VacateSettlementId == settlementId && a.AttemptStatus == "Success")
+            .OrderByDescending(a => a.ProcessedAt).FirstOrDefaultAsync();
+
+        var receiptNo = !string.IsNullOrWhiteSpace(attempt?.MpesaReceiptNumber)
+            ? attempt!.MpesaReceiptNumber! : $"VAC-{settlement.Id.ToString()[..8].ToUpperInvariant()}";
+
+        var data = new ReceiptData
+        {
+            ReceiptNumber = receiptNo,
+            PaidAt = settlement.PaidAt,
+            TenantName = tenant != null ? $"{tenant.FirstName} {tenant.LastName}".Trim() : "",
+            TenantPhone = tenant?.PhoneNumber,
+            TenantEmail = tenant?.Email,
+            FlatName = house?.Flat?.FlatName ?? "",
+            HouseNumber = house?.HouseNumber ?? "",
+            PaymentType = "Vacate Settlement",
+            PeriodLabel = $"Vacate settlement — {house?.HouseNumber}",
+            Description = settlement.Description,
+            Amount = settlement.Amount,
+            AmountPaid = settlement.Amount,
+            Balance = 0m,
+            PaymentMethod = "Mpesa",
+            MpesaReceiptNumber = attempt?.MpesaReceiptNumber,
+            Status = "Paid",
+            ServiceChargeAmount = IsAdminSide(CallerRole()) ? attempt?.ServiceChargeAmount : null
+        };
+        return (data, null);
+    }
+
+    private async Task<IActionResult> RenderReceiptAsync(ReceiptData data, string format)
+    {
+        var company = await GetOrCreateCompanySettingsAsync();
+        return format.ToLowerInvariant() switch
+        {
+            "pdf" => File(await _receiptRenderer.RenderPdfAsync(data, company), "application/pdf", $"Receipt-{data.ReceiptNumber}.pdf"),
+            "excel" => File(await _receiptRenderer.RenderExcelAsync(data, company), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"Receipt-{data.ReceiptNumber}.xlsx"),
+            "word" => File(await _receiptRenderer.RenderWordAsync(data, company), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", $"Receipt-{data.ReceiptNumber}.docx"),
+            _ => BadRequest(new { success = false, message = "Unsupported format. Use pdf, excel, or word." })
+        };
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private async Task<Payment?> LoadPaymentAsync(Guid paymentId)

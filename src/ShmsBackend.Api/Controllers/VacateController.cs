@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
+using ShmsBackend.Api.Helpers;
 using ShmsBackend.Api.Services.Common;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Notifications;
@@ -1099,6 +1100,7 @@ public class VacateController : ControllerBase
                 }),
                 settlement = settlement == null ? null : (object)new
                 {
+                    settlement.Id,
                     settlement.Direction,
                     settlement.Amount,
                     settlement.Description,
@@ -1827,6 +1829,7 @@ public class VacateController : ControllerBase
         var houseNumber = house?.HouseNumber ?? "";
 
         var reference = $"VAC-{settlementId.ToString().Substring(0, 8).ToUpper()}";
+        var settlementServiceCharge = await ServiceChargeLookup.ForHouseAsync(_context, settlement.HouseId);
 
         STKPushResponse stkResponse;
         try
@@ -1834,7 +1837,7 @@ public class VacateController : ControllerBase
             stkResponse = await _mpesaService.InitiateSTKPushAsync(new STKPushRequest
             {
                 PhoneNumber = dto.PhoneNumber,
-                Amount = settlement.Amount,
+                Amount = settlement.Amount + settlementServiceCharge,   // settlement + platform service charge
                 AccountReference = reference,
                 TransactionDesc = $"Vacate Settlement — {houseNumber}"
             });
@@ -1848,6 +1851,7 @@ public class VacateController : ControllerBase
         _context.VacateCheckoutAttempts.Add(new VacateCheckoutAttempt
         {
             VacateSettlementId = settlementId,
+            ServiceChargeAmount = settlementServiceCharge,
             CheckoutRequestId = stkResponse.CheckoutRequestID,
             AttemptStatus = "Processing"
         });
