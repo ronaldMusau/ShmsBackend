@@ -126,7 +126,7 @@ public class OverdueReportBuilder
             {
                 new() { Key = "tenantName", Header = "Tenant Name" },
                 new() { Key = "flatUnit", Header = "Flat/Unit" },
-                new() { Key = "daysOverdue", Header = "Days Overdue" },
+                new() { Key = "daysOverdue", Header = "Days Overdue", Numeric = true },
                 new() { Key = "amountOwed", Header = "Amount Owed", SumTotal = true },
                 new() { Key = "warningStage", Header = "Warning Stage" },
                 new() { Key = "lastWarningDate", Header = "Last Warning Date" }

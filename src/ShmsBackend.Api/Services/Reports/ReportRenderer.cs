@@ -95,6 +95,9 @@ public class ReportRenderer : IReportRenderer
     private static double ColumnWeight(string header)
     {
         var h = header.ToLowerInvariant();
+        if (h.Contains("flat") || h.Contains("unit") || h.Contains("property")) return 3.0;   // "A1 - Long Property Name"
+        if (h.Contains("description") || h.Contains("reason")) return 2.5;
+        if (h.EndsWith("date") || h.EndsWith(" at") || h.Contains("period")) return 1.1;
         if (LongHeaderKeywords.Any(k => h.Contains(k))) return 2.0;
         if (ShortHeaderKeywords.Any(k => h.Contains(k))) return 1.0;
         return 1.5;
@@ -259,6 +262,8 @@ public class ReportRenderer : IReportRenderer
                 totalsPara.Format.Borders.Distance = Unit.FromPoint(4);
                 totalsPara.Format.Borders.Width = 0.5;
                 totalsPara.Format.Borders.Color = Colors.Gray;
+                totalsPara.Format.LeftIndent = Unit.FromPoint(5);
+                totalsPara.Format.RightIndent = Unit.FromPoint(5);
                 totalsPara.Format.SpaceBefore = Unit.FromPoint(4);
                 totalsPara.Format.SpaceAfter = Unit.FromPoint(10);
             }
@@ -284,7 +289,7 @@ public class ReportRenderer : IReportRenderer
             for (var i = 0; i < data.Columns.Count; i++)
             {
                 tableHeaderRow.Cells[i].AddParagraph(data.Columns[i].Header);
-                if (data.Columns[i].SumTotal) tableHeaderRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
+                if (data.Columns[i].RightAlign) tableHeaderRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
             }
 
             foreach (var row in data.Rows)
@@ -294,7 +299,7 @@ public class ReportRenderer : IReportRenderer
                 for (var i = 0; i < data.Columns.Count; i++)
                 {
                     dataRow.Cells[i].AddParagraph(CellText(row, data.Columns[i].Key) ?? "");
-                    if (data.Columns[i].SumTotal) dataRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
+                    if (data.Columns[i].RightAlign) dataRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
                 }
             }
 
@@ -310,7 +315,7 @@ public class ReportRenderer : IReportRenderer
                 for (var i = 0; i < data.Columns.Count; i++)
                 {
                     totalRow.Cells[i].AddParagraph(TotalCellText(data, i, pdfTotals));
-                    if (data.Columns[i].SumTotal) totalRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
+                    if (data.Columns[i].RightAlign) totalRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
                 }
             }
 
@@ -417,7 +422,7 @@ public class ReportRenderer : IReportRenderer
             cell.Style.Font.Bold = true;
             cell.Style.Fill.BackgroundColor = XLColor.LightGray;
             cell.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
-            if (data.Columns[i].SumTotal) cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+            if (data.Columns[i].RightAlign) cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
         }
         row++;
 
@@ -438,6 +443,7 @@ public class ReportRenderer : IReportRenderer
                 else
                 {
                     dc.Value = CellText(dataRow, dcol.Key);
+                    if (dcol.RightAlign) dc.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
                 }
             }
             row++;
@@ -565,7 +571,7 @@ public class ReportRenderer : IReportRenderer
                     new TableCellProperties(
                         new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() },
                         new WordShading { Fill = "D9D9D9" }),
-                    BuildParagraph(data.Columns[i].Header, bold: true, sizeHalfPoints: "18", right: data.Columns[i].SumTotal));
+                    BuildParagraph(data.Columns[i].Header, bold: true, sizeHalfPoints: "18", right: data.Columns[i].RightAlign));
                 headerRow.Append(cell);
             }
             table.Append(headerRow);
@@ -577,7 +583,7 @@ public class ReportRenderer : IReportRenderer
                 {
                     tr.Append(new TableCell(
                         new TableCellProperties(new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() }),
-                        BuildParagraph(CellText(dataRow, data.Columns[i].Key) ?? "", bold: false, sizeHalfPoints: "16", right: data.Columns[i].SumTotal)));
+                        BuildParagraph(CellText(dataRow, data.Columns[i].Key) ?? "", bold: false, sizeHalfPoints: "16", right: data.Columns[i].RightAlign)));
                 }
                 table.Append(tr);
             }
@@ -592,7 +598,7 @@ public class ReportRenderer : IReportRenderer
                         new TableCellProperties(
                             new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() },
                             new WordShading { Fill = "D9D9D9" }),
-                        BuildParagraph(TotalCellText(data, i, wordTotals), bold: true, sizeHalfPoints: "18", right: data.Columns[i].SumTotal)));
+                        BuildParagraph(TotalCellText(data, i, wordTotals), bold: true, sizeHalfPoints: "18", right: data.Columns[i].RightAlign)));
                 }
                 table.Append(totalTr);
             }

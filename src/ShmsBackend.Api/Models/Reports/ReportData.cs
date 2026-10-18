@@ -10,6 +10,9 @@ public class ReportColumn
     public string Header { get; set; } = "";
     /// <summary>Numeric (money / points) column that gets a grand total in the report.</summary>
     public bool SumTotal { get; set; }
+    /// <summary>Numeric column that is right-aligned but not summed (balances, day counts).</summary>
+    public bool Numeric { get; set; }
+    public bool RightAlign => SumTotal || Numeric;
 }
 
 public class ReportData

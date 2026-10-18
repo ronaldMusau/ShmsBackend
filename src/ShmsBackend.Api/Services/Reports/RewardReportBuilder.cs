@@ -42,7 +42,7 @@ public class RewardReportBuilder
                 ["tenantName"] = t.Tenant != null ? $"{t.Tenant.FirstName} {t.Tenant.LastName}".Trim() : "-",
                 ["flatUnit"] = flatUnit,
                 ["transactionType"] = t.TransactionType,
-                ["points"] = t.Points,
+                ["points"] = IsDebit(t.TransactionType) ? -Math.Abs(t.Points) : t.Points,   // redeemed/expired points reduce the net total
                 ["balanceAfter"] = t.BalanceAfter,
                 ["reference"] = t.RedemptionReference,
                 ["date"] = t.CreatedAt
@@ -60,13 +60,17 @@ public class RewardReportBuilder
                 new() { Key = "flatUnit", Header = "Flat/Unit" },
                 new() { Key = "transactionType", Header = "Transaction Type" },
                 new() { Key = "points", Header = "Points", SumTotal = true },
-                new() { Key = "balanceAfter", Header = "Balance After" },
+                new() { Key = "balanceAfter", Header = "Balance After", Numeric = true },
                 new() { Key = "reference", Header = "Reference" },
                 new() { Key = "date", Header = "Date" }
             },
             Rows = rows
         };
     }
+
+    private static bool IsDebit(string? type) =>
+        type != null && (type.Contains("Redeem", StringComparison.OrdinalIgnoreCase)
+                      || type.Contains("Expire", StringComparison.OrdinalIgnoreCase));
 
     private static string BuildFilterSummary(RewardTransactionFilters filters)
     {
