@@ -45,6 +45,13 @@ public static class ReportBuilderHelpers
         return creatorNames;
     }
 
+    /// <summary>"InitialPayment" -> "Initial Payment" (enum names read better in a printed report).</summary>
+    public static string? Humanize(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        return System.Text.RegularExpressions.Regex.Replace(value, "(?<=[a-z0-9])(?=[A-Z])", " ");
+    }
+
     public static string? FormatDateRange(DateTime? fromDate, DateTime? toDate)
     {
         string Fmt(DateTime d) => d.ToString("d MMM yyyy", CultureInfo.InvariantCulture);

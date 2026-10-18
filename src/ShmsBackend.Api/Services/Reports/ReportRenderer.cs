@@ -49,7 +49,7 @@ public class ReportRenderer : IReportRenderer
         return value switch
         {
             null => "",
-            DateTime dt => dt.ToString("d MMM yyyy"),
+            DateTime dt => dt.Year < 1900 ? "" : dt.ToString("d MMM yyyy"),   // DateTime.MinValue = "not set"
             decimal dec => dec.ToString("N2"),
             double dbl => dbl.ToString("N2"),
             bool b => b ? "Yes" : "No",
@@ -158,8 +158,9 @@ public class ReportRenderer : IReportRenderer
             // ── Letterhead: logo left, company info stacked right ──
             var headerTable = section.AddTable();
             headerTable.Borders.Visible = false;
+            var letterheadWidth = section.PageSetup.PageWidth - section.PageSetup.LeftMargin - section.PageSetup.RightMargin;
             headerTable.AddColumn(Unit.FromCentimeter(4));
-            headerTable.AddColumn(Unit.FromCentimeter(13));
+            headerTable.AddColumn(letterheadWidth - Unit.FromCentimeter(4));
             var headerRow = headerTable.AddRow();
 
             if (tempLogoPath != null)
@@ -213,9 +214,14 @@ public class ReportRenderer : IReportRenderer
             if (totalsLine != null)
             {
                 var totalsPara = section.AddParagraph(totalsLine);
-                totalsPara.Format.Font.Size = Unit.FromPoint(9);
+                totalsPara.Format.Font.Size = Unit.FromPoint(10);
                 totalsPara.Format.Font.Bold = true;
-                totalsPara.Format.SpaceAfter = Unit.FromPoint(6);
+                totalsPara.Format.Shading.Color = Color.FromRgb(238, 238, 238);
+                totalsPara.Format.Borders.Distance = Unit.FromPoint(4);
+                totalsPara.Format.Borders.Width = 0.5;
+                totalsPara.Format.Borders.Color = Colors.Gray;
+                totalsPara.Format.SpaceBefore = Unit.FromPoint(4);
+                totalsPara.Format.SpaceAfter = Unit.FromPoint(10);
             }
 
             // ── Data table — column widths are weighted by header content (see ColumnWeight) and
@@ -237,14 +243,20 @@ public class ReportRenderer : IReportRenderer
             tableHeaderRow.Format.Font.Size = Unit.FromPoint(9);
             tableHeaderRow.HeadingFormat = true; // repeat header on every page of a long list
             for (var i = 0; i < data.Columns.Count; i++)
+            {
                 tableHeaderRow.Cells[i].AddParagraph(data.Columns[i].Header);
+                if (data.Columns[i].SumTotal) tableHeaderRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
+            }
 
             foreach (var row in data.Rows)
             {
                 var dataRow = table.AddRow();
                 dataRow.Format.Font.Size = Unit.FromPoint(8);
                 for (var i = 0; i < data.Columns.Count; i++)
+                {
                     dataRow.Cells[i].AddParagraph(CellText(row, data.Columns[i].Key) ?? "");
+                    if (data.Columns[i].SumTotal) dataRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
+                }
             }
 
             var pdfTotals = data.Totals;
@@ -254,8 +266,13 @@ public class ReportRenderer : IReportRenderer
                 totalRow.Format.Font.Size = Unit.FromPoint(9);
                 totalRow.Format.Font.Bold = true;
                 totalRow.Shading.Color = Colors.LightGray;
+                totalRow.Borders.Top.Width = 1.25;
+                totalRow.Borders.Top.Color = Colors.Black;
                 for (var i = 0; i < data.Columns.Count; i++)
+                {
                     totalRow.Cells[i].AddParagraph(TotalCellText(data, i, pdfTotals));
+                    if (data.Columns[i].SumTotal) totalRow.Cells[i].Format.Alignment = ParagraphAlignment.Right;
+                }
             }
 
             // ── Footer: page number + generated-by ──
@@ -361,13 +378,29 @@ public class ReportRenderer : IReportRenderer
             cell.Style.Font.Bold = true;
             cell.Style.Fill.BackgroundColor = XLColor.LightGray;
             cell.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+            if (data.Columns[i].SumTotal) cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
         }
         row++;
 
         foreach (var dataRow in data.Rows)
         {
             for (var i = 0; i < data.Columns.Count; i++)
-                ws.Cell(row, i + 1).Value = CellText(dataRow, data.Columns[i].Key);
+            {
+                var dc = ws.Cell(row, i + 1);
+                var dcol = data.Columns[i];
+                if (dcol.SumTotal && dataRow.TryGetValue(dcol.Key, out var raw) && raw != null
+                    && decimal.TryParse(Convert.ToString(raw, System.Globalization.CultureInfo.InvariantCulture),
+                        System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
+                {
+                    dc.Value = num;                       // real number so Excel can sum/filter it
+                    dc.Style.NumberFormat.Format = "#,##0.00";
+                    dc.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+                }
+                else
+                {
+                    dc.Value = CellText(dataRow, dcol.Key);
+                }
+            }
             row++;
         }
 
@@ -493,7 +526,7 @@ public class ReportRenderer : IReportRenderer
                     new TableCellProperties(
                         new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() },
                         new WordShading { Fill = "D9D9D9" }),
-                    BuildParagraph(data.Columns[i].Header, bold: true, sizeHalfPoints: "18"));
+                    BuildParagraph(data.Columns[i].Header, bold: true, sizeHalfPoints: "18", right: data.Columns[i].SumTotal));
                 headerRow.Append(cell);
             }
             table.Append(headerRow);
@@ -505,7 +538,7 @@ public class ReportRenderer : IReportRenderer
                 {
                     tr.Append(new TableCell(
                         new TableCellProperties(new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() }),
-                        BuildParagraph(CellText(dataRow, data.Columns[i].Key) ?? "", bold: false, sizeHalfPoints: "16")));
+                        BuildParagraph(CellText(dataRow, data.Columns[i].Key) ?? "", bold: false, sizeHalfPoints: "16", right: data.Columns[i].SumTotal)));
                 }
                 table.Append(tr);
             }
@@ -520,7 +553,7 @@ public class ReportRenderer : IReportRenderer
                         new TableCellProperties(
                             new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = columnWidthsDxa[i].ToString() },
                             new WordShading { Fill = "D9D9D9" }),
-                        BuildParagraph(TotalCellText(data, i, wordTotals), bold: true, sizeHalfPoints: "18")));
+                        BuildParagraph(TotalCellText(data, i, wordTotals), bold: true, sizeHalfPoints: "18", right: data.Columns[i].SumTotal)));
                 }
                 table.Append(totalTr);
             }
@@ -568,12 +601,14 @@ public class ReportRenderer : IReportRenderer
         return ms.ToArray();
     }
 
-    private static WordParagraph BuildParagraph(string text, bool bold, string sizeHalfPoints, bool gray = false)
+    private static WordParagraph BuildParagraph(string text, bool bold, string sizeHalfPoints, bool gray = false, bool right = false)
     {
         var runProps = new RunProperties { FontSize = new FontSize { Val = sizeHalfPoints } };
         if (bold) runProps.Append(new Bold());
         if (gray) runProps.Append(new WordColor { Val = "808080" });
-        return new WordParagraph(new Run(runProps, new WordText(text) { Space = SpaceProcessingModeValues.Preserve }));
+        var para = new WordParagraph(new Run(runProps, new WordText(text) { Space = SpaceProcessingModeValues.Preserve }));
+        if (right) para.PrependChild(new ParagraphProperties(new Justification { Val = JustificationValues.Right }));
+        return para;
     }
 
     /// <summary>

@@ -39,10 +39,10 @@ public class PaymentReportBuilder
             ["amount"] = p.Amount,
             ["amountPaid"] = p.AmountPaid,
             ["balance"] = p.Balance,
-            ["method"] = p.PaymentMethod?.ToString(),
+            ["method"] = ReportBuilderHelpers.Humanize(p.PaymentMethod?.ToString()),
             ["mpesaReceipt"] = p.MpesaReceiptNumber,
-            ["status"] = p.PaymentStatus.ToString(),
-            ["type"] = p.PaymentType.ToString(),
+            ["status"] = ReportBuilderHelpers.Humanize(p.PaymentStatus.ToString()),
+            ["type"] = ReportBuilderHelpers.Humanize(p.PaymentType.ToString()),
             ["dueDate"] = p.DueDate,
             ["paidAt"] = p.PaidAt
         }).ToList();
