@@ -25,6 +25,7 @@ public class FinancialStandingService
     private readonly ExpenseQueryService _expenseQueryService;
     private readonly RewardTransactionQueryService _rewardTransactionQueryService;
     private readonly ShmsDbContext _context;
+    private readonly ShmsBackend.Api.Services.ServiceChargeQueryService _serviceChargeQueryService;
 
     public FinancialStandingService(
         PaymentQueryService paymentQueryService,
@@ -32,8 +33,10 @@ public class FinancialStandingService
         DeductionQueryService deductionQueryService,
         ExpenseQueryService expenseQueryService,
         RewardTransactionQueryService rewardTransactionQueryService,
-        ShmsDbContext context)
+        ShmsDbContext context,
+        ShmsBackend.Api.Services.ServiceChargeQueryService serviceChargeQueryService)
     {
+        _serviceChargeQueryService = serviceChargeQueryService;
         _paymentQueryService = paymentQueryService;
         _refundQueryService = refundQueryService;
         _deductionQueryService = deductionQueryService;
@@ -75,6 +78,19 @@ public class FinancialStandingService
             // and never excludes the flat's rent from the totals above.
             var pct = feePercentages.GetValueOrDefault(row.FlatId) ?? 0m;
             totalFee += row.RentCollected * (pct / 100m);
+        }
+
+        // Complaint charges + vacate settlements also carry the platform service charge (management-only figure).
+        if (includeManagementOnlyFigures && filters.LandlordId == null)
+        {
+            foreach (var src in new[] { "Complaint", "Vacate" })
+            {
+                var extra = await _serviceChargeQueryService.GetEntriesAsync(new ShmsBackend.Api.Services.ServiceChargeFilters
+                {
+                    FlatId = filters.FlatId, FromDate = filters.FromDate, ToDate = filters.ToDate, Source = src
+                });
+                totalServiceCharge += extra.Sum(e => e.ServiceChargeAmount);
+            }
         }
 
         // ── Step 3: reuse the existing query services for the rest ──

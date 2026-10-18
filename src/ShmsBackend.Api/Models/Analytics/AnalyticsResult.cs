@@ -27,4 +27,12 @@ public class AnalyticsTrendResult
     // Values stays int-only (Complaint-count trends), so a decimal amount is never truncated into it.
     public List<decimal>? AmountValues { get; set; }
     public string Granularity { get; set; } = ""; // "weekly" or "monthly"
+    // Optional extra named series (same length as Labels) — used by Service Charges to draw one line per source.
+    public List<AnalyticsNamedSeries>? Series { get; set; }
+}
+
+public class AnalyticsNamedSeries
+{
+    public string Name { get; set; } = "";
+    public List<decimal> Values { get; set; } = new();
 }

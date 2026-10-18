@@ -25,6 +25,7 @@ public class PaymentFilters
     public Guid? LandlordId { get; set; }   // set server-side only, never bound from a client filter param
     public int? TenancyCycle { get; set; }  // set server-side only for tenant-scoped actions, never bound from a client filter param
     public bool UnpaidByDueDate { get; set; } = false;  // opt-in: payments with no PaidAt yet (overdue/pending/partial-unpaid) fall in the date range by DueDate instead of being dropped
+    public string? Source { get; set; }   // Service Charges analytics only: Rent | Complaint | Vacate
     public bool IncludeAllStatuses { get; set; } = false;  // opt-in bypass of the default Paid/PartiallyPaid/Overdue restriction below; existing callers never set this, so their behavior is unchanged
 }
 

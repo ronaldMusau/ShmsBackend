@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.Analytics;
 using ShmsBackend.Data.Context;
+using ShmsBackend.Api.Services;
 using PaymentEntity = ShmsBackend.Data.Models.Entities.Portal.Payment;
 
 namespace ShmsBackend.Api.Services.Analytics;
@@ -14,9 +15,11 @@ public class ServiceChargeAnalyticsService
 {
     private readonly PaymentQueryService _paymentQueryService;
     private readonly ShmsDbContext _context;
+    private readonly ServiceChargeQueryService _serviceChargeQueryService;
 
-    public ServiceChargeAnalyticsService(PaymentQueryService paymentQueryService, ShmsDbContext context)
+    public ServiceChargeAnalyticsService(PaymentQueryService paymentQueryService, ShmsDbContext context, ServiceChargeQueryService serviceChargeQueryService)
     {
+        _serviceChargeQueryService = serviceChargeQueryService;
         _paymentQueryService = paymentQueryService;
         _context = context;
     }
@@ -27,40 +30,54 @@ public class ServiceChargeAnalyticsService
         _paymentQueryService.BuildFilteredQuery(filters)
             .Where(p => p.ServiceChargeAmount > 0 && p.MpesaReceiptNumber != null);
 
+    private static readonly (string Key, string Label)[] Sources =
+    {
+        ("Rent", "Rent payments"),
+        ("Complaint", "Complaint charges"),
+        ("Vacate", "Vacate settlements")
+    };
+
+    private static bool Wants(PaymentFilters f, string key) =>
+        string.IsNullOrWhiteSpace(f.Source) || f.Source == key;
+
+    private ServiceChargeFilters ToLedgerFilters(PaymentFilters f, string source) => new()
+    {
+        FlatId = f.FlatId, HouseId = f.HouseId, TenantId = f.TenantId,
+        FromDate = f.FromDate, ToDate = f.ToDate, Source = source
+    };
+
+    /// <summary>Breakdown by where the service charge was collected: rent payments, complaint charges, vacate settlements.</summary>
     public async Task<AnalyticsBreakdownResult> GetStatusBreakdownAsync(PaymentFilters filters)
     {
-        var baseQuery = BaseQuery(filters);
+        var items = new List<AnalyticsCategoryItem>();
 
-        var grouped = await baseQuery
-            .GroupBy(p => p.PaymentStatus)
-            .Select(g => new AnalyticsCategoryItem
+        foreach (var (key, label) in Sources)
+        {
+            if (!Wants(filters, key)) { items.Add(new AnalyticsCategoryItem { Label = label, Count = 0, Amount = 0m }); continue; }
+
+            if (key == "Rent")
             {
-                Label = g.Key.ToString(),
-                Count = g.Count(),
-                Amount = g.Sum(p => p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m)
-            })
-            .ToListAsync();
-
-        // Zero-fill only the 3 statuses actually reachable here: PaymentQueryService.BuildFilteredQuery
-        // (which BaseQuery wraps) already restricts to Paid/PartiallyPaid/Overdue by default whenever
-        // no explicit Status filter is supplied — Pending/Processing/Failed/Cancelled are excluded
-        // upstream before this GroupBy ever runs. Zero-filling all 7 PaymentTransactionStatus values
-        // would add 4 categories that can never appear under the default call pattern, misleadingly
-        // implying they're possible outcomes here.
-        string[] reachableStatuses = { "Paid", "PartiallyPaid", "Overdue" };
-        var items = reachableStatuses
-            .Select(status => grouped.FirstOrDefault(i => i.Label == status)
-                ?? new AnalyticsCategoryItem { Label = status, Count = 0, Amount = 0m })
-            .ToList();
-
-        // Prorated by what was actually paid (same basis as Financial Standing), so a partial payment only counts its paid share.
-        var totalAmount = await baseQuery.SumAsync(p => p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m);
+                var rent = BaseQuery(filters);
+                // Prorated by what was actually paid (same basis as Financial Standing).
+                items.Add(new AnalyticsCategoryItem
+                {
+                    Label = label,
+                    Count = await rent.CountAsync(),
+                    Amount = await rent.SumAsync(p => p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m)
+                });
+            }
+            else
+            {
+                var rows = await _serviceChargeQueryService.GetEntriesAsync(ToLedgerFilters(filters, key));
+                items.Add(new AnalyticsCategoryItem { Label = label, Count = rows.Count, Amount = rows.Sum(r => r.ServiceChargeAmount) });
+            }
+        }
 
         return new AnalyticsBreakdownResult
         {
             Items = items,
             TotalCount = items.Sum(i => i.Count),
-            TotalAmount = totalAmount
+            TotalAmount = items.Sum(i => i.Amount ?? 0m)
         };
     }
 
@@ -70,18 +87,39 @@ public class ServiceChargeAnalyticsService
         var fromDate = (filters.FromDate ?? new DateTime(now.Year, now.Month, 1)).Date;
         var toDate = (filters.ToDate ?? now).Date;
 
-        var baseQuery = BaseQuery(filters);
-        var rows = await baseQuery
-            .Where(p => p.PaidAt != null && p.PaidAt >= fromDate && p.PaidAt <= toDate.AddDays(1))
-            .Select(p => new { PaidAt = p.PaidAt!.Value, ServiceChargeAmount = p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m })
-            .ToListAsync();
+        var perSource = new Dictionary<string, List<(DateTime Date, decimal Amount)>>();
 
-        var entries = rows.Select(r => (Date: r.PaidAt, Amount: r.ServiceChargeAmount)).ToList();
+        foreach (var (key, _) in Sources)
+        {
+            if (!Wants(filters, key)) { perSource[key] = new(); continue; }
+
+            if (key == "Rent")
+            {
+                var rows = await BaseQuery(filters)
+                    .Where(p => p.PaidAt != null && p.PaidAt >= fromDate && p.PaidAt <= toDate.AddDays(1))
+                    .Select(p => new { PaidAt = p.PaidAt!.Value, ServiceChargeAmount = p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m })
+                    .ToListAsync();
+                perSource[key] = rows.Select(r => (r.PaidAt, r.ServiceChargeAmount)).ToList();
+            }
+            else
+            {
+                var rows = await _serviceChargeQueryService.GetEntriesAsync(ToLedgerFilters(filters, key));
+                perSource[key] = rows.Where(r => r.PaidAt != null && r.PaidAt >= fromDate && r.PaidAt <= toDate.AddDays(1))
+                    .Select(r => (r.PaidAt!.Value, r.ServiceChargeAmount)).ToList();
+            }
+        }
+
+        var all = perSource.Values.SelectMany(v => v).ToList();
         var spanDays = (toDate - fromDate).TotalDays;
+        var weekly = spanDays <= 90;
 
-        return spanDays <= 90
-            ? BuildWeeklyTrend(entries, fromDate, toDate)
-            : BuildMonthlyTrend(entries, fromDate, toDate);
+        var total = weekly ? BuildWeeklyTrend(all, fromDate, toDate) : BuildMonthlyTrend(all, fromDate, toDate);
+        total.Series = Sources.Select(src =>
+        {
+            var t = weekly ? BuildWeeklyTrend(perSource[src.Key], fromDate, toDate) : BuildMonthlyTrend(perSource[src.Key], fromDate, toDate);
+            return new AnalyticsNamedSeries { Name = src.Label, Values = t.AmountValues ?? new List<decimal>() };
+        }).ToList();
+        return total;
     }
 
     private static AnalyticsTrendResult BuildWeeklyTrend(List<(DateTime Date, decimal Amount)> entries, DateTime fromDate, DateTime toDate)
