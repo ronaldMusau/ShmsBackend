@@ -106,6 +106,8 @@ public class PaymentDistributionService : IPaymentDistributionService
                 row.RedemptionReference = redemptionReference;
                 row.PaymentMethod = PaymentMethod.PointsRedemption;
                 row.PaidAt = DateTime.UtcNow;
+                // Service charge is a transaction fee on real (M-Pesa) payments — points carry none.
+                if (string.IsNullOrEmpty(row.MpesaReceiptNumber)) row.ServiceChargeAmount = 0m;
                 // do NOT create a PaymentApplication row here — that entity is receipt-specific;
                 // the RewardTransaction ledger is the audit trail for redemptions.
             }
@@ -162,6 +164,8 @@ public class PaymentDistributionService : IPaymentDistributionService
                     existingMonthRow.RedemptionReference = redemptionReference;
                     existingMonthRow.PaymentMethod = PaymentMethod.PointsRedemption;
                     existingMonthRow.PaidAt = DateTime.UtcNow;
+                    // Service charge is a transaction fee on real (M-Pesa) payments — points carry none.
+                    if (string.IsNullOrEmpty(existingMonthRow.MpesaReceiptNumber)) existingMonthRow.ServiceChargeAmount = 0m;
                 }
                 remaining -= applyAmount;
                 itemized.Add((cursorMonth, cursorYear, applyAmount));
@@ -222,6 +226,8 @@ public class PaymentDistributionService : IPaymentDistributionService
                     newPayment.RedemptionReference = redemptionReference;
                     newPayment.PaymentMethod = PaymentMethod.PointsRedemption;
                     newPayment.PaidAt = DateTime.UtcNow;
+                    // Service charge is a transaction fee on real (M-Pesa) payments — points carry none.
+                    newPayment.ServiceChargeAmount = 0m;
                 }
                 remaining -= applyAmount;
                 itemized.Add((cursorMonth, cursorYear, applyAmount));
