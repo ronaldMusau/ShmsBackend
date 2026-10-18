@@ -620,18 +620,32 @@ public class TenantService : ITenantService
 
         if (!tenant.HasCompletedInitialPayment)
         {
+            // An unpaid registration never changed the house's occupancy (that only happens on payment),
+            // so the house is left exactly as it is — it may still be occupied by an outgoing tenant.
+            // Soft-delete (not remove): initiated/failed payment attempts still reference this tenant.
             var ownHistory = await _context.TenantHouseHistories.Where(h => h.TenantId == id).ToListAsync();
             if (ownHistory.Count > 0)
                 _context.TenantHouseHistories.RemoveRange(ownHistory);
 
-            if (tenant.HouseId.HasValue && tenant.House != null)
+            var unpaidRows = await _context.Payments.Where(p => p.TenantId == id && !p.IsDeleted).ToListAsync();
+            foreach (var row in unpaidRows)
             {
-                tenant.House.OccupancyStatus = OccupancyStatus.Vacant;
-                tenant.House.PaymentStatus = PaymentStatus.NotPaid;
-                tenant.House.UpdatedAt = DateTime.UtcNow;
+                row.IsDeleted = true;
+                row.UpdatedAt = DateTime.UtcNow;
             }
 
-            _context.Tenants.Remove(tenant);
+            // Explorer-converted registration being removed: the explorer's interest goes back to Pending
+            // so management can convert them again (same as replace / 72h expiry).
+            if (tenant.SourceExplorerInterestId.HasValue)
+            {
+                var interest = await _context.ExplorerInterests
+                    .FirstOrDefaultAsync(ei => ei.Id == tenant.SourceExplorerInterestId.Value && ei.Status == "Converted");
+                if (interest != null) interest.Status = "Pending";
+            }
+
+            tenant.IsDeleted = true;
+            tenant.DeletedAt = DateTime.UtcNow;
+            tenant.IsActive = false;
             await _context.SaveChangesAsync();
             await _cacheHelper.InvalidatePublicListingsCacheAsync();
             return true;
