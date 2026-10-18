@@ -19,7 +19,8 @@
 --
 -- Every row uses a fixed GUID starting 7E570000-0000-0000- ("TEST"), grouped by the 4th block:
 --   0001 = landlord, 0002 = flat, 0003 = houses, 0004 = tenants,
---   0005 = vacate requests, 0006 = payments, 0007 = vacate settlements, 000C = Vacate approval step, 000E = pending rent changes, 000F = tenant house history.
+--   0005 = vacate requests, 0006 = payments, 0007 = vacate settlements, 000C = Vacate approval step, 000E = pending rent changes, 000F = tenant house history,
+--   0010 = staff accounts, 0011 = agent accounts. TEST-M..Q (suffixes 13..17) are the UI-verification scenarios.
 -- TEST-E/F are seeded by a second, separately-guarded block, so re-running this script only adds them.
 -- Houses/tenants/vacate requests/settlements end in A-F to match TEST-A..TEST-F;
 -- payments end in <house letter> + YYYYMM (e.g. ...0006-00000A202609 = TEST-A, Sept 2026).
@@ -750,6 +751,181 @@ BEGIN
             'Test Tenant', 'MultiOverdue', 'test-tenant-multioverdue@shms-test.invalid', '254700000009',
             'TEST-I', N'TEST PROPERTY — DO NOT USE', '2026-07-01T09:00:00', NULL, 1);
     PRINT '✅ TEST-I tenant history seeded.';
+END
+GO
+
+-- =====================================================
+-- UI verification accounts: a staff Secretary (SmartHousing-Frontend) and an agent assigned to the test flat
+-- (RomahClientPortal). Both log in with TestTenant123!. The test landlord from the first block is reused.
+--   0010 = staff accounts, 0011 = agent accounts.
+-- =====================================================
+SET NOCOUNT ON;
+SET XACT_ABORT ON;
+
+DECLARE @FlatId    uniqueidentifier = '7E570000-0000-0000-0002-000000000001';
+DECLARE @StaffId   uniqueidentifier = '7E570000-0000-0000-0010-000000000001';
+DECLARE @AgentId   uniqueidentifier = '7E570000-0000-0000-0011-000000000001';
+DECLARE @PasswordHash nvarchar(255) = '$2a$11$O5VcFJfBdUln78vNWTQID.9Mo.53528tvXMjqNeQ3ctqZqBmsmEwW';
+DECLARE @Now datetime2 = SYSUTCDATETIME();
+
+IF NOT EXISTS (SELECT 1 FROM Flats WHERE Id = @FlatId)
+BEGIN
+    PRINT '❌ Test property not found — the TEST-A..D block must seed first.';
+END
+ELSE IF EXISTS (SELECT 1 FROM Admins WHERE Id = @StaffId) OR EXISTS (SELECT 1 FROM PortalUsers WHERE Id = @AgentId)
+BEGIN
+    PRINT '⚠️ UI verification accounts already seeded — nothing inserted.';
+END
+ELSE
+BEGIN
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -- Staff: Secretary (UserType 4) — can pay on behalf, retry, send warnings / force-vacate, submit flat edits,
+        -- cancel scheduled rent changes, issue final remarks, deny appeals and resubmit.
+        INSERT INTO Admins (Id, Email, PasswordHash, FirstName, LastName, PhoneNumber, IsActive, IsEmailVerified,
+                            CreatedAt, UpdatedAt, UserType, IsDeleted, FailedLoginAttempts, IsLockedOut, PasswordResetAttempts)
+        VALUES (@StaffId, 'test-staff-secretary@shms-test.invalid', @PasswordHash, 'Test Staff', 'Secretary', '254700000010',
+                1, 1, @Now, @Now, 4 /* Secretary */, 0, 0, 0, 0);
+        INSERT INTO Secretaries (Id, OfficeNumber) VALUES (@StaffId, 'TEST');
+
+        -- Agent (PortalUserType 1), assigned to the test flat.
+        INSERT INTO PortalUsers (Id, Email, PasswordHash, FirstName, LastName, PhoneNumber,
+                                 IsActive, IsEmailVerified, PortalUserType, CreatedAt, UpdatedAt)
+        VALUES (@AgentId, 'test-agent@shms-test.invalid', @PasswordHash, 'Test', 'Agent', '254700000011',
+                1, 1, 1 /* Agent */, @Now, @Now);
+        INSERT INTO Agents (Id, AgencyName) VALUES (@AgentId, 'TEST — DO NOT USE');
+        INSERT INTO AgentFlats (AgentId, FlatId, AssignedAt) VALUES (@AgentId, @FlatId, @Now);
+
+        COMMIT TRANSACTION;
+        PRINT '✅ UI verification accounts seeded (staff Secretary + agent).';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        PRINT '❌ UI verification accounts failed — nothing inserted: ' + ERROR_MESSAGE();
+        THROW;
+    END CATCH
+END
+GO
+
+-- =====================================================
+-- UI verification scenario houses TEST-M..Q (GUID suffixes 13..17), all "Single Room", rent/deposit 5,000:
+--   TEST-M  vacant, pending change to 6,000 rent / 6,000 deposit from Dec 2026 — register a tenant live with a
+--           Jan 2027 move-in (Phase 1 steps 1-2). No tenant seeded.
+--   TEST-N  Test Tenant Overdue      — moved in Jul 2026; Aug/Sep/Oct rent unpaid, due dates passed, still Pending
+--           so the 08:00 UTC overdue check can be watched flipping them (Phase 2).
+--   TEST-O  Test Tenant Spillover    — paid through Oct 2026; pending change to 6,000 from Jan 2027 (Phase 3).
+--   TEST-P  Test Tenant VacateClean  — paid through Oct 2026, nothing ahead, no arrears (Phase 5 clean request).
+--   TEST-Q  Test Tenant AdvanceCredit — paid through Jan 2027, i.e. 3 months ahead (Phase 5 forfeiture).
+-- Occupied houses get an open TenantHouseHistories row, like a real move-in.
+-- =====================================================
+SET NOCOUNT ON;
+SET XACT_ABORT ON;
+
+DECLARE @LandlordId uniqueidentifier = '7E570000-0000-0000-0001-000000000001';
+DECLARE @FlatId     uniqueidentifier = '7E570000-0000-0000-0002-000000000001';
+DECLARE @PasswordHash nvarchar(255) = '$2a$11$O5VcFJfBdUln78vNWTQID.9Mo.53528tvXMjqNeQ3ctqZqBmsmEwW';
+DECLARE @Now datetime2 = SYSUTCDATETIME();
+DECLARE @HouseTypeId uniqueidentifier = (SELECT TOP 1 Id FROM HouseTypes WHERE Name = 'Single Room' AND IsDeleted = 0);
+DECLARE @CreatorId uniqueidentifier = '7E570000-0000-0000-0010-000000000001';
+
+IF NOT EXISTS (SELECT 1 FROM Flats WHERE Id = @FlatId)
+BEGIN
+    PRINT '❌ Test property not found — the TEST-A..D block must seed first.';
+END
+ELSE IF EXISTS (SELECT 1 FROM Houses WHERE Id IN ('7E570000-0000-0000-0003-000000000013', '7E570000-0000-0000-0003-000000000014',
+                    '7E570000-0000-0000-0003-000000000015', '7E570000-0000-0000-0003-000000000016', '7E570000-0000-0000-0003-000000000017'))
+BEGIN
+    PRINT '⚠️ UI verification houses TEST-M..Q already seeded — nothing inserted.';
+END
+ELSE
+BEGIN
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        DECLARE @S TABLE (Code char(2), HouseNumber varchar(10), Occupied bit, HousePay varchar(10), Descr nvarchar(200),
+                          LastName nvarchar(50), Email varchar(100), LeaseMonth int);
+        INSERT INTO @S VALUES
+            ('13', 'TEST-M', 0, 'NotPaid', N'TEST — Phase 1: register live, pending rent change from Dec 2026', NULL, NULL, NULL),
+            ('14', 'TEST-N', 1, 'Overdue', N'TEST — Phase 2: three months overdue',                           'Overdue',       'test-tenant-overdue@shms-test.invalid',       7),
+            ('15', 'TEST-O', 1, 'Paid',    N'TEST — Phase 3: spillover across a pending rent change',          'Spillover',     'test-tenant-spillover@shms-test.invalid',     8),
+            ('16', 'TEST-P', 1, 'Paid',    N'TEST — Phase 5: clean vacate request',                            'VacateClean',   'test-tenant-vacateclean@shms-test.invalid',   8),
+            ('17', 'TEST-Q', 1, 'Paid',    N'TEST — Phase 5: forfeitable advance credit',                      'AdvanceCredit', 'test-tenant-advancecredit@shms-test.invalid', 8);
+
+        INSERT INTO Houses (Id, HouseNumber, HouseTypeId, RentFee, DepositFee, Description,
+                            OccupancyStatus, PaymentStatus, FlatId, CreatedAt, UpdatedAt,
+                            IsListingHidden, CommentsMuted, IsAwaitingExistingTenant, IsDeleted)
+        SELECT CAST('7E570000-0000-0000-0003-0000000000' + Code AS uniqueidentifier), HouseNumber, @HouseTypeId, 5000, 5000, Descr,
+               CASE WHEN Occupied = 1 THEN 'Occupied' ELSE 'Vacant' END, HousePay, @FlatId, @Now, @Now, 1, 0, 0, 0
+        FROM @S;
+
+        INSERT INTO PortalUsers (Id, Email, PasswordHash, FirstName, LastName, PhoneNumber,
+                                 IsActive, IsEmailVerified, PortalUserType, CreatedAt, UpdatedAt)
+        SELECT CAST('7E570000-0000-0000-0004-0000000000' + Code AS uniqueidentifier), Email, @PasswordHash, 'Test Tenant', LastName,
+               '254708374149' /* sandbox test MSISDN, so pay forms pre-fill it */, 1, 1, 2 /* Tenant */, @Now, @Now
+        FROM @S WHERE Occupied = 1;
+
+        INSERT INTO Tenants (Id, HouseId, TenantStatus, HasCompletedInitialPayment, TenancyCycle,
+                             LeaseStartMonth, LeaseStartYear, PointsBalance)
+        SELECT CAST('7E570000-0000-0000-0004-0000000000' + Code AS uniqueidentifier),
+               CAST('7E570000-0000-0000-0003-0000000000' + Code AS uniqueidentifier), 2 /* Active */, 1, 1, LeaseMonth, 2026, 0
+        FROM @S WHERE Occupied = 1;
+
+        INSERT INTO TenantHouseHistories (Id, HouseId, TenantId, TenantFirstName, TenantLastName, TenantEmail, TenantPhone,
+                                          HouseNumber, FlatName, AssignedAt, RemovedAt, TenancyCycle)
+        SELECT CAST('7E570000-0000-0000-000F-0000000000' + Code AS uniqueidentifier),
+               CAST('7E570000-0000-0000-0003-0000000000' + Code AS uniqueidentifier),
+               CAST('7E570000-0000-0000-0004-0000000000' + Code AS uniqueidentifier),
+               'Test Tenant', LastName, Email, '254708374149', HouseNumber, N'TEST PROPERTY — DO NOT USE',
+               DATEFROMPARTS(2026, LeaseMonth, 1), NULL, 1
+        FROM @S WHERE Occupied = 1;
+
+        -- Payment rows. Status: 0 Pending, 2 Paid. Initial row = rent + deposit for the move-in month.
+        DECLARE @Rows TABLE (Code char(2), Mo int, Yr int, Amount decimal(18,2), AmountPaid decimal(18,2), Status int, IsInitial bit);
+        INSERT INTO @Rows VALUES
+            -- TEST-N: July initial paid; Aug/Sep/Oct unpaid (due dates passed), left Pending for the overdue check.
+            ('14',  7, 2026, 10000, 10000, 2, 1), ('14',  8, 2026, 5000, 0, 0, 0), ('14',  9, 2026, 5000, 0, 0, 0), ('14', 10, 2026, 5000, 0, 0, 0),
+            -- TEST-O / TEST-P: August initial + Sep + Oct paid; nothing ahead.
+            ('15',  8, 2026, 10000, 10000, 2, 1), ('15',  9, 2026, 5000, 5000, 2, 0), ('15', 10, 2026, 5000, 5000, 2, 0),
+            ('16',  8, 2026, 10000, 10000, 2, 1), ('16',  9, 2026, 5000, 5000, 2, 0), ('16', 10, 2026, 5000, 5000, 2, 0),
+            -- TEST-Q: paid through January 2027 (Nov, Dec, Jan are advance).
+            ('17',  8, 2026, 10000, 10000, 2, 1), ('17',  9, 2026, 5000, 5000, 2, 0), ('17', 10, 2026, 5000, 5000, 2, 0),
+            ('17', 11, 2026, 5000, 5000, 2, 0), ('17', 12, 2026, 5000, 5000, 2, 0), ('17',  1, 2027, 5000, 5000, 2, 0);
+
+        INSERT INTO Payments (Id, TenantId, HouseId, FlatId, LandlordId,
+                              Amount, AmountPaid, Balance, RentAmount, DepositAmount,
+                              PaymentStatus, PaymentType, PaymentMethod, MpesaReceiptNumber,
+                              DueDate, PaidAt, Month, Year, RetryCount, Description, Notes,
+                              IsInitialPayment, TenancyCycle, IsDeleted, CreatedAt, UpdatedAt)
+        SELECT CAST('7E570000-0000-0000-0006-0000' + r.Code + CAST(r.Yr * 100 + r.Mo AS varchar(6)) AS uniqueidentifier),
+               CAST('7E570000-0000-0000-0004-0000000000' + r.Code AS uniqueidentifier),
+               CAST('7E570000-0000-0000-0003-0000000000' + r.Code AS uniqueidentifier), @FlatId, @LandlordId,
+               r.Amount, r.AmountPaid, r.Amount - r.AmountPaid, 5000, CASE WHEN r.IsInitial = 1 THEN 5000 END,
+               r.Status, CASE WHEN r.IsInitial = 1 THEN 0 ELSE 1 END,
+               CASE WHEN r.AmountPaid > 0 THEN 0 END,
+               CASE WHEN r.AmountPaid > 0 THEN 'TEST' + r.Code + CAST(r.Yr * 100 + r.Mo AS varchar(6)) END,
+               DATEFROMPARTS(r.Yr, r.Mo, 5),
+               CASE WHEN r.AmountPaid > 0 THEN DATEFROMPARTS(r.Yr, r.Mo, 3) END,
+               r.Mo, r.Yr, 0,
+               CASE WHEN r.IsInitial = 1 THEN 'TEST — Initial payment (deposit + first rent)'
+                    ELSE 'TEST — Rent ' + DATENAME(month, DATEFROMPARTS(r.Yr, r.Mo, 1)) + ' ' + CAST(r.Yr AS varchar(4)) END,
+               'TEST SEED — seed-vacate-test-scenarios.sql',
+               r.IsInitial, 1, 0, @Now, @Now
+        FROM @Rows r;
+
+        -- Pending rent changes (unapplied): TEST-M from Dec 2026, TEST-O from Jan 2027.
+        INSERT INTO PendingRentChanges (Id, HouseId, NewRentFee, NewDepositFee, EffectiveMonth, EffectiveYear, CreatedAt, AppliedAt, CreatedByUserId)
+        VALUES ('7E570000-0000-0000-000E-000000000013', '7E570000-0000-0000-0003-000000000013', 6000, 6000, 12, 2026, @Now, NULL, @CreatorId),
+               ('7E570000-0000-0000-000E-000000000015', '7E570000-0000-0000-0003-000000000015', 6000, 6000,  1, 2027, @Now, NULL, @CreatorId);
+
+        COMMIT TRANSACTION;
+        PRINT '✅ UI verification houses TEST-M..Q seeded.';
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        PRINT '❌ UI verification houses failed — nothing inserted: ' + ERROR_MESSAGE();
+        THROW;
+    END CATCH
 END
 GO
 
