@@ -295,6 +295,21 @@ public class PortalTenantController : ControllerBase
     [Authorize(Roles = "Agent,Landlord,SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> CreateTenant([FromBody] CreateTenantDto dto)
     {
+        // Agents and landlords may only register tenants onto houses in flats they are assigned to / own.
+        if (dto.HouseId.HasValue && (User.IsInRole("Agent") || User.IsInRole("Landlord")))
+        {
+            var callerId = GetUserId();
+            var targetHouse = await _context.Houses.Include(h => h.Flat).FirstOrDefaultAsync(h => h.Id == dto.HouseId.Value);
+            if (targetHouse == null)
+                return BadRequest(new { success = false, message = "House not found." });
+
+            var allowed = User.IsInRole("Agent")
+                ? await _context.AgentFlats.AnyAsync(af => af.AgentId == callerId && af.FlatId == targetHouse.FlatId)
+                : targetHouse.Flat != null && targetHouse.Flat.LandlordId == callerId;
+            if (!allowed)
+                return StatusCode(403, new { success = false, message = "You are not authorized to register tenants on this house." });
+        }
+
         try
         {
             var tenant = await _tenantService.CreateAsync(dto);
