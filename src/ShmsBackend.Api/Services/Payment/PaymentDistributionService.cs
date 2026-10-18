@@ -117,6 +117,19 @@ public class PaymentDistributionService : IPaymentDistributionService
 
         var cursorMonth = currentDate.Month;
         var cursorYear = currentDate.Year;
+
+        // A pre-registered tenant has no tenancy before their lease start month, so advance money must
+        // never be pushed onto months before move-in — begin at the lease start month instead.
+        var lease = await _context.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId)
+            .Select(t => new { t.LeaseStartMonth, t.LeaseStartYear })
+            .FirstOrDefaultAsync();
+        if (lease?.LeaseStartMonth != null && lease.LeaseStartYear != null
+            && IsAfterMonth(lease.LeaseStartYear.Value, lease.LeaseStartMonth.Value, cursorYear, cursorMonth))
+        {
+            cursorMonth = lease.LeaseStartMonth.Value;
+            cursorYear = lease.LeaseStartYear.Value;
+        }
         var totalIterations = 0;
 
         while (remaining > 0)
