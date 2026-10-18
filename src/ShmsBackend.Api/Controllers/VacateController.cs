@@ -29,6 +29,7 @@ public class VacateController : ControllerBase
     private readonly ICacheHelper _cacheHelper;
     private readonly VacateOwedCalculator _vacateOwedCalculator;
     private readonly VacateClosureService _vacateClosureService;
+    private readonly LeavingBalanceService _leavingBalanceService;
 
     public VacateController(
         ShmsDbContext context,
@@ -39,7 +40,8 @@ public class VacateController : ControllerBase
         IMpesaService mpesaService,
         ICacheHelper cacheHelper,
         VacateOwedCalculator vacateOwedCalculator,
-        VacateClosureService vacateClosureService)
+        VacateClosureService vacateClosureService,
+        LeavingBalanceService leavingBalanceService)
     {
         _context = context;
         _emailService = emailService;
@@ -50,6 +52,7 @@ public class VacateController : ControllerBase
         _cacheHelper = cacheHelper;
         _vacateOwedCalculator = vacateOwedCalculator;
         _vacateClosureService = vacateClosureService;
+        _leavingBalanceService = leavingBalanceService;
     }
 
     private Guid GetCallerId()
@@ -2295,93 +2298,14 @@ public class VacateController : ControllerBase
 
     // GET /api/vacate/leaving-balances
     // Tenants whose move-out month has passed (SettlingVacate): login is closed and the house is released, so
-    // management/agents settle what they still owe on their behalf. Everything returned is keyed to the OLD
-    // tenant's own payment rows — nothing here reads or touches whoever now occupies the house.
+    // management/agents settle what they still owe on their behalf (see LeavingBalanceService).
     [HttpGet("leaving-balances")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Agent")]
-    public async Task<IActionResult> GetLeavingBalances([FromQuery] string? search = null)
+    public async Task<IActionResult> GetLeavingBalances([FromQuery] LeavingBalanceFilters filters)
     {
-        var todayUtc = DateTime.UtcNow.Date;
-
-        var settlingQuery = _context.Tenants.Where(t => t.TenantStatus == TenantStatus.SettlingVacate && !t.IsDeleted);
-
-        if (User.IsInRole("Agent"))
-        {
-            var agentId = GetCallerId();
-            var flatIds = _context.AgentFlats.Where(af => af.AgentId == agentId).Select(af => af.FlatId);
-            settlingQuery = settlingQuery.Where(t => t.House != null && flatIds.Contains(t.House.FlatId));
-        }
-
-        var tenants = await settlingQuery
-            .Select(t => new { t.Id, t.FirstName, t.LastName, t.PhoneNumber, t.TenancyCycle, t.HouseId })
-            .ToListAsync();
-        var tenantIds = tenants.Select(t => t.Id).ToList();
-
-        var requests = await _context.VacateRequests
-            .Where(v => tenantIds.Contains(v.TenantId) && !v.IsDeleted && v.Status == "Approved" && v.ClosedAt == null)
-            .ToListAsync();
-
-        var houseIds = requests.Select(r => r.HouseId).Distinct().ToList();
-        var houses = await _context.Houses.Where(h => houseIds.Contains(h.Id))
-            .Select(h => new { h.Id, h.HouseNumber, FlatName = h.Flat != null ? h.Flat.FlatName : "", h.OccupancyStatus })
-            .ToDictionaryAsync(h => h.Id);
-
-        var requestIds = requests.Select(r => r.Id).ToList();
-        var settlements = await _context.VacateSettlements
-            .Where(s => requestIds.Contains(s.VacateRequestId) && !s.IsVoided)
-            .ToListAsync();
-
-        var owedRows = await _context.Payments
-            .Where(p => tenantIds.Contains(p.TenantId) && !p.IsDeleted && p.DueDate < todayUtc
-                && (p.PaymentStatus == PaymentTransactionStatus.Overdue
-                    || p.PaymentStatus == PaymentTransactionStatus.Pending
-                    || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid))
-            .Select(p => new { p.TenantId, p.TenancyCycle, p.Year, p.Month, p.Balance, p.PaymentStatus, p.ServiceChargeAmount })
-            .ToListAsync();
-
-        var result = new List<object>();
-        foreach (var r in requests)
-        {
-            var t = tenants.First(x => x.Id == r.TenantId);
-            var rows = owedRows
-                .Where(p => p.TenantId == r.TenantId && p.TenancyCycle == t.TenancyCycle
-                    && (p.Year < r.VacateYear || (p.Year == r.VacateYear && p.Month <= r.VacateMonth)))
-                .OrderBy(p => p.Year).ThenBy(p => p.Month)
-                .ToList();
-            var settlement = settlements.FirstOrDefault(s => s.VacateRequestId == r.Id);
-            houses.TryGetValue(r.HouseId, out var house);
-
-            var name = $"{t.FirstName} {t.LastName}".Trim();
-            if (!string.IsNullOrWhiteSpace(search)
-                && !name.Contains(search, StringComparison.OrdinalIgnoreCase)
-                && !(house?.HouseNumber ?? "").Contains(search, StringComparison.OrdinalIgnoreCase)
-                && !(house?.FlatName ?? "").Contains(search, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            result.Add(new
-            {
-                vacateRequestId = r.Id,
-                tenantId = t.Id,
-                tenantName = name,
-                phoneNumber = t.PhoneNumber,
-                houseId = r.HouseId,
-                houseNumber = house?.HouseNumber,
-                flatName = house?.FlatName,
-                houseOccupied = house != null && house.OccupancyStatus == OccupancyStatus.Occupied,
-                vacateMonth = r.VacateMonth,
-                vacateYear = r.VacateYear,
-                arrearsTotal = rows.Sum(x => x.Balance),
-                arrearsRows = rows.Select(x => new { x.Year, x.Month, x.Balance, status = x.PaymentStatus.ToString() }),
-                settlementId = settlement?.Id,
-                settlementDirection = settlement?.Direction,
-                settlementAmount = settlement?.Amount,
-                settlementPaid = settlement == null || settlement.PaidAt != null,
-                settlementRequiresPayment = settlement != null && settlement.Direction == "TenantOwes" && settlement.PaidAt == null,
-                refundPending = settlement != null && settlement.Direction == "ManagementOwes" && settlement.PaidAt == null
-            });
-        }
-
-        return Ok(new { success = true, data = result });
+        filters.AgentId = User.IsInRole("Agent") ? GetCallerId() : null;
+        var rows = await _leavingBalanceService.GetAsync(filters);
+        return Ok(new { success = true, data = rows, totals = LeavingBalanceService.Totals(rows) });
     }
 
     // GET /api/vacate/{id}/clear-checklist

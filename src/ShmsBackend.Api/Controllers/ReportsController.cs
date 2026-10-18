@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Models.Reports;
 using ShmsBackend.Api.Services;
+using ShmsBackend.Api.Services.Payment;
 using ShmsBackend.Api.Services.Reports;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities.Portal;
@@ -50,6 +51,7 @@ public class ReportsController : ControllerBase
     private readonly ServiceChargeReportBuilder _serviceChargeReportBuilder;
     private readonly ComplaintChargeReportBuilder _complaintChargeReportBuilder;
     private readonly RefundReportBuilder _refundReportBuilder;
+    private readonly LeavingBalanceReportBuilder _leavingBalanceReportBuilder;
     private readonly DeductionReportBuilder _deductionReportBuilder;
     private readonly ForfeitedAdvanceReportBuilder _forfeitedAdvanceReportBuilder;
     private readonly ExpenseReportBuilder _expenseReportBuilder;
@@ -73,6 +75,7 @@ public class ReportsController : ControllerBase
         ServiceChargeReportBuilder serviceChargeReportBuilder,
         ComplaintChargeReportBuilder complaintChargeReportBuilder,
         RefundReportBuilder refundReportBuilder,
+        LeavingBalanceReportBuilder leavingBalanceReportBuilder,
         DeductionReportBuilder deductionReportBuilder,
         ForfeitedAdvanceReportBuilder forfeitedAdvanceReportBuilder,
         ExpenseReportBuilder expenseReportBuilder,
@@ -95,6 +98,7 @@ public class ReportsController : ControllerBase
         _serviceChargeReportBuilder = serviceChargeReportBuilder;
         _complaintChargeReportBuilder = complaintChargeReportBuilder;
         _refundReportBuilder = refundReportBuilder;
+        _leavingBalanceReportBuilder = leavingBalanceReportBuilder;
         _deductionReportBuilder = deductionReportBuilder;
         _forfeitedAdvanceReportBuilder = forfeitedAdvanceReportBuilder;
         _expenseReportBuilder = expenseReportBuilder;
@@ -604,6 +608,39 @@ public class ReportsController : ControllerBase
         var data = await _refundReportBuilder.BuildAsync(filters);
         var company = await GetOrCreateCompanySettingsAsync();
         return await ExportAsync(data, company, "Refunds-Report", format);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Leaving tenants — SettlingVacate tenants still owing (agents see only their flats)
+    // ═══════════════════════════════════════════════════════════════════
+
+    private void ScopeLeavingFilters(LeavingBalanceFilters filters)
+    {
+        filters.AgentId = null;
+        if (User.IsInRole("Agent") && Guid.TryParse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out var agentId))
+            filters.AgentId = agentId;
+    }
+
+    // GET /api/reports/leaving-balances/preview
+    [HttpGet("leaving-balances/preview")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Agent")]
+    public async Task<IActionResult> PreviewLeavingBalancesReport([FromQuery] LeavingBalanceFilters filters)
+    {
+        ScopeLeavingFilters(filters);
+        var data = await _leavingBalanceReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return Ok(new { success = true, data, company = CompanyInfo(company) });
+    }
+
+    // GET /api/reports/leaving-balances/export?format=pdf|excel|word
+    [HttpGet("leaving-balances/export")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Agent")]
+    public async Task<IActionResult> ExportLeavingBalancesReport([FromQuery] LeavingBalanceFilters filters, [FromQuery] string format = "pdf")
+    {
+        ScopeLeavingFilters(filters);
+        var data = await _leavingBalanceReportBuilder.BuildAsync(filters);
+        var company = await GetOrCreateCompanySettingsAsync();
+        return await ExportAsync(data, company, "Leaving-Tenants-Report", format);
     }
 
     // ═══════════════════════════════════════════════════════════════════
