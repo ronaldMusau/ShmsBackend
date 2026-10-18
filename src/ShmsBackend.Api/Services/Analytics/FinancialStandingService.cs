@@ -26,6 +26,7 @@ public class FinancialStandingService
     private readonly RewardTransactionQueryService _rewardTransactionQueryService;
     private readonly ShmsDbContext _context;
     private readonly ShmsBackend.Api.Services.ServiceChargeQueryService _serviceChargeQueryService;
+    private readonly ShmsBackend.Api.Services.ForfeitedAdvanceQueryService _forfeitedAdvanceQueryService;
 
     public FinancialStandingService(
         PaymentQueryService paymentQueryService,
@@ -34,8 +35,10 @@ public class FinancialStandingService
         ExpenseQueryService expenseQueryService,
         RewardTransactionQueryService rewardTransactionQueryService,
         ShmsDbContext context,
-        ShmsBackend.Api.Services.ServiceChargeQueryService serviceChargeQueryService)
+        ShmsBackend.Api.Services.ServiceChargeQueryService serviceChargeQueryService,
+        ShmsBackend.Api.Services.ForfeitedAdvanceQueryService forfeitedAdvanceQueryService)
     {
+        _forfeitedAdvanceQueryService = forfeitedAdvanceQueryService;
         _serviceChargeQueryService = serviceChargeQueryService;
         _paymentQueryService = paymentQueryService;
         _refundQueryService = refundQueryService;
@@ -94,15 +97,29 @@ public class FinancialStandingService
         }
 
         // ── Step 3: reuse the existing query services for the rest ──
-        decimal? totalRefunds = null;
+        // Refunds are a cost to Management. Only PAID refunds reduce the standing (money has left);
+        // refunds still owed are reported separately as a pending liability. Forfeited advances
+        // (unused advance kept by Management) are income.
+        decimal? totalRefunds = null, totalPendingRefunds = null, totalForfeited = null;
         if (includeManagementOnlyFigures)
-            totalRefunds = await _refundQueryService.BuildFilteredQuery(new RefundFilters
         {
-            FlatId = filters.FlatId,
-            LandlordId = filters.LandlordId,
-            FromDate = filters.FromDate,
-            ToDate = filters.ToDate
-        }).SumAsync(s => s.Amount);
+            var refundQuery = _refundQueryService.BuildFilteredQuery(new RefundFilters
+            {
+                FlatId = filters.FlatId,
+                LandlordId = filters.LandlordId,
+                FromDate = filters.FromDate,
+                ToDate = filters.ToDate
+            });
+            totalRefunds = await refundQuery.Where(s => s.PaidAt != null).SumAsync(s => (decimal?)s.Amount) ?? 0m;
+            totalPendingRefunds = await refundQuery.Where(s => s.PaidAt == null).SumAsync(s => (decimal?)s.Amount) ?? 0m;
+            totalForfeited = await _forfeitedAdvanceQueryService.BuildFilteredQuery(new ForfeitedAdvanceFilters
+            {
+                FlatId = filters.FlatId,
+                LandlordId = filters.LandlordId,
+                FromDate = filters.FromDate,
+                ToDate = filters.ToDate
+            }).SumAsync(f => (decimal?)f.AmountForfeitedUnused) ?? 0m;
+        }
 
         var totalDeductions = await _deductionQueryService.BuildFilteredQuery(new DeductionFilters
         {
@@ -140,6 +157,8 @@ public class FinancialStandingService
             TotalServiceCharge = includeManagementOnlyFigures ? Math.Round(totalServiceCharge, 2) : null,
             TotalExpenses = totalExpenses,
             TotalRefunds = totalRefunds,
+            TotalPendingRefunds = totalPendingRefunds,
+            TotalForfeitedAdvances = totalForfeited,
             TotalDeductions = totalDeductions,
             TotalManagementFee = Math.Round(totalFee, 2),
             TotalRewardsRedeemed = totalRewardsRedeemed

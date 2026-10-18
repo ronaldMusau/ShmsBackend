@@ -10,6 +10,7 @@ public class ForfeitedAdvanceFilters
 {
     public Guid? TenantId { get; set; }
     public Guid? HouseId { get; set; }
+    public Guid? FlatId { get; set; }
     public DateTime? FromDate { get; set; }
     public DateTime? ToDate { get; set; }
     public decimal? MinAmount { get; set; }
@@ -38,6 +39,7 @@ public class ForfeitedAdvanceQueryService
         if (filters.LandlordId.HasValue) query = query.Where(f => f.LandlordId == filters.LandlordId.Value);
         if (filters.TenantId.HasValue) query = query.Where(f => f.TenantId == filters.TenantId.Value);
         if (filters.HouseId.HasValue) query = query.Where(f => f.HouseId == filters.HouseId.Value);
+        if (filters.FlatId.HasValue) query = query.Where(f => f.FlatId == filters.FlatId.Value);
         if (filters.FromDate.HasValue) query = query.Where(f => f.CreatedAt >= filters.FromDate.Value);
         if (filters.ToDate.HasValue) query = query.Where(f => f.CreatedAt < filters.ToDate.Value.Date.AddDays(1));
         if (filters.MinAmount.HasValue) query = query.Where(f => f.AmountForfeitedUnused >= filters.MinAmount.Value);

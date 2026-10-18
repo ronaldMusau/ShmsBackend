@@ -1942,11 +1942,15 @@ public class VacateController : ControllerBase
         [FromQuery] DateTime? toDate = null,
         [FromQuery] string? search = null,
         [FromQuery] Guid? flatId = null,
-        [FromQuery] Guid? houseId = null)
+        [FromQuery] Guid? houseId = null,
+        [FromQuery] string? status = null)   // Paid | Pending
     {
         var query = _context.VacateSettlements
             .Where(s => s.Direction == "ManagementOwes" && !s.IsVoided)
             .AsQueryable();
+
+        if (string.Equals(status, "Paid", StringComparison.OrdinalIgnoreCase)) query = query.Where(s => s.PaidAt != null);
+        else if (string.Equals(status, "Pending", StringComparison.OrdinalIgnoreCase)) query = query.Where(s => s.PaidAt == null);
 
         if (tenantId.HasValue) query = query.Where(s => s.TenantId == tenantId.Value);
         if (houseId.HasValue) query = query.Where(s => s.HouseId == houseId.Value);
@@ -1972,8 +1976,10 @@ public class VacateController : ControllerBase
                 (x.PaidAt == null && "Refundable".Contains(s)));
         }
 
-        var totalRefundable = await query.Where(s => s.PaidAt == null).SumAsync(s => s.Amount);
-        var totalPaid = await query.Where(s => s.PaidAt != null).SumAsync(s => s.Amount);
+        var paidAmount = await query.Where(s => s.PaidAt != null).SumAsync(s => (decimal?)s.Amount) ?? 0m;
+        var pendingAmount = await query.Where(s => s.PaidAt == null).SumAsync(s => (decimal?)s.Amount) ?? 0m;
+        var paidCount = await query.CountAsync(s => s.PaidAt != null);
+        var pendingCount = await query.CountAsync(s => s.PaidAt == null);
 
         var total = await query.CountAsync();
         var paged = await query.OrderByDescending(s => s.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
@@ -1988,13 +1994,28 @@ public class VacateController : ControllerBase
             .Where(h => houseIds.Contains(h.Id))
             .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
 
+        var flatIds = paged.Select(s => s.FlatId).Distinct().ToList();
+        var flats = await _context.Flats
+            .Where(f => flatIds.Contains(f.Id))
+            .ToDictionaryAsync(f => f.Id, f => f.FlatName);
+
+        var tenantContacts = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => new { t.PhoneNumber, t.Email });
+
         var data = paged.Select(s => new
         {
             s.Id,
+            s.TenantId,
+            s.VacateRequestId,
             tenantName = tenants.GetValueOrDefault(s.TenantId, "-"),
+            tenantPhone = tenantContacts.ContainsKey(s.TenantId) ? tenantContacts[s.TenantId].PhoneNumber : null,
+            tenantEmail = tenantContacts.ContainsKey(s.TenantId) ? tenantContacts[s.TenantId].Email : null,
             houseNumber = houses.GetValueOrDefault(s.HouseId, "-"),
+            flatName = flats.GetValueOrDefault(s.FlatId, "-"),
             s.Amount,
             s.Description,
+            status = s.PaidAt != null ? "Paid" : "Pending",
             s.PaidAt,
             s.CreatedAt
         });
@@ -2007,7 +2028,7 @@ public class VacateController : ControllerBase
             page,
             pageSize,
             totalPages = (int)Math.Ceiling((double)total / pageSize),
-            totals = new { totalRefundable, totalPaid }
+            totals = new { totalAmount = paidAmount + pendingAmount, paidAmount, pendingAmount, paidCount, pendingCount }
         });
     }
 
@@ -2448,11 +2469,7 @@ public class VacateController : ControllerBase
         [FromQuery] decimal? maxAmount = null,
         [FromQuery] string? search = null)
     {
-        var allQuery = _context.VacateForfeitedAdvances.Where(f => !f.IsVoided);
-        var totalForfeited = await allQuery.SumAsync(f => f.AmountForfeitedUnused);
-        var totalAppliedToDamages = await allQuery.SumAsync(f => f.AmountAppliedToDamages);
-
-        var query = allQuery.AsQueryable();
+        var query = _context.VacateForfeitedAdvances.Where(f => !f.IsVoided).AsQueryable();
         if (tenantId.HasValue) query = query.Where(f => f.TenantId == tenantId.Value);
         if (houseId.HasValue) query = query.Where(f => f.HouseId == houseId.Value);
         if (flatId.HasValue) query = query.Where(f => f.FlatId == flatId.Value);
@@ -2474,6 +2491,10 @@ public class VacateController : ControllerBase
                 _context.Houses.Any(h => h.Id == x.HouseId && h.HouseNumber.Contains(s)));
         }
 
+        // Totals follow the active filters so the cards always match the rows below.
+        var totalForfeited = await query.SumAsync(f => (decimal?)f.AmountForfeitedUnused) ?? 0m;
+        var totalAppliedToDamages = await query.SumAsync(f => (decimal?)f.AmountAppliedToDamages) ?? 0m;
+
         var total = await query.CountAsync();
         var paged = await query.OrderByDescending(f => f.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
@@ -2487,14 +2508,26 @@ public class VacateController : ControllerBase
             .Where(h => houseIds.Contains(h.Id))
             .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
 
+        var flatIdsF = paged.Select(f => f.FlatId).Distinct().ToList();
+        var flatsF = await _context.Flats
+            .Where(fl => flatIdsF.Contains(fl.Id))
+            .ToDictionaryAsync(fl => fl.Id, fl => fl.FlatName);
+        var tenantEmails = await _context.Tenants
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Email);
+
         var data = paged.Select(f => new
         {
             f.Id,
+            f.TenantId,
             tenantName = tenants.GetValueOrDefault(f.TenantId, "-"),
+            tenantEmail = tenantEmails.GetValueOrDefault(f.TenantId),
             houseNumber = houses.GetValueOrDefault(f.HouseId, "-"),
-            f.TotalAdvanceAmount,
-            f.AmountAppliedToDamages,
-            f.AmountForfeitedUnused,
+            flatName = flatsF.GetValueOrDefault(f.FlatId, "-"),
+            totalAdvance = f.TotalAdvanceAmount,
+            appliedToDamages = f.AmountAppliedToDamages,
+            forfeitedUnused = f.AmountForfeitedUnused,
+            closedAt = f.CreatedAt,
             f.CreatedAt
         });
 
@@ -2506,7 +2539,7 @@ public class VacateController : ControllerBase
             page,
             pageSize,
             totalPages = (int)Math.Ceiling((double)total / pageSize),
-            totals = new { totalForfeited, totalAppliedToDamages }
+            totals = new { totalForfeited, appliedToDamages = totalAppliedToDamages }
         });
     }
 
