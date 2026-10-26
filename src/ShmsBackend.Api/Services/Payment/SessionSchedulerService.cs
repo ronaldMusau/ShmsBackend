@@ -51,7 +51,7 @@ public class SessionSchedulerService : BackgroundService
         }
     }
 
-    private async Task RunSessionSweep()
+    public async Task RunSessionSweep()
     {
         _logger.LogInformation("Running session lifecycle sweep");
         using var scope = _serviceProvider.CreateScope();
@@ -123,5 +123,73 @@ public class SessionSchedulerService : BackgroundService
             await context.SaveChangesAsync();
             _logger.LogInformation("Forfeited {Count} sessions that exceeded the 24hr feedback window", awaitingSessions.Count);
         }
+
+        // Pass C — compiled reminder for sessions still needing reassignment.
+        await RunReassignmentReminders();
+    }
+
+    /// <summary>
+    /// One compiled, forced (preference-bypassing) alert per management user listing every agent who needs
+    /// reassigning: agents over the daily session limit on an upcoming day, and sessions an agent declined.
+    /// Returns how many sessions are waiting (0 = nothing sent).
+    /// </summary>
+    public async Task<int> RunReassignmentReminders()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ShmsDbContext>();
+        var notificationService = scope.ServiceProvider.GetRequiredService<INotificationService>();
+
+        var cap = await context.CompanySettings.Select(c => (int?)c.MaxSessionsPerAgentPerDay).FirstOrDefaultAsync();
+        var maxPerDay = cap is > 0 ? cap.Value : 5;
+        var today = DateTime.UtcNow.Date;
+
+        var live = await context.ListingViewingSessions
+            .Where(s => s.ScheduledAt >= today && (s.Status == "Pending" || s.Status == "Accepted" || s.Status == "AwaitingFeedback"))
+            .Select(s => new { s.AgentId, Day = s.ScheduledAt.Date })
+            .ToListAsync();
+        var overloaded = live
+            .GroupBy(x => new { x.AgentId, x.Day })
+            .Where(g => g.Count() > maxPerDay)
+            .Select(g => new { g.Key.AgentId, g.Key.Day, Count = g.Count() })
+            .OrderBy(x => x.Day)
+            .ToList();
+
+        var declined = await context.ListingViewingSessions
+            .Where(s => s.Status == "Declined" && s.ScheduledAt >= today)
+            .Select(s => new { s.AgentId, s.HouseId, s.ScheduledAt })
+            .ToListAsync();
+
+        var waiting = overloaded.Count + declined.Count;
+        if (waiting == 0) return 0;
+
+        var agentIds = overloaded.Select(o => o.AgentId).Concat(declined.Select(d => d.AgentId)).Distinct().ToList();
+        var agentNames = await context.Agents
+            .Where(a => agentIds.Contains(a.Id))
+            .ToDictionaryAsync(a => a.Id, a => $"{a.FirstName} {a.LastName}".Trim());
+        var houseIds = declined.Select(d => d.HouseId).Distinct().ToList();
+        var houseNumbers = await context.Houses
+            .Where(h => houseIds.Contains(h.Id))
+            .ToDictionaryAsync(h => h.Id, h => h.HouseNumber);
+
+        var lines = new List<string>();
+        foreach (var o in overloaded)
+            lines.Add($"{agentNames.GetValueOrDefault(o.AgentId, "An agent")} has {o.Count} sessions on {o.Day:yyyy-MM-dd} (limit {maxPerDay})");
+        foreach (var d in declined)
+            lines.Add($"{agentNames.GetValueOrDefault(d.AgentId, "An agent")} declined house {houseNumbers.GetValueOrDefault(d.HouseId, "")} on {d.ScheduledAt:yyyy-MM-dd}");
+
+        var message = $"{waiting} viewing-session item(s) need reassigning: {string.Join("; ", lines.Take(5))}{(lines.Count > 5 ? $"; +{lines.Count - 5} more" : "")}.";
+
+        var superAdmins = await context.SuperAdmins.Select(u => u.Id).ToListAsync();
+        var adminUsers = await context.AdminUsers.Select(u => u.Id).ToListAsync();
+        var managers = await context.Managers.Select(u => u.Id).ToListAsync();
+        var secretaries = await context.Secretaries.Select(u => u.Id).ToListAsync();
+        foreach (var id in superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).Distinct())
+        {
+            try { await notificationService.SendForcedToUserAsync(id.ToString(), message, "property"); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send reassignment reminder to management user {UserId}", id); }
+        }
+
+        _logger.LogInformation("Sent reassignment reminder for {Count} item(s)", waiting);
+        return waiting;
     }
 }

@@ -63,8 +63,48 @@ public class SessionController : ControllerBase
         return cap is > 0 ? cap.Value : 5;
     }
 
+    // The configured number is the limit an agent can take in a day: at the limit = Amber (full), over it = Red
+    // (needs reassigning). Booking is never blocked; management is alerted when the limit is exceeded.
     private static string LoadLevelFor(int count, int cap) =>
-        count >= cap ? "Red" : count == cap - 1 ? "Amber" : "Green";
+        count > cap ? "Red" : count == cap ? "Amber" : "Green";
+
+    // Agents who cover the house's ward — assigned to a flat in that ward, or with that ward on their own
+    // profile — active, and never the agent who already holds the session. Strictly the same ward.
+    private async Task<List<Guid>> GetWardAgentIdsAsync(string? ward, Guid excludeAgentId)
+    {
+        var w = ward?.Trim();
+        if (string.IsNullOrEmpty(w)) return new List<Guid>();
+
+        var viaFlats = _context.AgentFlats.Where(af => af.Flat.Ward == w).Select(af => af.AgentId);
+        var viaProfile = _context.Agents.Where(a => a.Ward == w).Select(a => a.Id);
+        var ids = await viaFlats.Union(viaProfile).Distinct().ToListAsync();
+        ids.Remove(excludeAgentId);
+        if (ids.Count == 0) return ids;
+
+        return await _context.Agents
+            .Where(a => ids.Contains(a.Id) && a.IsActive)
+            .Select(a => a.Id)
+            .ToListAsync();
+    }
+
+    // Forced (preference-bypassing) in-app + push alert to every management user.
+    private async Task NotifyManagementForcedAsync(string message, Guid? sessionId = null)
+    {
+        var superAdmins = await _context.SuperAdmins.Select(u => u.Id).ToListAsync();
+        var adminUsers = await _context.AdminUsers.Select(u => u.Id).ToListAsync();
+        var managers = await _context.Managers.Select(u => u.Id).ToListAsync();
+        var secretaries = await _context.Secretaries.Select(u => u.Id).ToListAsync();
+        foreach (var id in superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).Distinct())
+        {
+            try
+            {
+                await _notificationService.SendForcedToUserAsync(
+                    id.ToString(), message, "property",
+                    sessionId.HasValue ? "ListingViewingSession" : null, sessionId?.ToString());
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send forced session alert to management user {UserId}", id); }
+        }
+    }
 
     // POST /api/sessions
     [HttpPost]
@@ -118,17 +158,16 @@ public class SessionController : ControllerBase
             s.ScheduledAt < nextDate &&
             (s.Status == "Pending" || s.Status == "Accepted" || s.Status == "AwaitingFeedback"));
 
-        if (liveCount == maxPerDay)
+        if (liveCount == maxPerDay + 1)
         {
             var agentName = $"{agentFlat.Agent.FirstName} {agentFlat.Agent.LastName}".Trim();
             var scheduledDate = targetDate.ToString("yyyy-MM-dd");
 
             try
             {
-                await _notificationService.SendToRolesAsync(
-                    new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
-                    $"Agent {agentName} now has {maxPerDay}+ sessions on {scheduledDate}, consider reassigning.",
-                    "property");
+                await NotifyManagementForcedAsync(
+                    $"Agent {agentName} is over the daily limit of {maxPerDay} sessions on {scheduledDate} ({liveCount} booked) — this agent needs reassigning.",
+                    session.Id);
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of agent capacity crossing"); }
 
@@ -231,10 +270,9 @@ public class SessionController : ControllerBase
 
         try
         {
-            await _notificationService.SendToRolesAsync(
-                new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Secretary, NotificationAudience.Manager },
-                $"Agent {agentName} declined a viewing session for house {houseNumber}, reassignment needed.",
-                "property");
+            await NotifyManagementForcedAsync(
+                $"Agent {agentName} declined a viewing session for house {houseNumber} — this session needs reassigning.",
+                session.Id);
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of session decline"); }
 
@@ -275,29 +313,15 @@ public class SessionController : ControllerBase
         if (house?.Flat == null)
             return BadRequest(new { success = false, message = "House flat information not found." });
 
-        var targetWard = house.Flat.Ward;
-        var wardAgentIds = await _context.AgentFlats
-            .Where(af => af.Flat.Ward == targetWard)
-            .Select(af => af.AgentId)
-            .Distinct()
-            .ToListAsync();
-
-        var eligibleAgentIds = wardAgentIds;
+        var eligibleAgentIds = await GetWardAgentIdsAsync(house.Flat.Ward, session.AgentId);
         if (eligibleAgentIds.Count == 0)
-        {
-            var targetConstituency = house.Flat.Constituency;
-            eligibleAgentIds = await _context.AgentFlats
-                .Where(af => af.Flat.Constituency == targetConstituency)
-                .Select(af => af.AgentId)
-                .Distinct()
-                .ToListAsync();
-        }
+            return BadRequest(new { success = false, message = "No other agents cover this ward." });
 
-        if (eligibleAgentIds.Count == 0)
-            return BadRequest(new { success = false, message = "No agents are available for this ward or constituency." });
+        if (dto.NewAgentId == session.AgentId)
+            return BadRequest(new { success = false, message = "This session is already assigned to that agent." });
 
         if (!eligibleAgentIds.Contains(dto.NewAgentId))
-            return BadRequest(new { success = false, message = "Selected agent does not cover this ward or constituency." });
+            return BadRequest(new { success = false, message = "Selected agent does not cover this ward." });
 
         session.ReassignedFromAgentId = session.AgentId;
         session.AgentId = dto.NewAgentId;
@@ -310,12 +334,23 @@ public class SessionController : ControllerBase
         var explorer = await _context.Explorers.FindAsync(session.ExplorerId);
         var houseNumber = house.HouseNumber;
 
+        if (session.ReassignedFromAgentId.HasValue)
+        {
+            try
+            {
+                await _notificationService.SendForcedToUserAsync(session.ReassignedFromAgentId.Value.ToString(),
+                    $"The viewing session for house {houseNumber} on {session.ScheduledAt:yyyy-MM-dd HH:mm} has been reassigned to another agent.",
+                    "property", "ListingViewingSession", session.Id.ToString());
+            }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to notify previous agent of session reassignment"); }
+        }
+
         if (newAgent != null)
         {
             try { await _emailService.SendSessionRequestAgentEmailAsync(newAgent.Email, newAgent.FirstName, houseNumber, session.ScheduledAt, newAgent.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send session request email to reassigned agent {AgentId}", newAgent.Id); }
 
-            try { await _notificationService.SendToUserAsync(newAgent.Id.ToString(), $"A viewing session for house {houseNumber} has been assigned to you and needs your acceptance.", "property"); }
+            try { await _notificationService.SendForcedToUserAsync(newAgent.Id.ToString(), $"A viewing session for house {houseNumber} has been assigned to you and needs your acceptance.", "property", "ListingViewingSession", session.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify reassigned agent of session"); }
         }
 
@@ -327,7 +362,7 @@ public class SessionController : ControllerBase
             try { await _emailService.SendSessionReassignedExplorerEmailAsync(explorer.Email, explorer.FirstName, houseNumber, agentName, agentPhone, session.ScheduledAt, explorer.Id.ToString(), true); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to send session reassigned email to explorer {ExplorerId}", explorer.Id); }
 
-            try { await _notificationService.SendToUserAsync(explorer.Id.ToString(), $"Your viewing session for house {houseNumber} has been reassigned to a new agent and is pending their acceptance.", "property"); }
+            try { await _notificationService.SendForcedToUserAsync(explorer.Id.ToString(), $"Your viewing session for house {houseNumber} has been reassigned to a new agent and is pending their acceptance.", "property", "ListingViewingSession", session.Id.ToString()); }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify explorer of session reassignment"); }
         }
 
@@ -927,6 +962,15 @@ public class SessionController : ControllerBase
         });
     }
 
+    // POST /api/sessions/reassignment-reminders/run — SuperAdmin "run now" (same compiled alert the daily sweep sends)
+    [HttpPost("reassignment-reminders/run")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> RunReassignmentReminders([FromServices] ShmsBackend.Api.Services.Payment.SessionSchedulerService scheduler)
+    {
+        var waiting = await scheduler.RunReassignmentReminders();
+        return Ok(new { success = true, waiting });
+    }
+
     // GET /api/sessions/agent-calendar/{agentId}
     [HttpGet("agent-calendar/{agentId:guid}")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
@@ -998,27 +1042,11 @@ public class SessionController : ControllerBase
         if (house?.Flat == null)
             return BadRequest(new { success = false, message = "House flat information not found." });
 
-        var targetWard = house.Flat.Ward;
-        var candidateAgentIds = await _context.AgentFlats
-            .Where(af => af.Flat.Ward == targetWard)
-            .Select(af => af.AgentId)
-            .Distinct()
-            .ToListAsync();
-
-        var matchedTier = "ward";
-        if (candidateAgentIds.Count == 0)
-        {
-            var targetConstituency = house.Flat.Constituency;
-            candidateAgentIds = await _context.AgentFlats
-                .Where(af => af.Flat.Constituency == targetConstituency)
-                .Select(af => af.AgentId)
-                .Distinct()
-                .ToListAsync();
-            matchedTier = "constituency";
-        }
+        var candidateAgentIds = await GetWardAgentIdsAsync(house.Flat.Ward, session.AgentId);
+        const string matchedTier = "ward";
 
         if (candidateAgentIds.Count == 0)
-            return BadRequest(new { success = false, message = "No agents are available for this ward or constituency." });
+            return BadRequest(new { success = false, message = "No other agents cover this ward." });
 
         var candidates = await _context.Agents
             .Where(a => candidateAgentIds.Contains(a.Id))
