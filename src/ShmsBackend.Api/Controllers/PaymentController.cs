@@ -188,6 +188,7 @@ public class PaymentController : ControllerBase
                     return VacateCapExceeded(vacateOwed);
             }
 
+            await _paymentService.EnsureServiceChargeAsync(payment);
             decimal? actualChargeAmount = null;
             if (distributionAmount.HasValue)
             {

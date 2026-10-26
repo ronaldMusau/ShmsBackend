@@ -18,6 +18,7 @@ public interface IPaymentService
     Task<PaymentRecord> CreateInitialPaymentAsync(Guid tenantId, Guid houseId, string phoneNumber);
     Task<(PaymentRecord? Payment, bool PastVacateMonth)> CreateAdvancePaymentRowAsync(Guid tenantId);
     Task<STKPushResponse> InitiatePaymentAsync(Guid paymentId, string phoneNumber, decimal? overrideAmount = null);
+    Task EnsureServiceChargeAsync(PaymentRecord payment);
     Task ProcessCallbackAsync(MpesaCallback callback);
     Task<STKQueryResponse> QueryPaymentStatusAsync(string checkoutRequestId);
     Task<List<PaymentRecord>> GetTenantPaymentHistoryAsync(Guid tenantId);
@@ -81,6 +82,19 @@ public class PaymentService : IPaymentService
             .OrderBy(s => s.MinRent)
             .FirstOrDefaultAsync();
         return setting?.ServiceCharge ?? 0;
+    }
+
+    // Every M-Pesa push made through the system carries the platform service charge. A row that has none
+    // stored (seeded/older rows, leaving-tenant arrears) is given the charge for its rent tier here, so the
+    // STK amount is always rent + charge. Points-redeemed rows are never charged; rows with no matching
+    // tier stay at 0. Saved by the caller.
+    public async Task EnsureServiceChargeAsync(PaymentRecord payment)
+    {
+        if ((payment.ServiceChargeAmount ?? 0m) > 0m) return;
+        if (!string.IsNullOrEmpty(payment.RedemptionReference) && string.IsNullOrEmpty(payment.MpesaReceiptNumber)) return;
+        var basis = (payment.RentAmount ?? 0m) > 0m ? payment.RentAmount!.Value : payment.Amount;
+        var charge = await GetServiceChargeAsync(basis);
+        if (charge > 0m) payment.ServiceChargeAmount = charge;
     }
 
     public async Task<PaymentRecord> CreateInitialPaymentAsync(Guid tenantId, Guid houseId, string phoneNumber)
@@ -264,6 +278,7 @@ public class PaymentService : IPaymentService
         var flat = house.Flat!;
 
         payment.PhoneNumber = phoneNumber;
+        await EnsureServiceChargeAsync(payment);
 
         // Every caller that sets RequestedDistributionAmount also passes the matching override; a push
         // without one charges the row's own balance, so any lump-sum/advance intent left by an earlier
