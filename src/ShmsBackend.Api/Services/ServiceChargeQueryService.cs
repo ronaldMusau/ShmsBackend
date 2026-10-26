@@ -81,6 +81,71 @@ public class ServiceChargeQueryService
         return query;
     }
 
+    /// <summary>
+    /// Rent-side ledger: one entry per M-Pesa push that actually collected a charge (a successful checkout
+    /// attempt on its triggering Payment row) — NOT one per row. A multi-month advance payment funds several
+    /// rows but carries a single charge, and a row paid over several pushes carries one per push. Older rows
+    /// that pre-date checkout-attempt/application tracking are counted once each.
+    /// </summary>
+    private async Task<List<ServiceChargeEntry>> GetRentEntriesAsync(ServiceChargeFilters f)
+    {
+        var result = new List<ServiceChargeEntry>();
+
+        var charged = await (from a in _context.PaymentCheckoutAttempts
+                             where a.AttemptStatus == "Success"
+                             join p in _context.Payments on a.PaymentId equals p.Id
+                             where p.ServiceChargeAmount > 0
+                                   && (!f.TenantId.HasValue || p.TenantId == f.TenantId.Value)
+                                   && (!f.HouseId.HasValue || p.HouseId == f.HouseId.Value)
+                                   && (!f.FlatId.HasValue || p.FlatId == f.FlatId.Value)
+                             select new { a.CheckoutRequestId, a.ProcessedAt, Payment = p }).ToListAsync();
+
+        var cids = charged.Select(x => x.CheckoutRequestId).Distinct().ToList();
+        var apps = await _context.PaymentApplications
+            .Where(x => x.CheckoutRequestId != null && cids.Contains(x.CheckoutRequestId))
+            .ToListAsync();
+        var appsByCid = apps.GroupBy(x => x.CheckoutRequestId!).ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var x in charged)
+        {
+            var p = x.Payment;
+            appsByCid.TryGetValue(x.CheckoutRequestId, out var list);
+            var funded = list?.Sum(a => a.AmountApplied) ?? 0m;
+            result.Add(new ServiceChargeEntry
+            {
+                Id = Guid.NewGuid(), Source = "Rent", SourceLabel = "Rent payment",
+                TenantId = p.TenantId, HouseId = p.HouseId, FlatId = p.FlatId,
+                Month = p.Month, Year = p.Year,
+                Reference = new DateTime(p.Year, Math.Clamp(p.Month, 1, 12), 1).ToString("MMM yyyy"),
+                BaseAmount = funded > 0 ? funded : p.RentAmount,
+                ServiceChargeAmount = p.ServiceChargeAmount ?? 0m,
+                MpesaReceiptNumber = list?.FirstOrDefault()?.MpesaReceiptNumber ?? p.MpesaReceiptNumber,
+                PaidAt = x.ProcessedAt ?? p.PaidAt, CreatedAt = p.CreatedAt
+            });
+        }
+
+        var legacy = await _context.Payments
+            .Where(p => p.ServiceChargeAmount > 0 && p.MpesaReceiptNumber != null
+                        && !_context.PaymentCheckoutAttempts.Any(a => a.PaymentId == p.Id && a.AttemptStatus == "Success")
+                        && !_context.PaymentApplications.Any(a => a.PaymentId == p.Id && a.CheckoutRequestId != null)
+                        && (!f.TenantId.HasValue || p.TenantId == f.TenantId.Value)
+                        && (!f.HouseId.HasValue || p.HouseId == f.HouseId.Value)
+                        && (!f.FlatId.HasValue || p.FlatId == f.FlatId.Value))
+            .ToListAsync();
+        foreach (var p in legacy)
+            result.Add(new ServiceChargeEntry
+            {
+                Id = p.Id, Source = "Rent", SourceLabel = "Rent payment",
+                TenantId = p.TenantId, HouseId = p.HouseId, FlatId = p.FlatId,
+                Month = p.Month, Year = p.Year,
+                Reference = new DateTime(p.Year, Math.Clamp(p.Month, 1, 12), 1).ToString("MMM yyyy"),
+                BaseAmount = p.RentAmount, ServiceChargeAmount = p.ServiceChargeAmount ?? 0m,
+                MpesaReceiptNumber = p.MpesaReceiptNumber, PaidAt = p.PaidAt, CreatedAt = p.CreatedAt
+            });
+
+        return result;
+    }
+
     public static bool IsValidSource(string? source) =>
         string.IsNullOrWhiteSpace(source) || source is "Rent" or "Complaint" or "Vacate";
 
@@ -94,19 +159,7 @@ public class ServiceChargeQueryService
         var entries = new List<ServiceChargeEntry>();
 
         if (src == null || src == "Rent")
-        {
-            var rent = await BuildFilteredQuery(f).ToListAsync();
-            entries.AddRange(rent.Select(p => new ServiceChargeEntry
-            {
-                Id = p.Id, Source = "Rent", SourceLabel = "Rent payment",
-                TenantId = p.TenantId, HouseId = p.HouseId, FlatId = p.FlatId,
-                HouseNumber = p.House?.HouseNumber, FlatName = p.House?.Flat?.FlatName,
-                Month = p.Month, Year = p.Year,
-                Reference = new DateTime(p.Year, Math.Clamp(p.Month, 1, 12), 1).ToString("MMM yyyy"),
-                BaseAmount = p.RentAmount, ServiceChargeAmount = p.ServiceChargeAmount ?? 0m,
-                MpesaReceiptNumber = p.MpesaReceiptNumber, PaidAt = p.PaidAt, CreatedAt = p.CreatedAt
-            }));
-        }
+            entries.AddRange(await GetRentEntriesAsync(f));
 
         if (src == null || src == "Complaint")
         {

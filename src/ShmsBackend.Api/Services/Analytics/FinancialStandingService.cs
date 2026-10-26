@@ -83,10 +83,12 @@ public class FinancialStandingService
             totalFee += row.RentCollected * (pct / 100m);
         }
 
-        // Complaint charges + vacate settlements also carry the platform service charge (management-only figure).
+        // Management-only figure: the service charge actually collected per M-Pesa push, across rent payments,
+        // complaint charges and vacate settlements (the per-row proration above double-counts multi-month advances).
         if (includeManagementOnlyFigures && filters.LandlordId == null)
         {
-            foreach (var src in new[] { "Complaint", "Vacate" })
+            totalServiceCharge = 0m;
+            foreach (var src in new[] { "Rent", "Complaint", "Vacate" })
             {
                 var extra = await _serviceChargeQueryService.GetEntriesAsync(new ShmsBackend.Api.Services.ServiceChargeFilters
                 {

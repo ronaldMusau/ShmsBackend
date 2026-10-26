@@ -55,22 +55,8 @@ public class ServiceChargeAnalyticsService
         {
             if (!Wants(filters, key)) { items.Add(new AnalyticsCategoryItem { Label = label, Count = 0, Amount = 0m }); continue; }
 
-            if (key == "Rent")
-            {
-                var rent = BaseQuery(filters);
-                // Prorated by what was actually paid (same basis as Financial Standing).
-                items.Add(new AnalyticsCategoryItem
-                {
-                    Label = label,
-                    Count = await rent.CountAsync(),
-                    Amount = await rent.SumAsync(p => p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m)
-                });
-            }
-            else
-            {
-                var rows = await _serviceChargeQueryService.GetEntriesAsync(ToLedgerFilters(filters, key));
-                items.Add(new AnalyticsCategoryItem { Label = label, Count = rows.Count, Amount = rows.Sum(r => r.ServiceChargeAmount) });
-            }
+            var ledger = await _serviceChargeQueryService.GetEntriesAsync(ToLedgerFilters(filters, key));
+            items.Add(new AnalyticsCategoryItem { Label = label, Count = ledger.Count, Amount = ledger.Sum(r => r.ServiceChargeAmount) });
         }
 
         return new AnalyticsBreakdownResult
@@ -93,15 +79,6 @@ public class ServiceChargeAnalyticsService
         {
             if (!Wants(filters, key)) { perSource[key] = new(); continue; }
 
-            if (key == "Rent")
-            {
-                var rows = await BaseQuery(filters)
-                    .Where(p => p.PaidAt != null && p.PaidAt >= fromDate && p.PaidAt <= toDate.AddDays(1))
-                    .Select(p => new { PaidAt = p.PaidAt!.Value, ServiceChargeAmount = p.Amount > 0 ? (p.ServiceChargeAmount ?? 0m) / p.Amount * p.AmountPaid : 0m })
-                    .ToListAsync();
-                perSource[key] = rows.Select(r => (r.PaidAt, r.ServiceChargeAmount)).ToList();
-            }
-            else
             {
                 var rows = await _serviceChargeQueryService.GetEntriesAsync(ToLedgerFilters(filters, key));
                 perSource[key] = rows.Where(r => r.PaidAt != null && r.PaidAt >= fromDate && r.PaidAt <= toDate.AddDays(1))
