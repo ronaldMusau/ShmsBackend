@@ -166,7 +166,7 @@ builder.Services.AddScoped<IAgreementService, AgreementService>();
 
 // M-Pesa
 builder.Services.Configure<MpesaConfig>(builder.Configuration.GetSection("Mpesa"));
-builder.Services.AddHttpClient("Mpesa");
+builder.Services.AddHttpClient("Mpesa", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<IMpesaService, MpesaService>();
 builder.Services.AddScoped<IPaymentDistributionService, PaymentDistributionService>();
 builder.Services.AddScoped<VacateOwedCalculator>();

@@ -311,15 +311,38 @@ public class PaymentController : ControllerBase
         }
     }
 
-    // POST /api/payments/mpesa/callback — M-Pesa callback (no auth)
-    [HttpPost("mpesa/callback")]
+    // POST /api/payments/mpesa/callback/{secret} — M-Pesa callback. Safaricom doesn't sign callbacks, so the URL itself
+    // carries a secret (Mpesa:CallbackSecret) and a "success" is double-checked with M-Pesa before any money is applied.
+    [HttpPost("mpesa/callback/{secret}")]
     [AllowAnonymous]
-    public async Task<IActionResult> MpesaCallback([FromBody] MpesaCallback callback)
+    public async Task<IActionResult> MpesaCallback(string secret, [FromBody] MpesaCallback callback)
     {
+        if (!_mpesaService.IsValidCallbackSecret(secret))
+        {
+            _logger.LogWarning("Rejected an M-Pesa callback with a missing or wrong secret");
+            return NotFound();
+        }
+
         try
         {
             _logger.LogInformation("M-Pesa callback received: {ResultCode}",
                 callback.Body.stkCallback.ResultCode);
+
+            if (callback.Body.stkCallback.ResultCode == 0)
+            {
+                var confirmed = await _mpesaService.ConfirmSuccessAsync(callback.Body.stkCallback.CheckoutRequestID);
+                if (confirmed == false)
+                {
+                    _logger.LogWarning(
+                        "M-Pesa callback claimed success for {CheckoutRequestId} but M-Pesa's own status says it did not succeed — ignored",
+                        callback.Body.stkCallback.CheckoutRequestID);
+                    return Ok(new { ResultCode = 0, ResultDesc = "Accepted" });
+                }
+                if (confirmed == null)
+                    _logger.LogWarning(
+                        "Could not confirm {CheckoutRequestId} with M-Pesa's status query; accepting the secret-authenticated callback",
+                        callback.Body.stkCallback.CheckoutRequestID);
+            }
 
             await _paymentService.ProcessCallbackAsync(callback);
 
