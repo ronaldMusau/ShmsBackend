@@ -1066,6 +1066,7 @@ public class SessionController : ControllerBase
 
         var loadDict = dayLoadCounts.ToDictionary(x => x.AgentId, x => x.Count);
 
+        var maxPerDayCand = await GetMaxSessionsPerDayAsync();
         var data = candidates.Select(a =>
         {
             var dayLoad = loadDict.TryGetValue(a.Id, out var cnt) ? cnt : 0;
@@ -1073,7 +1074,8 @@ public class SessionController : ControllerBase
             {
                 agentId = a.Id,
                 agentName = $"{a.FirstName} {a.LastName}".Trim(),
-                currentDayLoad = dayLoad
+                currentDayLoad = dayLoad,
+                loadLevel = LoadLevelFor(dayLoad, maxPerDayCand)
             };
         }).ToList();
 
