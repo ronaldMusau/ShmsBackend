@@ -364,19 +364,20 @@ public class MpesaService : IMpesaService
 
     public async Task<bool?> ConfirmSuccessAsync(string checkoutRequestId)
     {
-        for (var attempt = 1; attempt <= 3; attempt++)
+        // Safaricom closes the callback connection after a few seconds, so this is a single, time-boxed check:
+        // right after a callback M-Pesa's query often answers 500 ("not final yet"), which just means "unconfirmed".
+        try
         {
-            try
-            {
-                var r = await QuerySTKStatusAsync(checkoutRequestId);
-                if (r.ResultCode == "0") return true;
-                if (!string.IsNullOrEmpty(r.ResultCode)) return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "STK confirm attempt {Attempt} failed for {CheckoutRequestId}", attempt, checkoutRequestId);
-            }
-            if (attempt < 3) await Task.Delay(1500);
+            var query = QuerySTKStatusAsync(checkoutRequestId);
+            var finished = await Task.WhenAny(query, Task.Delay(TimeSpan.FromSeconds(2.5)));
+            if (finished != query) return null;
+            var r = await query;
+            if (r.ResultCode == "0") return true;
+            if (!string.IsNullOrEmpty(r.ResultCode)) return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "STK confirm failed for {CheckoutRequestId}", checkoutRequestId);
         }
         return null;
     }
