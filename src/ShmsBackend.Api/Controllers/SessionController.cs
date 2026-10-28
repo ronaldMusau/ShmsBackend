@@ -950,7 +950,7 @@ public class SessionController : ControllerBase
             totalPending = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Pending"),
             totalAccepted = await _context.ListingViewingSessions.CountAsync(s => s.Status == "Accepted"),
             totalAwaitingFeedback = await _context.ListingViewingSessions.CountAsync(s => s.Status == "AwaitingFeedback"),
-            totalDeclinedNeedsReassignment = await _context.ListingViewingSessions.CountAsync(NeedsReassignmentPredicate(await GetMaxSessionsPerDayAsync()))
+            totalNeedsReassignment = await _context.ListingViewingSessions.CountAsync(NeedsReassignmentPredicate(await GetMaxSessionsPerDayAsync()))
         };
 
         return Ok(new
