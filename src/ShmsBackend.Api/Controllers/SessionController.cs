@@ -106,6 +106,49 @@ public class SessionController : ControllerBase
         }
     }
 
+    // Fires the forced management alert (+ email) exactly when an agent's live sessions for a day
+    // reach limit+1 — used by both booking and rescheduling so moving onto a full day is caught too.
+    private async Task CheckCapacityCrossingAsync(Guid agentId, DateTime when, Guid sessionId)
+    {
+        var maxPerDay = await GetMaxSessionsPerDayAsync();
+        var targetDate = when.Date;
+        var nextDate = targetDate.AddDays(1);
+        var liveCount = await _context.ListingViewingSessions.CountAsync(s =>
+            s.AgentId == agentId &&
+            s.ScheduledAt >= targetDate &&
+            s.ScheduledAt < nextDate &&
+            (s.Status == "Pending" || s.Status == "Accepted" || s.Status == "AwaitingFeedback"));
+
+        if (liveCount != maxPerDay + 1) return;
+
+        var agentRow = await _context.Agents.FindAsync(agentId);
+        var agentName = agentRow != null ? $"{agentRow.FirstName} {agentRow.LastName}".Trim() : "An agent";
+        var scheduledDate = targetDate.ToString("yyyy-MM-dd");
+
+        try
+        {
+            await NotifyManagementForcedAsync(
+                $"Agent {agentName} is over the daily limit of {maxPerDay} sessions on {scheduledDate} ({liveCount} booked) — this agent needs reassigning.",
+                sessionId);
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of agent capacity crossing"); }
+
+        try
+        {
+            var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
+            var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
+            foreach (var mgr in managementUsers)
+            {
+                try { await _emailService.SendSessionCapacityAlertEmailAsync(mgr.Email, mgr.FirstName, agentName, scheduledDate, mgr.Id.ToString(), false, maxPerDay); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send capacity alert email to {Email}", mgr.Email); }
+            }
+        }
+        catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for capacity alert email"); }
+    }
+
     // POST /api/sessions
     [HttpPost]
     [Authorize(Roles = "Explorer")]
@@ -148,44 +191,7 @@ public class SessionController : ControllerBase
         _context.ListingViewingSessions.Add(session);
         await _context.SaveChangesAsync();
 
-        // Capacity-crossing check — fire exactly when the agent reaches the configured daily cap
-        var maxPerDay = await GetMaxSessionsPerDayAsync();
-        var targetDate = dto.ScheduledAt.Date;
-        var nextDate = targetDate.AddDays(1);
-        var liveCount = await _context.ListingViewingSessions.CountAsync(s =>
-            s.AgentId == agentFlat.AgentId &&
-            s.ScheduledAt >= targetDate &&
-            s.ScheduledAt < nextDate &&
-            (s.Status == "Pending" || s.Status == "Accepted" || s.Status == "AwaitingFeedback"));
-
-        if (liveCount == maxPerDay + 1)
-        {
-            var agentName = $"{agentFlat.Agent.FirstName} {agentFlat.Agent.LastName}".Trim();
-            var scheduledDate = targetDate.ToString("yyyy-MM-dd");
-
-            try
-            {
-                await NotifyManagementForcedAsync(
-                    $"Agent {agentName} is over the daily limit of {maxPerDay} sessions on {scheduledDate} ({liveCount} booked) — this agent needs reassigning.",
-                    session.Id);
-            }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to notify management of agent capacity crossing"); }
-
-            try
-            {
-                var superAdmins = await _context.SuperAdmins.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
-                var adminUsers = await _context.AdminUsers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
-                var managers = await _context.Managers.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
-                var secretaries = await _context.Secretaries.Select(u => new { u.Id, u.Email, u.FirstName }).ToListAsync();
-                var managementUsers = superAdmins.Concat(adminUsers).Concat(managers).Concat(secretaries).ToList();
-                foreach (var mgr in managementUsers)
-                {
-                    try { await _emailService.SendSessionCapacityAlertEmailAsync(mgr.Email, mgr.FirstName, agentName, scheduledDate, mgr.Id.ToString(), false, maxPerDay); }
-                    catch (Exception ex) { _logger.LogError(ex, "Failed to send capacity alert email to {Email}", mgr.Email); }
-                }
-            }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for capacity alert email"); }
-        }
+        await CheckCapacityCrossingAsync(agentFlat.AgentId, dto.ScheduledAt, session.Id);
 
         var agent = agentFlat.Agent;
         var houseNumber = house.HouseNumber;
@@ -401,6 +407,8 @@ public class SessionController : ControllerBase
         session.FeedbackPromptSentAt = null;
         session.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
+
+        await CheckCapacityCrossingAsync(session.AgentId, dto.NewScheduledAt, session.Id);
 
         var agent = await _context.Agents.FindAsync(session.AgentId);
         var house = await _context.Houses.FindAsync(session.HouseId);
