@@ -263,13 +263,7 @@ public class PublicListingController : ControllerBase
                     images,
                     avgRating,
                     likeCount,
-                    dislikeCount,
-                    agent = agent == null ? null : new
-                    {
-                        name = $"{agent.FirstName} {agent.LastName}".Trim(),
-                        phone = agent.PhoneNumber,
-                        agencyName = agent.AgencyName
-                    }
+                    dislikeCount
                 };
             }).ToList();
 
@@ -390,13 +384,7 @@ public class PublicListingController : ControllerBase
                 images = c.Images,
                 avgRating,
                 likeCount,
-                dislikeCount,
-                agent = c.Agent == null ? null : new
-                {
-                    name = c.Agent.Name,
-                    phone = c.Agent.Phone,
-                    agencyName = c.Agent.AgencyName
-                }
+                dislikeCount
             };
         }).ToList();
 
@@ -501,13 +489,7 @@ public class PublicListingController : ControllerBase
                 ward = h.Flat?.Ward,
                 images,
                 availableFromMonth = vacate?.VacateMonth,
-                availableFromYear = vacate?.VacateYear,
-                agent = agent == null ? null : new
-                {
-                    name = $"{agent.FirstName} {agent.LastName}".Trim(),
-                    phone = agent.PhoneNumber,
-                    agencyName = agent.AgencyName
-                }
+                availableFromYear = vacate?.VacateYear
             };
         }).ToList();
 
@@ -955,12 +937,6 @@ public class PublicListingController : ControllerBase
                 likeCount,
                 dislikeCount,
                 comments,
-                agent = heavy.Agent == null ? null : new
-                {
-                    name = heavy.Agent.Name,
-                    phone = heavy.Agent.Phone,
-                    agencyName = heavy.Agent.AgencyName
-                },
                 myLike,
                 myRating,
                 myBookmark
