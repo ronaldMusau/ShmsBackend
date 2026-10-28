@@ -257,8 +257,11 @@ public class SessionController : ControllerBase
         if (session.Status != "Pending")
             return BadRequest(new { success = false, message = "Only pending sessions can be declined." });
 
+        if (string.IsNullOrWhiteSpace(dto?.Reason))
+            return BadRequest(new { success = false, message = "A reason is required to decline a session." });
+
         session.Status = "Declined";
-        session.DeclineReason = dto.Reason;
+        session.DeclineReason = dto.Reason.Trim();
         session.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
@@ -315,7 +318,7 @@ public class SessionController : ControllerBase
 
         var eligibleAgentIds = await GetWardAgentIdsAsync(house.Flat.Ward, session.AgentId);
         if (eligibleAgentIds.Count == 0)
-            return BadRequest(new { success = false, message = "No other agents cover this ward." });
+            return BadRequest(new { success = false, message = string.IsNullOrWhiteSpace(house.Flat.Ward) ? "This flat has no ward set, so no agent can be matched by ward. Set the flat's ward first." : "No other agents cover this ward." });
 
         if (dto.NewAgentId == session.AgentId)
             return BadRequest(new { success = false, message = "This session is already assigned to that agent." });
@@ -1046,7 +1049,7 @@ public class SessionController : ControllerBase
         const string matchedTier = "ward";
 
         if (candidateAgentIds.Count == 0)
-            return BadRequest(new { success = false, message = "No other agents cover this ward." });
+            return BadRequest(new { success = false, message = string.IsNullOrWhiteSpace(house.Flat.Ward) ? "This flat has no ward set, so no agent can be matched by ward. Set the flat's ward first." : "No other agents cover this ward." });
 
         var candidates = await _context.Agents
             .Where(a => candidateAgentIds.Contains(a.Id))
