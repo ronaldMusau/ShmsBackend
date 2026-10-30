@@ -269,8 +269,12 @@ builder.Services.AddRateLimiter(options =>
 
     options.OnRejected = async (context, cancellationToken) =>
     {
-        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
-            context.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+        // Sliding-window leases don't always carry a retry hint; fall back to a safe 30 s so clients
+        // always get a Retry-After value.
+        var retrySeconds = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter)
+            ? (int)Math.Ceiling(retryAfter.TotalSeconds)
+            : 30;
+        context.HttpContext.Response.Headers.RetryAfter = Math.Max(1, retrySeconds).ToString();
         context.HttpContext.Response.ContentType = "application/json";
         await context.HttpContext.Response.WriteAsJsonAsync(new
         {

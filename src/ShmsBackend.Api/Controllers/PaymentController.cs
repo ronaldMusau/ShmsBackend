@@ -693,7 +693,10 @@ public class PaymentController : ControllerBase
         var totalCollected = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid).SumAsync(p => p.AmountPaid);
         var totalPending = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Pending || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid).SumAsync(p => p.Balance);
         var totalOverdue = await query.Where(p => p.PaymentStatus == PaymentTransactionStatus.Overdue).SumAsync(p => p.Balance);
-        var totalServiceCharge = await query.SumAsync(p => p.ServiceChargeAmount ?? 0);
+        // Only service charge actually collected: pending/overdue rows carry a charge that has not been paid.
+        var totalServiceCharge = await query
+            .Where(p => p.PaymentStatus == PaymentTransactionStatus.Paid || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid)
+            .SumAsync(p => p.ServiceChargeAmount ?? 0);
 
         var pagedPayments = await query
             .OrderByDescending(p => p.CreatedAt)
