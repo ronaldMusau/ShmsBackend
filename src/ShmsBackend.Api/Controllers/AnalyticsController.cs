@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -10,6 +11,7 @@ namespace ShmsBackend.Api.Controllers;
 
 [ApiController]
 [Route("api/analytics")]
+[EnableRateLimiting("heavy")]
 public class AnalyticsController : ControllerBase
 {
     private readonly ComplaintAnalyticsService _complaintAnalyticsService;

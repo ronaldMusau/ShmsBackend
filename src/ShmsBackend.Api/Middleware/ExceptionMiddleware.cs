@@ -39,7 +39,8 @@ public class ExceptionMiddleware
         {
             StatusCode = context.Response.StatusCode,
             Message = "An internal server error occurred.",
-            Errors = new List<string> { exception.Message }
+            // The raw exception text (SQL errors, file paths, type names) is for developers only.
+            Errors = _env.IsDevelopment() ? new List<string> { exception.Message } : null
         };
 
         // Only include stack trace in development

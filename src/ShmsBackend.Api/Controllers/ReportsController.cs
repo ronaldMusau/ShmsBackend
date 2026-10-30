@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using System;
 using System.Linq;
 using System.Security.Claims;
@@ -37,6 +38,7 @@ namespace ShmsBackend.Api.Controllers;
 // out of their own endpoints entirely.
 [ApiController]
 [Route("api/reports")]
+[EnableRateLimiting("heavy")]
 public class ReportsController : ControllerBase
 {
     private readonly TenantReportBuilder _tenantReportBuilder;

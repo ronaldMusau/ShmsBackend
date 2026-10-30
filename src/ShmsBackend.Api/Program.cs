@@ -258,12 +258,19 @@ builder.Services.AddAuthorization(options =>
 });
 
 // Add Rate Limiting
+// Limits are configurable under "RateLimiting" in appsettings (PermitLimit + WindowSeconds per policy);
+// the defaults below apply when a key is absent. Limits are per process (in-memory): with several API
+// instances behind a load balancer each instance keeps its own counters.
+int RlInt(string key, int fallback) => int.TryParse(builder.Configuration[$"RateLimiting:{key}"], out var v) && v > 0 ? v : fallback;
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
     options.OnRejected = async (context, cancellationToken) =>
     {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            context.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
         context.HttpContext.Response.ContentType = "application/json";
         await context.HttpContext.Response.WriteAsJsonAsync(new
         {
@@ -272,50 +279,107 @@ builder.Services.AddRateLimiter(options =>
         }, cancellationToken);
     };
 
-    // Applied via [EnableRateLimiting("strict")] on specific high-abuse-risk actions (anonymous
-    // public-listing interactions, session booking) — 10/min per IP, regardless of auth state.
+    // Per-IP sliding window (no boundary burst): used for anonymous, abuse-prone endpoints.
+    void IpPolicy(string name, string key, int permit, int windowSeconds) =>
+        options.AddPolicy(name, httpContext =>
+            RateLimitPartition.GetSlidingWindowLimiter(
+                partitionKey: $"{name}:ip:{GetClientIp(httpContext)}",
+                factory: _ => new SlidingWindowRateLimiterOptions
+                {
+                    PermitLimit = RlInt($"{key}:PermitLimit", permit),
+                    Window = TimeSpan.FromSeconds(RlInt($"{key}:WindowSeconds", windowSeconds)),
+                    SegmentsPerWindow = 6,
+                    QueueLimit = 0
+                }));
+
+    // Per-user (falls back to IP when anonymous) sliding window.
+    void UserPolicy(string name, string key, int permit, int windowSeconds) =>
+        options.AddPolicy(name, httpContext =>
+            RateLimitPartition.GetSlidingWindowLimiter(
+                partitionKey: $"{name}:{GetDefaultPartitionKey(httpContext)}",
+                factory: _ => new SlidingWindowRateLimiterOptions
+                {
+                    PermitLimit = RlInt($"{key}:PermitLimit", permit),
+                    Window = TimeSpan.FromSeconds(RlInt($"{key}:WindowSeconds", windowSeconds)),
+                    SegmentsPerWindow = 6,
+                    QueueLimit = 0
+                }));
+
+    // Applied via [EnableRateLimiting("strict")] on anonymous public-listing interactions and session
+    // booking — 10/min per IP, regardless of auth state.
     options.AddPolicy("strict", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: $"ip:{GetClientIp(httpContext)}",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = RlInt("Strict:PermitLimit", 10),
+                Window = TimeSpan.FromSeconds(RlInt("Strict:WindowSeconds", 60)),
                 QueueLimit = 0
             }));
 
-    // Named policy kept available for explicit reference; the same logic is also wired as the
-    // GlobalLimiter below so it applies to every endpoint by default without attribute-decorating
-    // every controller in the app.
-    options.AddPolicy("default", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: GetDefaultPartitionKey(httpContext),
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 1000,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0
-            }));
+    // Credential endpoints (login, pre-login, OTP verify, token refresh). Account lockout after
+    // repeated failures already exists; this stops one IP from spraying many accounts.
+    IpPolicy("auth", "Auth", 10, 60);
+    // Email/OTP-sending and account-creation endpoints (reset requests, register, verify, set password):
+    // stops email bombing and mass sign-ups.
+    IpPolicy("auth-sensitive", "AuthSensitive", 10, 600);
+    // M-Pesa STK push initiate/retry: one user cannot flood the customer's phone.
+    UserPolicy("payment", "Payment", 6, 60);
+    // Reports and analytics run heavy aggregate queries.
+    UserPolicy("heavy", "Heavy", 60, 60);
+    // M-Pesa callback: Safaricom posts from a few IPs, so the ceiling is generous.
+    IpPolicy("callback", "Callback", 600, 60);
 
+    // Default for everything else: signed-in users share one budget across devices; anonymous
+    // traffic is limited per IP, lower than signed-in.
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
+    {
+        var signedIn = httpContext.User?.Identity?.IsAuthenticated == true;
+        return RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: GetDefaultPartitionKey(httpContext),
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 1000,
+                PermitLimit = signedIn ? RlInt("Global:SignedInPerMinute", 1000) : RlInt("Global:AnonymousPerMinute", 300),
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
-            }));
+            });
+    });
 });
 
+// Behind a reverse proxy / load balancer the socket address is the proxy's, so every visitor would share
+// one rate-limit bucket. List the proxy under ForwardedHeaders:KnownProxies (array of IPs) to trust its
+// X-Forwarded-For; when empty nothing is trusted and the socket address is used.
+var knownProxies = builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? Array.Empty<string>();
+if (knownProxies.Length > 0)
+{
+    builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+    {
+        o.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+        o.KnownNetworks.Clear();
+        o.KnownProxies.Clear();
+        foreach (var ip in knownProxies) o.KnownProxies.Add(System.Net.IPAddress.Parse(ip));
+    });
+}
+
 // Add CORS
+// Origins come from Cors:AllowedOrigins (appsettings / environment variables). In Development the
+// localhost and dev-tunnel origins are always added so the portals keep working through the tunnel.
+var devOrigins = new[]
+{
+    "http://localhost:4200", "http://localhost:4201",
+    "https://n6lscp1j-4200.eun1.devtunnels.ms", "https://n6lscp1j-4201.eun1.devtunnels.ms"
+};
+var corsOrigins = (builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>())
+    .Where(o => !string.IsNullOrWhiteSpace(o) && !o.Contains("your-production-frontend"))
+    .Concat(builder.Environment.IsDevelopment() ? devOrigins : Array.Empty<string>())
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+if (corsOrigins.Length == 0) corsOrigins = devOrigins;
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins(
-                "http://localhost:4200", "http://localhost:4201",
-                "https://n6lscp1j-4200.eun1.devtunnels.ms", "https://n6lscp1j-4201.eun1.devtunnels.ms")
+        policy.WithOrigins(corsOrigins)
             .AllowAnyMethod()
             .AllowAnyHeader()
             .AllowCredentials();
@@ -381,6 +445,8 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+if (knownProxies.Length > 0) app.UseForwardedHeaders();
+
 // Custom Middleware
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<LoggingMiddleware>();
@@ -389,6 +455,12 @@ app.UseMiddleware<LoggingMiddleware>();
 // because port 7001 (HTTPS) breaks TLS/SNI through the tunnel. This redirect was sending
 // tunnel traffic back to the broken HTTPS port, causing CORS preflights to fail silently.
 // RESTORE THIS before production: app.UseHttpsRedirection();
+// Turn on with Security:UseHttpsRedirection=true (and keep it off for the dev tunnel).
+if (builder.Configuration.GetValue<bool>("Security:UseHttpsRedirection"))
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
 app.UseStaticFiles();
 app.UseRouting();
 app.UseCors("AllowAll");

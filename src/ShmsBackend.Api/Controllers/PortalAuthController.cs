@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -41,6 +42,7 @@ public class PortalAuthController : ControllerBase
     /// Authenticates a portal user (Landlord, Agent, Tenant, or Explorer).
     /// </summary>
     [HttpPost("login")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login([FromBody] PortalLoginDto dto)
     {
         if (!ModelState.IsValid)
@@ -58,6 +60,7 @@ public class PortalAuthController : ControllerBase
     /// Sends a verification email — account is not active until email is confirmed.
     /// </summary>
     [HttpPost("register")]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> Register([FromBody] RegisterExplorerDto dto)
     {
         if (!ModelState.IsValid)
@@ -74,6 +77,7 @@ public class PortalAuthController : ControllerBase
     /// Issues a new access token using a valid refresh token.
     /// </summary>
     [HttpPost("refresh-token")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> RefreshToken([FromBody] PortalRefreshTokenDto dto)
     {
         if (!ModelState.IsValid)
@@ -108,6 +112,7 @@ public class PortalAuthController : ControllerBase
     /// Sends a 6-digit OTP to the registered email for password reset.
     /// </summary>
     [HttpPost("request-password-reset")]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> RequestPasswordReset([FromBody] PortalRequestPasswordResetDto dto)
     {
         if (!ModelState.IsValid)
@@ -122,6 +127,7 @@ public class PortalAuthController : ControllerBase
     /// OTP is single-use and expires in 15 minutes.
     /// </summary>
     [HttpPost("reset-password")]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> ResetPassword([FromBody] PortalResetPasswordDto dto)
     {
         if (!ModelState.IsValid)
@@ -138,6 +144,7 @@ public class PortalAuthController : ControllerBase
     /// Verifies the email address of a Landlord, Agent, or Tenant using the token sent by email.
     /// </summary>
     [HttpPost("verify-email")]
+    [EnableRateLimiting("auth-sensitive")]
     [AllowAnonymous]
     public async Task<IActionResult> VerifyEmail([FromBody] PortalVerifyEmailDto dto)
     {
@@ -151,6 +158,7 @@ public class PortalAuthController : ControllerBase
     /// Allows a Landlord, Agent, or Tenant to set a new password using their temporary password.
     /// </summary>
     [HttpPost("set-password")]
+    [EnableRateLimiting("auth-sensitive")]
     [AllowAnonymous]
     public async Task<IActionResult> SetPassword([FromBody] PortalSetPasswordDto dto)
     {
@@ -270,6 +278,7 @@ public class PortalAuthController : ControllerBase
     /// AllowAnonymous because the link is clicked from an email, not an authenticated session.
     /// </summary>
     [HttpPost("confirm-email-change")]
+    [EnableRateLimiting("auth-sensitive")]
     [AllowAnonymous]
     public async Task<IActionResult> ConfirmEmailChange([FromBody] ConfirmEmailChangeDto dto)
     {

@@ -2,7 +2,7 @@
 -- Smart Housing Management System - Super Admin Seed
 -- =====================================================
 -- Email: musauronald02@gmail.com
--- Password: Ronald123!
+-- Password: (development password; change it right after first login, and never reuse it in production)
 -- UserType: 0 (SuperAdmin)
 -- =====================================================
 
@@ -57,7 +57,7 @@ BEGIN
     VALUES (
         @UserId, 
         @Email, 
-        '$2a$12$5RpupNNi8HEl32gHUq/iRuWdWxcq9.DS8GsIZP8S9FbR.SO3YOrgC', -- Password: Ronald123!
+        '$2a$12$5RpupNNi8HEl32gHUq/iRuWdWxcq9.DS8GsIZP8S9FbR.SO3YOrgC', -- Development password hash; rotate after first login
         'Ronald', 
         'Musau', 
         '+254700000000', 

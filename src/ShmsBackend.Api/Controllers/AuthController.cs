@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 ﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -42,6 +43,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
     {
         if (!ModelState.IsValid)
@@ -59,6 +61,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("pre-login")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> PreLogin([FromBody] LoginDto loginDto)
     {
         if (!ModelState.IsValid)
@@ -76,6 +79,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("verify-otp")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyLoginDto verifyLoginDto)
     {
         if (!ModelState.IsValid)
@@ -93,6 +97,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("refresh-token")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenDto refreshTokenDto)
     {
         if (!ModelState.IsValid)
@@ -124,6 +129,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("request-password-reset")]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> RequestPasswordReset([FromBody] RequestPasswordResetDto requestPasswordResetDto)
     {
         if (!ModelState.IsValid)
@@ -136,6 +142,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("reset-password")]
+    [EnableRateLimiting("auth-sensitive")]
     [AllowAnonymous]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
     {

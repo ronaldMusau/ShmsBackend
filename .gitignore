@@ -362,3 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 PrivateUploads/
+
+# Real production settings (see appsettings.Production.example.json)
+appsettings.Production.json

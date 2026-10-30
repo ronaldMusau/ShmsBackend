@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -50,6 +51,7 @@ public class PaymentController : ControllerBase
 
     // POST /api/payments/initiate — create payment record and trigger STK push
     [HttpPost("initiate")]
+    [EnableRateLimiting("payment")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Agent")]
     public async Task<IActionResult> InitiatePayment([FromBody] InitiatePaymentDto dto)
     {
@@ -249,6 +251,7 @@ public class PaymentController : ControllerBase
 
     // POST /api/payments/retry/{paymentId} — retry a failed/cancelled payment
     [HttpPost("retry/{paymentId:guid}")]
+    [EnableRateLimiting("payment")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> RetryPayment(Guid paymentId, [FromBody] RetryPaymentDto dto)
     {
@@ -315,6 +318,7 @@ public class PaymentController : ControllerBase
     // POST /api/payments/mpesa/callback/{secret} — M-Pesa callback. Safaricom doesn't sign callbacks, so the URL itself
     // carries a secret (Mpesa:CallbackSecret) and a "success" is double-checked with M-Pesa before any money is applied.
     [HttpPost("mpesa/callback/{secret}")]
+    [EnableRateLimiting("callback")]
     [AllowAnonymous]
     public async Task<IActionResult> MpesaCallback(string secret, [FromBody] MpesaCallback callback)
     {
