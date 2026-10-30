@@ -84,8 +84,9 @@ public class AgentController : ControllerBase
         }
     }
 
+    // Management roles only: portal users (landlord/tenant/agent) must not read other agents' profiles.
     [HttpGet("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetById(Guid id)
     {
         try
