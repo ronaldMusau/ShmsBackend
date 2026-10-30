@@ -144,6 +144,9 @@ public class PublicListingController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
         var baseQuery = _context.Houses
             .Include(h => h.Flat)
             .Include(h => h.HouseTypeRef)
@@ -171,41 +174,25 @@ public class PublicListingController : ControllerBase
         {
             var total = await baseQuery.CountAsync();
 
-            // Load all filtered IDs + CreatedAt (for stable secondary sort)
-            var allLight = await baseQuery
-                .Select(h => new { h.Id, h.CreatedAt })
-                .ToListAsync();
-
-            var allIds = allLight.Select(h => h.Id).ToList();
-
-            var allLikeCounts = await _context.HouseListingLikes
-                .Where(l => allIds.Contains(l.HouseId))
-                .GroupBy(l => new { l.HouseId, l.IsLike })
-                .Select(g => new { g.Key.HouseId, g.Key.IsLike, Count = g.Count() })
-                .ToListAsync();
-
-            var allRatings = await _context.HouseListingRatings
-                .Where(r => allIds.Contains(r.HouseId))
-                .GroupBy(r => r.HouseId)
-                .Select(g => new { HouseId = g.Key, Avg = g.Average(r => (double)r.Stars) })
-                .ToListAsync();
-
-            var sortLikeDict = allLikeCounts.Where(l => l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
-            var sortDislikeDict = allLikeCounts.Where(l => !l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
-            var sortRatingDict = allRatings.ToDictionary(r => r.HouseId, r => r.Avg);
-
-            var pageIds = (sort == "popular"
-                ? allLight
-                    .OrderByDescending(h => sortRatingDict.GetValueOrDefault(h.Id))
+            // Rank and page in SQL (correlated aggregates) so only one page of ids ever leaves the
+            // database — loading every matching id and passing it back as an IN (...) list breaks
+            // down as soon as the catalogue is large (SQL Server caps parameters at ~2100).
+            var rankedQuery = sort == "popular"
+                ? baseQuery
+                    .OrderByDescending(h => _context.HouseListingRatings
+                        .Where(r => r.HouseId == h.Id).Average(r => (double?)r.Stars) ?? 0)
                     .ThenByDescending(h => h.CreatedAt)
-                : allLight
+                : baseQuery
                     .OrderByDescending(h =>
-                        sortLikeDict.GetValueOrDefault(h.Id) - sortDislikeDict.GetValueOrDefault(h.Id))
-                    .ThenByDescending(h => h.CreatedAt))
+                        _context.HouseListingLikes.Count(l => l.HouseId == h.Id && l.IsLike) -
+                        _context.HouseListingLikes.Count(l => l.HouseId == h.Id && !l.IsLike))
+                    .ThenByDescending(h => h.CreatedAt);
+
+            var pageIds = await rankedQuery
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .Select(h => h.Id)
-                .ToList();
+                .ToListAsync();
 
             var pageHouseList = await _context.Houses
                 .Include(h => h.Flat)
@@ -216,19 +203,20 @@ public class PublicListingController : ControllerBase
             // Restore explicit sort order
             var pagedHouses = pageIds.Select(id => pageHouseList.First(h => h.Id == id)).ToList();
 
-            var likeDict = sortLikeDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
-            var dislikeDict = sortDislikeDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
-            var ratingDict = sortRatingDict.Where(kv => pageIds.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => (double?)kv.Value);
-
-            var flatIds = pagedHouses.Select(h => h.FlatId).Distinct().ToList();
-            var agentFlats = await _context.AgentFlats
-                .Include(af => af.Agent)
-                .Where(af => flatIds.Contains(af.FlatId))
+            var pageLikeCounts = await _context.HouseListingLikes
+                .Where(l => pageIds.Contains(l.HouseId))
+                .GroupBy(l => new { l.HouseId, l.IsLike })
+                .Select(g => new { g.Key.HouseId, g.Key.IsLike, Count = g.Count() })
+                .ToListAsync();
+            var pageRatings = await _context.HouseListingRatings
+                .Where(r => pageIds.Contains(r.HouseId))
+                .GroupBy(r => r.HouseId)
+                .Select(g => new { HouseId = g.Key, Avg = g.Average(r => (double)r.Stars) })
                 .ToListAsync();
 
-            var agentDict = agentFlats
-                .GroupBy(af => af.FlatId)
-                .ToDictionary(g => g.Key, g => g.OrderByDescending(af => af.AssignedAt).First().Agent);
+            var likeDict = pageLikeCounts.Where(l => l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+            var dislikeDict = pageLikeCounts.Where(l => !l.IsLike).ToDictionary(l => l.HouseId, l => l.Count);
+            var ratingDict = pageRatings.ToDictionary(r => r.HouseId, r => (double?)r.Avg);
 
             var typeImageGroupKeys = pagedHouses.Select(h => new { h.FlatId, h.HouseTypeId }).Distinct().ToList();
             var typeImagesFlat = await _context.HouseTypeImages
@@ -245,7 +233,6 @@ public class PublicListingController : ControllerBase
                 likeDict.TryGetValue(h.Id, out var likeCount);
                 dislikeDict.TryGetValue(h.Id, out var dislikeCount);
                 ratingDict.TryGetValue(h.Id, out var avgRating);
-                agentDict.TryGetValue(h.FlatId, out var agent);
                 var images = typeImagesDict.GetValueOrDefault((h.FlatId, h.HouseTypeId)) ?? new List<string>();
                 return (object)new
                 {

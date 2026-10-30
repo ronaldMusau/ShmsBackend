@@ -98,7 +98,7 @@ public class HouseService
         return (await GetByIdAsync(house.Id))!;
     }
 
-    public async Task<IEnumerable<object>> GetAllAsync(string? search = null, Guid? flatId = null, string? status = null)
+    private IQueryable<ShmsBackend.Data.Models.Entities.Portal.House> BuildFilteredHouses(string? search, Guid? flatId, string? status)
     {
         var query = _context.Houses.AsQueryable();
         if (flatId.HasValue) query = query.Where(h => h.FlatId == flatId.Value);
@@ -117,8 +117,18 @@ public class HouseService
                 _context.TenantHouseHistories.Any(t => t.HouseId == h.Id && t.RemovedAt == null &&
                     EF.Functions.Like(t.TenantFirstName + " " + t.TenantLastName, $"%{term}%")));
         }
-        return await query
-            .OrderBy(h => h.Flat!.FlatName).ThenBy(h => h.HouseNumber)
+        return query;
+    }
+
+    public async Task<IEnumerable<object>> GetAllAsync(string? search = null, Guid? flatId = null, string? status = null)
+    {
+        var query = BuildFilteredHouses(search, flatId, status);
+        return await ProjectHouses(query.OrderBy(h => h.Flat!.FlatName).ThenBy(h => h.HouseNumber));
+    }
+
+    private async Task<IEnumerable<object>> ProjectHouses(IQueryable<ShmsBackend.Data.Models.Entities.Portal.House> ordered)
+    {
+        return await ordered
             .Select(h => new
             {
                 h.Id,
@@ -148,7 +158,19 @@ public class HouseService
                     .Select(hti => hti.ImagePath)
                     .ToList()
             })
-            .ToListAsync<object>();
+                        .ToListAsync<object>();
+    }
+
+    /// <summary>One page of houses, paged in the database: count + Skip/Take run in SQL, and the heavy
+    /// projection (tenant name, images) is only computed for the rows on the page.</summary>
+    public async Task<(IEnumerable<object> Items, int Total)> GetPagedAsync(string? search, Guid? flatId, string? status, int page, int pageSize)
+    {
+        var query = BuildFilteredHouses(search, flatId, status);
+        var total = await query.CountAsync();
+        var items = await ProjectHouses(query
+            .OrderBy(h => h.Flat!.FlatName).ThenBy(h => h.HouseNumber)
+            .Skip((page - 1) * pageSize).Take(pageSize));
+        return (items, total);
     }
 
     public async Task<object?> GetByIdAsync(Guid id)

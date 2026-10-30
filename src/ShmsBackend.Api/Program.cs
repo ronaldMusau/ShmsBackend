@@ -326,7 +326,7 @@ builder.Services.AddRateLimiter(options =>
     // M-Pesa STK push initiate/retry: one user cannot flood the customer's phone.
     UserPolicy("payment", "Payment", 6, 60);
     // Reports and analytics run heavy aggregate queries.
-    UserPolicy("heavy", "Heavy", 60, 60);
+    UserPolicy("heavy", "Heavy", 120, 60);
     // M-Pesa callback: Safaricom posts from a few IPs, so the ceiling is generous.
     IpPolicy("callback", "Callback", 600, 60);
 
@@ -382,9 +382,22 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(corsOrigins)
             .AllowAnyMethod()
             .AllowAnyHeader()
-            .AllowCredentials();
+            .AllowCredentials()
+            .WithExposedHeaders("Server-Timing", "Retry-After");
     });
 });
+
+// Compress JSON responses (Brotli/gzip): large list and chart payloads shrink several-fold, which
+// matters most on slow mobile links and through tunnels/proxies.
+builder.Services.AddResponseCompression(o =>
+{
+    o.EnableForHttps = true;
+    o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+});
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(o => o.Level = System.IO.Compression.CompressionLevel.Fastest);
+builder.Services.AddMemoryCache();
 
 // Add Controllers
 builder.Services.AddControllers()
@@ -446,6 +459,7 @@ if (app.Environment.IsDevelopment())
 }
 
 if (knownProxies.Length > 0) app.UseForwardedHeaders();
+app.UseResponseCompression();
 
 // Custom Middleware
 app.UseMiddleware<ExceptionMiddleware>();

@@ -62,9 +62,9 @@ public class HouseController : ControllerBase
         [FromQuery] Guid? flatId = null,
         [FromQuery] string? status = null)
     {
-        var all = (await _houseService.GetAllAsync(search, flatId, status)).ToList();
-        var total = all.Count;
-        var data = all.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+        var (data, total) = await _houseService.GetPagedAsync(search, flatId, status, page, pageSize);
         return Ok(new
         {
             success = true,

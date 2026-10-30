@@ -21,9 +21,21 @@ public class LoggingMiddleware
             context.Request.Path
         );
 
+        // Server-Timing lets the browser (and any tunnel/proxy in between) see the API's own processing
+        // time, separate from network latency.
+        context.Response.OnStarting(() =>
+        {
+            var ms = (DateTime.UtcNow - startTime).TotalMilliseconds;
+            context.Response.Headers["Server-Timing"] = $"app;dur={ms:0.#}";
+            return Task.CompletedTask;
+        });
+
         await _next(context);
 
         var duration = DateTime.UtcNow - startTime;
+
+        if (duration.TotalMilliseconds > 500)
+            _logger.LogWarning("SLOW {Method} {Path} took {Duration}ms", context.Request.Method, context.Request.Path, (int)duration.TotalMilliseconds);
 
         _logger.LogInformation(
             "Completed {Method} {Path} with status {StatusCode} in {Duration}ms",

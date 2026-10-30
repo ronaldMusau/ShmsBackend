@@ -12,6 +12,7 @@ namespace ShmsBackend.Api.Controllers;
 [ApiController]
 [Route("api/analytics")]
 [EnableRateLimiting("heavy")]
+[ShmsBackend.Api.Filters.ShortCache(30)]
 public class AnalyticsController : ControllerBase
 {
     private readonly ComplaintAnalyticsService _complaintAnalyticsService;
