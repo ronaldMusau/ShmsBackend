@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -158,7 +159,7 @@ public class PortalComplaintController : ControllerBase
     // GET /api/portalcomplaint/my-complaints
     [HttpGet("my-complaints")]
     [Authorize(Roles = "Tenant")]
-    public async Task<IActionResult> GetMyComplaints()
+    public async Task<IActionResult> GetMyComplaints([FromQuery] int limit = 500)
     {
         var tenantId = GetUserId();
         if (tenantId == Guid.Empty)
@@ -178,7 +179,7 @@ public class PortalComplaintController : ControllerBase
             .Include(c => c.Attachments)
             .Where(c => c.TenantId == tenantId && c.TenancyCycle == tenant.TenancyCycle)
             .OrderByDescending(c => c.CreatedAt)
-            .ToListAsync();
+            .Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
 
         var complaintIds = complaints.Select(c => c.Id).ToList();
         var unreadCounts = await _context.ComplaintMessages
@@ -219,7 +220,7 @@ public class PortalComplaintController : ControllerBase
     // GET /api/portalcomplaint/landlord/my-complaints
     [HttpGet("landlord/my-complaints")]
     [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordComplaints()
+    public async Task<IActionResult> GetLandlordComplaints([FromQuery] int limit = 500)
     {
         var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(landlordIdStr, out var landlordId))
@@ -259,7 +260,7 @@ public class PortalComplaintController : ControllerBase
                     .Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt })
                     .ToList()
             }
-        ).ToListAsync();
+        ).Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
 
         return Ok(new { success = true, complaints });
     }
@@ -1087,7 +1088,7 @@ public class PortalComplaintController : ControllerBase
     // GET /api/portalcomplaint/landlord/my-approval-history
     [HttpGet("landlord/my-approval-history")]
     [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordApprovalHistory()
+    public async Task<IActionResult> GetLandlordApprovalHistory([FromQuery] int limit = 500)
     {
         var landlordIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (!Guid.TryParse(landlordIdStr, out var landlordId))
@@ -1096,7 +1097,7 @@ public class PortalComplaintController : ControllerBase
         var decisions = await _context.ComplaintLandlordDecisions
             .Where(d => d.DecidedByLandlordId == landlordId)
             .OrderByDescending(d => d.DecidedAt)
-            .ToListAsync();
+            .Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
 
         var complaintIds = decisions.Select(d => d.ComplaintId).Distinct().ToList();
         var complaints = await _context.Complaints
@@ -1133,7 +1134,7 @@ public class PortalComplaintController : ControllerBase
     // GET /api/portalcomplaint/my-verification-history
     [HttpGet("my-verification-history")]
     [Authorize(Roles = "Tenant")]
-    public async Task<IActionResult> GetMyVerificationHistory()
+    public async Task<IActionResult> GetMyVerificationHistory([FromQuery] int limit = 500)
     {
         var tenantId = GetUserId();
         if (tenantId == Guid.Empty)
@@ -1156,7 +1157,7 @@ public class PortalComplaintController : ControllerBase
                 verdictReason = w.TenantVerdictReason,
                 verdictAt = w.TenantVerdictAt
             }
-        ).ToListAsync();
+        ).Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
 
         return Ok(new { success = true, history = data });
     }

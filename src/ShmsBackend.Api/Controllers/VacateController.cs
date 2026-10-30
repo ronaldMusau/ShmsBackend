@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -964,14 +965,14 @@ public class VacateController : ControllerBase
     // GET /api/vacate/my-approval-history
     [HttpGet("my-approval-history")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
-    public async Task<IActionResult> GetMyVacateApprovalHistory()
+    public async Task<IActionResult> GetMyVacateApprovalHistory([FromQuery] int limit = 500)
     {
         var adminId = GetCallerId();
 
         var actions = await _context.VacateApprovalActions
             .Where(a => a.ApproverId == adminId && (a.Decision == "Approved" || a.Decision == "Rejected"))
             .OrderByDescending(a => a.ActionedAt)
-            .ToListAsync();
+            .Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
 
         var requestIds = actions.Select(a => a.VacateRequestId).Distinct().ToList();
         var requests = await _context.VacateRequests

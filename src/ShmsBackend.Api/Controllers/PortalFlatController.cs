@@ -716,14 +716,14 @@ public class PortalFlatController : ControllerBase
     // GET /api/portalflats/edit-request/my-approval-history
     [HttpGet("edit-request/my-approval-history")]
     [Authorize(Roles = "Landlord")]
-    public async Task<IActionResult> GetLandlordEditApprovalHistory()
+    public async Task<IActionResult> GetLandlordEditApprovalHistory([FromQuery] int limit = 500)
     {
         var landlordId = GetUserId();
 
         var decisions = await _context.FlatEditLandlordDecisions
             .Where(d => d.DecidedByLandlordId == landlordId)
             .OrderByDescending(d => d.DecidedAt)
-            .ToListAsync();
+            .Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
 
         var requestIds = decisions.Select(d => d.FlatEditRequestId).Distinct().ToList();
         var requests = await _context.FlatEditRequests

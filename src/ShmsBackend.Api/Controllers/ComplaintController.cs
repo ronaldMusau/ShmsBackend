@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -824,14 +825,14 @@ public class ComplaintController : ControllerBase
     // GET /api/complaint/my-approval-history
     [HttpGet("my-approval-history")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
-    public async Task<IActionResult> GetMyApprovalHistory()
+    public async Task<IActionResult> GetMyApprovalHistory([FromQuery] int limit = 500)
     {
         var adminId = GetUserId();
 
         var actions = await _context.ComplaintApprovalActions
             .Where(a => a.ApproverId == adminId && (a.Decision == "Approved" || a.Decision == "Rejected"))
             .OrderByDescending(a => a.ActionedAt)
-            .ToListAsync();
+            .Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
 
         var complaintIds = actions.Select(a => a.ComplaintId).Distinct().ToList();
         var complaints = await _context.Complaints

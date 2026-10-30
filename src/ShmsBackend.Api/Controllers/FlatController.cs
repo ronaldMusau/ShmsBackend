@@ -588,14 +588,14 @@ public class FlatController : ControllerBase
     // GET /api/flats/edit-request/my-approval-history
     [HttpGet("edit-request/my-approval-history")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
-    public async Task<IActionResult> GetMyEditRequestApprovalHistory()
+    public async Task<IActionResult> GetMyEditRequestApprovalHistory([FromQuery] int limit = 500)
     {
         var adminId = GetUserId();
 
         var actions = await _context.FlatEditApprovalActions
             .Where(a => a.ApproverId == adminId && (a.Decision == "Approved" || a.Decision == "Rejected"))
             .OrderByDescending(a => a.ActionedAt)
-            .ToListAsync();
+            .Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
 
         var requestIds = actions.Select(a => a.FlatEditRequestId).Distinct().ToList();
         var requests = await _context.FlatEditRequests
