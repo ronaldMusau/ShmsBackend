@@ -91,6 +91,10 @@ public class ServiceChargeQueryService
     {
         var result = new List<ServiceChargeEntry>();
 
+        // Filters are applied in SQL so a filtered view (year, month, flat, amount, dates) never loads the whole ledger.
+        var month = f.Month; var year = f.Year; var minA = f.MinAmount; var maxA = f.MaxAmount;
+        var fromD = f.FromDate; var toExcl = f.ToDate.HasValue ? f.ToDate.Value.Date.AddDays(1) : (DateTime?)null;
+
         var charged = await (from a in _context.PaymentCheckoutAttempts
                              where a.AttemptStatus == "Success"
                              join p in _context.Payments on a.PaymentId equals p.Id
@@ -98,6 +102,12 @@ public class ServiceChargeQueryService
                                    && (!f.TenantId.HasValue || p.TenantId == f.TenantId.Value)
                                    && (!f.HouseId.HasValue || p.HouseId == f.HouseId.Value)
                                    && (!f.FlatId.HasValue || p.FlatId == f.FlatId.Value)
+                                   && (month == null || p.Month == month)
+                                   && (year == null || p.Year == year)
+                                   && (minA == null || p.ServiceChargeAmount >= minA)
+                                   && (maxA == null || p.ServiceChargeAmount <= maxA)
+                                   && (fromD == null || (a.ProcessedAt ?? p.PaidAt) >= fromD)
+                                   && (toExcl == null || (a.ProcessedAt ?? p.PaidAt) < toExcl)
                              select new { a.CheckoutRequestId, a.ProcessedAt, Payment = p }).ToListAsync();
 
         var cids = charged.Select(x => x.CheckoutRequestId).Distinct().ToList();
@@ -130,7 +140,13 @@ public class ServiceChargeQueryService
                         && !_context.PaymentApplications.Any(a => a.PaymentId == p.Id && a.CheckoutRequestId != null)
                         && (!f.TenantId.HasValue || p.TenantId == f.TenantId.Value)
                         && (!f.HouseId.HasValue || p.HouseId == f.HouseId.Value)
-                        && (!f.FlatId.HasValue || p.FlatId == f.FlatId.Value))
+                        && (!f.FlatId.HasValue || p.FlatId == f.FlatId.Value)
+                        && (month == null || p.Month == month)
+                        && (year == null || p.Year == year)
+                        && (minA == null || p.ServiceChargeAmount >= minA)
+                        && (maxA == null || p.ServiceChargeAmount <= maxA)
+                        && (fromD == null || p.PaidAt >= fromD)
+                        && (toExcl == null || p.PaidAt < toExcl))
             .ToListAsync();
         foreach (var p in legacy)
             result.Add(new ServiceChargeEntry
@@ -144,6 +160,22 @@ public class ServiceChargeQueryService
             });
 
         return result;
+    }
+
+    /// <summary>Distinct years that have a collected service charge, computed in SQL (no ledger load).</summary>
+    public async Task<List<int>> GetYearsAsync()
+    {
+        var rent = await _context.Payments
+            .Where(p => p.ServiceChargeAmount > 0 && (p.MpesaReceiptNumber != null
+                        || _context.PaymentCheckoutAttempts.Any(a => a.PaymentId == p.Id && a.AttemptStatus == "Success")))
+            .Select(p => p.Year).Distinct().ToListAsync();
+        var complaint = await _context.ComplaintCheckoutAttempts
+            .Where(a => a.AttemptStatus == "Success" && a.ServiceChargeAmount > 0)
+            .Select(a => (a.ProcessedAt ?? a.CreatedAt).Year).Distinct().ToListAsync();
+        var vacate = await _context.VacateCheckoutAttempts
+            .Where(a => a.AttemptStatus == "Success" && a.ServiceChargeAmount > 0)
+            .Select(a => (a.ProcessedAt ?? a.CreatedAt).Year).Distinct().ToListAsync();
+        return rent.Concat(complaint).Concat(vacate).Distinct().OrderByDescending(y => y).ToList();
     }
 
     public static bool IsValidSource(string? source) =>
@@ -166,6 +198,12 @@ public class ServiceChargeQueryService
             var rows = await (from a in _context.ComplaintCheckoutAttempts
                               join c in _context.Complaints on a.ComplaintId equals c.Id
                               where a.AttemptStatus == "Success" && a.ServiceChargeAmount > 0
+                                    && (f.TenantId == null || c.TenantId == f.TenantId)
+                                    && (f.HouseId == null || c.HouseId == f.HouseId)
+                                    && (f.Month == null || (a.ProcessedAt ?? a.CreatedAt).Month == f.Month)
+                                    && (f.Year == null || (a.ProcessedAt ?? a.CreatedAt).Year == f.Year)
+                                    && (f.MinAmount == null || a.ServiceChargeAmount >= f.MinAmount)
+                                    && (f.MaxAmount == null || a.ServiceChargeAmount <= f.MaxAmount)
                               select new { a, c.TenantId, c.HouseId, c.TicketNumber }).ToListAsync();
             entries.AddRange(rows.Select(r => new ServiceChargeEntry
             {
@@ -182,6 +220,12 @@ public class ServiceChargeQueryService
             var rows = await (from a in _context.VacateCheckoutAttempts
                               join st in _context.VacateSettlements on a.VacateSettlementId equals st.Id
                               where a.AttemptStatus == "Success" && a.ServiceChargeAmount > 0
+                                    && (f.TenantId == null || st.TenantId == f.TenantId)
+                                    && (f.HouseId == null || st.HouseId == f.HouseId)
+                                    && (f.Month == null || (a.ProcessedAt ?? a.CreatedAt).Month == f.Month)
+                                    && (f.Year == null || (a.ProcessedAt ?? a.CreatedAt).Year == f.Year)
+                                    && (f.MinAmount == null || a.ServiceChargeAmount >= f.MinAmount)
+                                    && (f.MaxAmount == null || a.ServiceChargeAmount <= f.MaxAmount)
                               select new { a, st.TenantId, st.HouseId, st.Amount }).ToListAsync();
             entries.AddRange(rows.Select(r => new ServiceChargeEntry
             {

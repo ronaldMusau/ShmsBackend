@@ -952,8 +952,7 @@ public class PaymentController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetServiceChargeYears()
     {
-        var years = (await _serviceChargeQueryService.GetEntriesAsync(new ServiceChargeFilters()))
-            .Select(e => e.Year).Distinct().OrderByDescending(y => y).ToList();
+        var years = await _serviceChargeQueryService.GetYearsAsync();
 
         return Ok(new { success = true, data = years });
     }
