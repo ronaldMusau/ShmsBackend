@@ -55,41 +55,62 @@ public class OverdueController : ControllerBase
 
         // STRICT overdue test (DueDate has passed) — not the looser "payable now" duePayments query in
         // PaymentController/PortalPaymentController, which includes the current month before its due date.
-        var overduePayments = (await _context.Payments
-            .Include(p => p.Tenant)
-            .Include(p => p.House)
-                .ThenInclude(h => h!.Flat)
+        // Grouped in SQL: only one row per overdue tenant leaves the database, not every overdue payment.
+        var arrearsRows = await _context.Payments
             .Where(p => (p.PaymentStatus == PaymentTransactionStatus.Pending
                     || p.PaymentStatus == PaymentTransactionStatus.PartiallyPaid
                     || p.PaymentStatus == PaymentTransactionStatus.Overdue)
                 && p.DueDate < now
-                && !p.IsDeleted)
-            .ToListAsync())
-            .Where(p => p.Tenant != null && p.TenancyCycle == p.Tenant.TenancyCycle && IsOnboardedTenant(p.Tenant))
-            .ToList();
-
-        var groups = overduePayments
+                && !p.IsDeleted
+                && p.Tenant != null
+                && !p.Tenant.IsDeleted
+                && p.TenancyCycle == p.Tenant.TenancyCycle
+                && p.Tenant.HasCompletedInitialPayment
+                && (p.Tenant.TenantStatus == TenantStatus.Active || p.Tenant.TenantStatus == TenantStatus.Pending))
             .GroupBy(p => p.TenantId)
             .Select(g => new
             {
                 TenantId = g.Key,
-                Tenant = g.First().Tenant!,
-                House = g.First().House,
                 OldestUnpaidDueDate = g.Min(p => p.DueDate),
                 TotalArrears = g.Sum(p => p.Balance),
                 MonthsOverdueCount = g.Count()
             })
-            .Select(g => new
+            .ToListAsync();
+
+        var overdueTenantIds = arrearsRows.Select(r => r.TenantId).ToList();
+        var tenantInfo = await _context.Tenants
+            .Where(t => overdueTenantIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.FirstName, t.LastName, t.PhoneNumber, t.Email, t.HouseId })
+            .ToDictionaryAsync(t => t.Id);
+        var houseIdsForRows = tenantInfo.Values.Where(t => t.HouseId != null).Select(t => t.HouseId!.Value).Distinct().ToList();
+        var houseInfo = await _context.Houses
+            .Where(h => houseIdsForRows.Contains(h.Id))
+            .Select(h => new { h.Id, h.HouseNumber, FlatName = h.Flat != null ? h.Flat.FlatName : null })
+            .ToDictionaryAsync(h => h.Id);
+
+        var groups = arrearsRows
+            .Where(r => tenantInfo.ContainsKey(r.TenantId))
+            .Select(r =>
             {
-                g.TenantId,
-                g.Tenant,
-                g.House,
-                g.OldestUnpaidDueDate,
-                g.TotalArrears,
-                g.MonthsOverdueCount,
-                OverdueDays = (int)(now - g.OldestUnpaidDueDate).TotalDays
+                var ti = tenantInfo[r.TenantId];
+                var hi = ti.HouseId != null && houseInfo.TryGetValue(ti.HouseId.Value, out var h) ? h : null;
+                return new
+                {
+                    r.TenantId,
+                    ti.FirstName,
+                    ti.LastName,
+                    ti.PhoneNumber,
+                    ti.Email,
+                    FlatName = hi?.FlatName,
+                    HouseNumber = hi?.HouseNumber,
+                    r.OldestUnpaidDueDate,
+                    r.TotalArrears,
+                    r.MonthsOverdueCount,
+                    OverdueDays = (int)(now - r.OldestUnpaidDueDate).TotalDays
+                };
             })
             .Where(g => g.OverdueDays > 0)
+            .OrderByDescending(g => g.OverdueDays)
             .ToList();
 
         var tenantIds = groups.Select(g => g.TenantId).ToList();
@@ -113,12 +134,12 @@ public class OverdueController : ControllerBase
             return new
             {
                 tenantId = g.TenantId,
-                firstName = g.Tenant.FirstName,
-                lastName = g.Tenant.LastName,
-                phoneNumber = g.Tenant.PhoneNumber,
-                email = g.Tenant.Email,
-                flatName = g.House?.Flat?.FlatName ?? "-",
-                houseNumber = g.House?.HouseNumber ?? "-",
+                firstName = g.FirstName,
+                lastName = g.LastName,
+                phoneNumber = g.PhoneNumber,
+                email = g.Email,
+                flatName = g.FlatName ?? "-",
+                houseNumber = g.HouseNumber ?? "-",
                 oldestUnpaidDueDate = g.OldestUnpaidDueDate,
                 overdueDays = g.OverdueDays,
                 totalArrears = g.TotalArrears,
