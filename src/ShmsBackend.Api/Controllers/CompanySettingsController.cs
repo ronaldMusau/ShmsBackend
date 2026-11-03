@@ -84,6 +84,7 @@ public class CompanySettingsController : ControllerBase
     }
 
     // GET /api/companysettings/public
+    [AllowAnonymous]
     [HttpGet("public")]
     public async Task<IActionResult> GetPublicSettings()
     {
@@ -276,6 +277,7 @@ public class CompanySettingsController : ControllerBase
     }
 
     // GET /api/companysettings/public/logo
+    [AllowAnonymous]
     [HttpGet("public/logo")]
     public async Task<IActionResult> GetPublicLogo()
     {

@@ -199,6 +199,10 @@ public class PortalAuthService : IPortalAuthService
     {
         try
         {
+            if (!dto.ConfirmedAge18)
+                return ApiResponse<string>.FailureResponse(
+                    "You must confirm that you are 18 years or older to create an account.");
+
             var existingExplorer = await _context.Explorers
                 .FirstOrDefaultAsync(u => u.Email.ToLower() == dto.Email.ToLower());
 

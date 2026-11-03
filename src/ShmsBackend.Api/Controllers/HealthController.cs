@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace ShmsBackend.Api.Controllers;
 
@@ -10,6 +11,7 @@ public class HealthController : ControllerBase
     public HealthController(ShmsBackend.Data.Context.ShmsDbContext db) { _db = db; }
 
     // GET /api/health/ready — for load balancers/uptime monitors: 200 only when the database answers.
+    [AllowAnonymous]
     [HttpGet("ready")]
     public async Task<IActionResult> Ready()
     {
@@ -18,6 +20,7 @@ public class HealthController : ControllerBase
         return dbOk ? Ok(new { Status = "Ready", Timestamp = DateTime.UtcNow }) : StatusCode(503, new { Status = "DatabaseUnavailable", Timestamp = DateTime.UtcNow });
     }
 
+    [AllowAnonymous]
     [HttpGet]
     public IActionResult Get()
     {

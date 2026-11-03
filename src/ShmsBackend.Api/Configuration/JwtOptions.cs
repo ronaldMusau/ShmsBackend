@@ -9,7 +9,7 @@ public class JwtOptions
     public int AccessTokenExpirationMinutes { get; set; } = 10080;
 
     // Distinct access-token lifetimes per audience.
-    public int AdminAccessTokenExpirationMinutes { get; set; } = 240;
+    public int AdminAccessTokenExpirationMinutes { get; set; } = 60;
     public int PortalAccessTokenExpirationMinutes { get; set; } = 60;
 
     public int RefreshTokenExpirationDays { get; set; } = 7;

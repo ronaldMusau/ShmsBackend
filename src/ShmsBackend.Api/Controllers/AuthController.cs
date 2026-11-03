@@ -42,6 +42,7 @@ public class AuthController : ControllerBase
         _weeklyClientPasswordService = weeklyClientPasswordService;
     }
 
+    [AllowAnonymous]
     [HttpPost("login")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
@@ -60,6 +61,7 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+    [AllowAnonymous]
     [HttpPost("pre-login")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> PreLogin([FromBody] LoginDto loginDto)
@@ -78,6 +80,7 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+    [AllowAnonymous]
     [HttpPost("verify-otp")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyLoginDto verifyLoginDto)
@@ -96,6 +99,7 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+    [AllowAnonymous]
     [HttpPost("refresh-token")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenDto refreshTokenDto)
@@ -128,6 +132,7 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+    [AllowAnonymous]
     [HttpPost("request-password-reset")]
     [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> RequestPasswordReset([FromBody] RequestPasswordResetDto requestPasswordResetDto)

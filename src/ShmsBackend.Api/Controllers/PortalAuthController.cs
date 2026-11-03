@@ -41,6 +41,7 @@ public class PortalAuthController : ControllerBase
     /// <summary>
     /// Authenticates a portal user (Landlord, Agent, Tenant, or Explorer).
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("login")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login([FromBody] PortalLoginDto dto)
@@ -59,6 +60,7 @@ public class PortalAuthController : ControllerBase
     /// Self-registration for Explorer accounts only.
     /// Sends a verification email — account is not active until email is confirmed.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("register")]
     [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> Register([FromBody] RegisterExplorerDto dto)
@@ -76,6 +78,7 @@ public class PortalAuthController : ControllerBase
     /// <summary>
     /// Issues a new access token using a valid refresh token.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("refresh-token")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> RefreshToken([FromBody] PortalRefreshTokenDto dto)
@@ -111,6 +114,7 @@ public class PortalAuthController : ControllerBase
     /// <summary>
     /// Sends a 6-digit OTP to the registered email for password reset.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("request-password-reset")]
     [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> RequestPasswordReset([FromBody] PortalRequestPasswordResetDto dto)
@@ -126,6 +130,7 @@ public class PortalAuthController : ControllerBase
     /// Resets the password using the OTP received by email.
     /// OTP is single-use and expires in 15 minutes.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("reset-password")]
     [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> ResetPassword([FromBody] PortalResetPasswordDto dto)

@@ -227,6 +227,12 @@ builder.Services.AddAuthentication(options =>
 // Add Authorization with Policies
 builder.Services.AddAuthorization(options =>
 {
+    // Default-deny: any endpoint without an attribute needs a signed-in user.
+    // Public endpoints must say [AllowAnonymous] explicitly.
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+
     // Admin hierarchy policies
     options.AddPolicy("SuperAdminOnly", policy =>
         policy.RequireRole("SuperAdmin"));
@@ -464,6 +470,33 @@ if (app.Environment.IsDevelopment())
 
 if (knownProxies.Length > 0) app.UseForwardedHeaders();
 app.UseResponseCompression();
+
+// Security headers on every API response (API serves JSON, so the CSP is the strictest form).
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var h = context.Response.Headers;
+        h["X-Content-Type-Options"] = "nosniff";
+        h["Referrer-Policy"] = "no-referrer";
+        h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
+        h["Cross-Origin-Resource-Policy"] = "cross-origin"; // portals on other origins read the API
+        // Frame blocking + CSP only for JSON: file responses (PDFs, images) may be previewed in an iframe.
+        var isJson = context.Response.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) == true;
+        if (isJson)
+        {
+            h["X-Frame-Options"] = "DENY";
+            h["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+        }
+        // Authenticated API responses carry personal or financial data: no storage by shared caches.
+        var path = context.Request.Path;
+        if (path.StartsWithSegments("/api") && !path.Value!.Contains("/public", StringComparison.OrdinalIgnoreCase)
+            && !h.ContainsKey("Cache-Control"))
+            h["Cache-Control"] = "no-store";
+        return Task.CompletedTask;
+    });
+    await next();
+});
 
 // Custom Middleware
 app.UseMiddleware<ExceptionMiddleware>();

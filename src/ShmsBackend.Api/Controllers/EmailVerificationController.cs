@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Email;
@@ -39,6 +40,7 @@ public class EmailVerificationController : ControllerBase
     /// <summary>
     /// Verify email. Looks up by TOKEN (unique per row) not email (not unique across roles).
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("verify")]
     public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailDto verifyEmailDto)
     {
@@ -99,6 +101,7 @@ public class EmailVerificationController : ControllerBase
     /// - Flow "forgot-password": CurrentPassword is NOT required (that's the whole point of forgot password).
     /// Looks up by TOKEN not email, since multiple roles can share the same email.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("set-password")]
     public async Task<IActionResult> SetPassword([FromBody] SetPasswordDto setPasswordDto)
     {
@@ -178,6 +181,7 @@ public class EmailVerificationController : ControllerBase
     /// <summary>
     /// Resend verification — handles multiple unverified accounts sharing the same email.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("resend")]
     public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationDto resendDto)
     {
@@ -229,6 +233,7 @@ public class EmailVerificationController : ControllerBase
         }
     }
 
+    [AllowAnonymous]
     [HttpGet("debug/frontend-url")]
     [ApiExplorerSettings(IgnoreApi = true)]
     public IActionResult DebugFrontendUrl()

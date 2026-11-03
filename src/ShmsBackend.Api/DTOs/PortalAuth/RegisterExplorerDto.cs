@@ -25,4 +25,7 @@ public class RegisterExplorerDto
     public string? County { get; set; }
     public string? Constituency { get; set; }
     public string? Ward { get; set; }
+
+    // Registration is for adults only; the server rejects the request unless this is true.
+    public bool ConfirmedAge18 { get; set; }
 }
