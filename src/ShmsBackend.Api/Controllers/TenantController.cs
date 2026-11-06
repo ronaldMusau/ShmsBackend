@@ -95,8 +95,10 @@ public class TenantController : ControllerBase
         }
     }
 
+    // Staff only: this returns the full profile (national ID, date of birth, emergency contact) with no
+    // per-caller scoping, so portal roles must use the /api/portaltenant endpoints that are scoped to them.
     [HttpGet("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
     public async Task<IActionResult> GetById(Guid id)
     {
         try
@@ -381,8 +383,9 @@ public class TenantController : ControllerBase
         }
     }
 
+    // Staff only: the list is not scoped to the caller (see GetById).
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
