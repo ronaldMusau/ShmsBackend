@@ -25,6 +25,7 @@ public class AuthService : IAuthService
     private readonly IFrontendUrlService _frontendUrlService;
     private readonly IWeeklyPasswordService _weeklyPasswordService;
     private readonly JwtOptions _jwtOptions;
+    private readonly ShmsBackend.Api.Services.Security.ISecurityEventService _events;
 
     public AuthService(
         IUnitOfWork unitOfWork,
@@ -34,8 +35,10 @@ public class AuthService : IAuthService
         ILogger<AuthService> logger,
         IFrontendUrlService frontendUrlService,
         IWeeklyPasswordService weeklyPasswordService,
-        IOptions<JwtOptions> jwtOptions)
+        IOptions<JwtOptions> jwtOptions,
+        ShmsBackend.Api.Services.Security.ISecurityEventService events)
     {
+        _events = events;
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
         _emailService = emailService;
@@ -112,6 +115,9 @@ public class AuthService : IAuthService
 
                     if (nowLockedOut)
                     {
+                        await _events.RecordAsync("Auth", "LoginLockout", "High",
+                            $"Staff account locked after repeated wrong passwords ({admin.Email}).",
+                            admin.Id.ToString(), "Staff");
                         try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
                         catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
                     }

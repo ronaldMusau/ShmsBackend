@@ -50,6 +50,7 @@ public class ShmsDbContext : DbContext
 
     // Notifications
     public DbSet<Notification> Notifications { get; set; }
+    public DbSet<SecurityEvent> SecurityEvents { get; set; }
     public DbSet<NotificationPreference> NotificationPreferences { get; set; }
     public DbSet<PushSubscription> PushSubscriptions { get; set; }
 
