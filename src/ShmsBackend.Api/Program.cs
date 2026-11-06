@@ -181,6 +181,9 @@ builder.Services.AddHostedService<PreRegistrationExpirySchedulerService>();
 
 // Add JWT Authentication
 var jwtOptions = builder.Configuration.GetSection("JwtOptions").Get<JwtOptions>();
+// A short signing secret can be guessed offline from any captured token, which would let someone forge logins.
+if (string.IsNullOrWhiteSpace(jwtOptions?.Secret) || Encoding.UTF8.GetByteCount(jwtOptions.Secret) < 32)
+    throw new InvalidOperationException("JwtOptions:Secret must be at least 32 characters. Set a long random value as a secret.");
 
 builder.Services.AddAuthentication(options =>
 {
@@ -195,6 +198,10 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
+        RequireSignedTokens = true,
+        RequireExpirationTime = true,
+        // Only the algorithm we issue with. Blocks "alg: none" and algorithm-swap tricks.
+        ValidAlgorithms = new[] { SecurityAlgorithms.HmacSha256 },
         ValidIssuer = jwtOptions!.Issuer,
         ValidAudience = jwtOptions.Audience,
         IssuerSigningKey = new SymmetricSecurityKey(
@@ -217,6 +224,26 @@ builder.Services.AddAuthentication(options =>
                 context.Token = accessToken;
             }
             return Task.CompletedTask;
+        },
+        // A valid signature is not enough: the account must still exist and be active. This is what makes
+        // deactivating, deleting or locking someone take effect within a minute instead of at token expiry.
+        OnTokenValidated = async context =>
+        {
+            if (!Guid.TryParse(context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+            {
+                context.Fail("Invalid token");
+                return;
+            }
+            var cache = context.HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+            var cacheKey = $"auth:active:{userId}";
+            if (!cache.TryGetValue(cacheKey, out bool active))
+            {
+                var db = context.HttpContext.RequestServices.GetRequiredService<ShmsDbContext>();
+                active = await db.Admins.AsNoTracking().AnyAsync(a => a.Id == userId && a.IsActive && !a.IsDeleted && !a.IsLockedOut)
+                      || await db.PortalUsers.AsNoTracking().AnyAsync(u => u.Id == userId && u.IsActive && !u.IsDeleted && !u.IsLockedOut);
+                cache.Set(cacheKey, active, TimeSpan.FromSeconds(60));
+            }
+            if (!active) context.Fail("Account is not active");
         }
     };
 });
