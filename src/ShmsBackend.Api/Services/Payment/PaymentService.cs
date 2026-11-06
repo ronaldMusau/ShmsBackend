@@ -291,10 +291,14 @@ public class PaymentService : IPaymentService
             ? $"Deposit+Rent {flat.FlatName}"
             : $"Rent {house.HouseNumber}";
 
+        var chargeAmount = overrideAmount ?? ((payment.Balance > 0 ? payment.Balance : payment.Amount) + (payment.ServiceChargeAmount ?? 0m));
+        // Every route that sends an M-Pesa prompt (tenant self-pay, staff pay-on-behalf, retry) passes through here.
+        await EnforcePaymentLimitsAsync(payment.TenantId, chargeAmount);
+
         var stkResponse = await _mpesaService.InitiateSTKPushAsync(new STKPushRequest
         {
             PhoneNumber = phoneNumber,
-            Amount = overrideAmount ?? ((payment.Balance > 0 ? payment.Balance : payment.Amount) + (payment.ServiceChargeAmount ?? 0m)),
+            Amount = chargeAmount,
             AccountReference = reference,
             TransactionDesc = description,
             TenantId = payment.TenantId.ToString(),
@@ -316,6 +320,29 @@ public class PaymentService : IPaymentService
         await _context.SaveChangesAsync();
 
         return stkResponse;
+    }
+
+    /// <summary>Admin-set limits (Company settings > Operations). Empty = no limit. Throws with a user-safe message.</summary>
+    private async Task EnforcePaymentLimitsAsync(Guid tenantId, decimal chargeAmount)
+    {
+        var limits = await _context.CompanySettings.AsNoTracking()
+            .Select(c => new { c.MaxSinglePaymentAmount, c.MaxDailyPaymentPerTenant }).FirstOrDefaultAsync();
+        if (limits == null) return;
+
+        if (limits.MaxSinglePaymentAmount is > 0 && chargeAmount > limits.MaxSinglePaymentAmount)
+            throw new InvalidOperationException(
+                $"A single payment cannot be more than KES {limits.MaxSinglePaymentAmount:N0}. Please pay in smaller amounts.");
+
+        if (limits.MaxDailyPaymentPerTenant is > 0)
+        {
+            var dayStartUtc = DateTime.UtcNow.AddHours(3).Date.AddHours(-3); // Kenya (EAT) day
+            var paidToday = await _context.Payments
+                .Where(p => p.TenantId == tenantId && !p.IsDeleted && p.PaidAt >= dayStartUtc)
+                .SumAsync(p => (decimal?)p.AmountPaid) ?? 0m;
+            if (paidToday + chargeAmount > limits.MaxDailyPaymentPerTenant)
+                throw new InvalidOperationException(
+                    "This would go over the daily payment limit for this account. Please try again tomorrow or contact management.");
+        }
     }
 
     public async Task ProcessCallbackAsync(MpesaCallback callback)

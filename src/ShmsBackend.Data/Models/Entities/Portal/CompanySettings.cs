@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ShmsBackend.Data.Models.Entities.Portal
 {
@@ -19,7 +20,9 @@ namespace ShmsBackend.Data.Models.Entities.Portal
         // Live viewing sessions per agent per day before the agent counts as at capacity
         public int MaxSessionsPerAgentPerDay { get; set; } = 5;
         // Payment safety limits, set by an admin (KES). Empty = no limit.
+        [Column(TypeName = "decimal(18,2)")]
         public decimal? MaxSinglePaymentAmount { get; set; }
+        [Column(TypeName = "decimal(18,2)")]
         public decimal? MaxDailyPaymentPerTenant { get; set; }
         public Guid? UpdatedByUserId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

@@ -189,6 +189,7 @@ public class PortalPaymentController : ControllerBase
 
     // POST /api/portalpayments/pay — tenant initiates their own payment
     [HttpPost("pay")]
+    [ShmsBackend.Api.Helpers.Idempotent]
     public async Task<IActionResult> Pay([FromBody] TenantPayDto dto)
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -306,22 +307,6 @@ public class PortalPaymentController : ControllerBase
                 payment.RequestedDistributionAmount = distributionAmount.Value;
                 payment.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
-            }
-
-            // Admin-set safety limits (Company settings > Operations). Empty = no limit.
-            var limits = await _context.CompanySettings.AsNoTracking()
-                .Select(c => new { c.MaxSinglePaymentAmount, c.MaxDailyPaymentPerTenant }).FirstOrDefaultAsync();
-            var thisCharge = actualChargeAmount ?? payment.Balance;
-            if (limits?.MaxSinglePaymentAmount is > 0 && thisCharge > limits.MaxSinglePaymentAmount)
-                return BadRequest(new { success = false, message = $"A single payment cannot be more than KES {limits.MaxSinglePaymentAmount:N0}. Please pay in smaller amounts." });
-            if (limits?.MaxDailyPaymentPerTenant is > 0)
-            {
-                var dayStartUtc = DateTime.UtcNow.AddHours(3).Date.AddHours(-3); // Kenya (EAT) day
-                var paidToday = await _context.Payments
-                    .Where(p => p.TenantId == userId && !p.IsDeleted && p.PaidAt >= dayStartUtc)
-                    .SumAsync(p => (decimal?)p.AmountPaid) ?? 0m;
-                if (paidToday + thisCharge > limits.MaxDailyPaymentPerTenant)
-                    return BadRequest(new { success = false, message = "This would go over the daily payment limit on your account. Please try again tomorrow or contact management." });
             }
 
             var stkResponse = await _paymentService.InitiatePaymentAsync(payment.Id, dto.PhoneNumber, actualChargeAmount);

@@ -51,6 +51,7 @@ public class PaymentController : ControllerBase
 
     // POST /api/payments/initiate — create payment record and trigger STK push
     [HttpPost("initiate")]
+    [ShmsBackend.Api.Helpers.Idempotent]
     [EnableRateLimiting("payment")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Agent")]
     public async Task<IActionResult> InitiatePayment([FromBody] InitiatePaymentDto dto)
@@ -251,6 +252,7 @@ public class PaymentController : ControllerBase
 
     // POST /api/payments/retry/{paymentId} — retry a failed/cancelled payment
     [HttpPost("retry/{paymentId:guid}")]
+    [ShmsBackend.Api.Helpers.Idempotent]
     [EnableRateLimiting("payment")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
     public async Task<IActionResult> RetryPayment(Guid paymentId, [FromBody] RetryPaymentDto dto)
