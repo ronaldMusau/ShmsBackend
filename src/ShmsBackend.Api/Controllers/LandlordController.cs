@@ -79,8 +79,9 @@ public class LandlordController : ControllerBase
         }
     }
 
+    // Staff only: no per-caller scoping, and the profile includes the national ID.
     [HttpGet("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
     public async Task<IActionResult> GetById(Guid id)
     {
         try
@@ -331,13 +332,36 @@ public class LandlordController : ControllerBase
         return Ok(years);
     }
 
+    // Staff only. Never return the entity itself: it carries the password hash, the temporary initial
+    // password and the refresh / email-verification / password-reset tokens.
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Landlord,Tenant,Agent")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
     public async Task<IActionResult> GetAll()
     {
         try
         {
-            var landlords = await _landlordService.GetAllAsync();
+            var landlords = (await _landlordService.GetAllAsync()).Select(l => new
+            {
+                l.Id,
+                l.Email,
+                l.FirstName,
+                l.LastName,
+                l.PhoneNumber,
+                l.County,
+                l.Constituency,
+                l.Ward,
+                l.Theme,
+                l.Mode,
+                l.DateOfBirth,
+                l.NationalId,
+                l.AgencyName,
+                l.IsActive,
+                l.IsEmailVerified,
+                l.VerificationEmailSentAt,
+                l.PortalUserType,
+                l.CreatedAt,
+                l.UpdatedAt
+            }).ToList();
             return Ok(ApiResponse<object>.SuccessResponse(landlords));
         }
         catch (Exception ex)
