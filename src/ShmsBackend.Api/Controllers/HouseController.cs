@@ -99,10 +99,22 @@ public class HouseController : ControllerBase
         return Ok(new { success = true, data = result });
     }
 
+    /// <summary>Staff may act on any flat; a landlord only on their own flats; an agent only on flats assigned to them.</summary>
+    private async Task<bool> CanAccessFlatAsync(Guid flatId)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var me)) return false;
+        if (User.IsInRole("Landlord"))
+            return await _context.Flats.AnyAsync(f => f.Id == flatId && f.LandlordId == me);
+        if (User.IsInRole("Agent"))
+            return await _context.AgentFlats.AnyAsync(a => a.AgentId == me && a.FlatId == flatId);
+        return true;
+    }
+
     [HttpGet("flat/{flatId:guid}")]
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant,Landlord,Agent")]
     public async Task<IActionResult> GetByFlat(Guid flatId)
     {
+        if (!await CanAccessFlatAsync(flatId)) return Forbid();
         var result = await _houseService.GetByFlatAsync(flatId);
         return Ok(new { success = true, data = result });
     }
@@ -194,6 +206,7 @@ public class HouseController : ControllerBase
     [RequestSizeLimit(20_000_000)]
     public async Task<IActionResult> UploadImages([FromForm] Guid flatId, [FromForm] Guid houseTypeId, [FromForm] List<IFormFile> files)
     {
+        if (!await CanAccessFlatAsync(flatId)) return Forbid();
         if (files == null || files.Count == 0)
             return BadRequest(new { success = false, message = "At least one image file is required." });
 
@@ -646,6 +659,7 @@ public class HouseController : ControllerBase
         var image = await _context.HouseTypeImages.FindAsync(imageId);
         if (image == null)
             return NotFound(new { success = false, message = "Image not found." });
+        if (!await CanAccessFlatAsync(image.FlatId)) return Forbid();
 
         var filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", image.ImagePath.TrimStart('/'));
         if (System.IO.File.Exists(filePath))

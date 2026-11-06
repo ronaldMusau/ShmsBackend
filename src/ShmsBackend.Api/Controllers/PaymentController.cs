@@ -237,6 +237,15 @@ public class PaymentController : ControllerBase
         if (attempt == null)
             return NotFound(new { success = false, message = "Checkout attempt not found." });
 
+        // An agent may only touch payments for flats assigned to them.
+        if (User.IsInRole("Agent"))
+        {
+            var me = Guid.TryParse(User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier), out var g) ? g : Guid.Empty;
+            var allowed = await _context.Payments.AnyAsync(p => p.Id == attempt.PaymentId
+                && _context.AgentFlats.Any(a => a.AgentId == me && a.FlatId == p.FlatId));
+            if (!allowed) return Forbid();
+        }
+
         if (attempt.AttemptStatus == "Processing")
         {
             attempt.AttemptStatus = "Failed";
