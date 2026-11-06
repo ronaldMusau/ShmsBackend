@@ -382,6 +382,7 @@ var corsOrigins = (builder.Configuration.GetSection("Cors:AllowedOrigins").Get<s
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
 if (corsOrigins.Length == 0) corsOrigins = devOrigins;
+builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.PayloadEncryptionService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -495,9 +496,6 @@ app.Use(async (context, next) =>
     await next();
 });
 
-// Custom Middleware
-app.UseMiddleware<ExceptionMiddleware>();
-app.UseMiddleware<LoggingMiddleware>();
 
 // TEMPORARILY DISABLED for VS Code Dev Tunnel testing — port 5001 (HTTP) is being used
 // because port 7001 (HTTPS) breaks TLS/SNI through the tunnel. This redirect was sending
@@ -512,10 +510,19 @@ if (builder.Configuration.GetValue<bool>("Security:UseHttpsRedirection"))
 app.UseStaticFiles();
 app.UseRouting();
 app.UseCors("AllowAll");
+
+// Always-on payload encryption: every /api request/response body is encrypted (see PayloadEncryptionMiddleware).
+// Exception + logging middleware sit INSIDE it so error responses are encrypted too and logs never see ciphertext-only noise.
+app.UseMiddleware<ShmsBackend.Api.Middleware.PayloadEncryptionMiddleware>();
+app.UseMiddleware<ExceptionMiddleware>();
+app.UseMiddleware<LoggingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TokenValidationMiddleware>();
 app.UseRateLimiter();
+
+// Fail fast if the encryption key is missing in non-development environments.
+app.Services.GetRequiredService<ShmsBackend.Api.Services.Security.PayloadEncryptionService>();
 
 app.MapControllers();
 
