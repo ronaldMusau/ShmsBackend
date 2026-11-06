@@ -18,6 +18,9 @@ namespace ShmsBackend.Data.Models.Entities.Portal
         public string? InstagramUrl { get; set; }
         // Live viewing sessions per agent per day before the agent counts as at capacity
         public int MaxSessionsPerAgentPerDay { get; set; } = 5;
+        // Payment safety limits, set by an admin (KES). Empty = no limit.
+        public decimal? MaxSinglePaymentAmount { get; set; }
+        public decimal? MaxDailyPaymentPerTenant { get; set; }
         public Guid? UpdatedByUserId { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

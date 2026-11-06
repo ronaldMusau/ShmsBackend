@@ -136,8 +136,19 @@ public class CompanySettingsController : ControllerBase
     [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetOperations()
     {
-        var cap = await _context.CompanySettings.Select(c => (int?)c.MaxSessionsPerAgentPerDay).FirstOrDefaultAsync();
-        return Ok(new { success = true, data = new { maxSessionsPerAgentPerDay = cap is > 0 ? cap.Value : 5 } });
+        var s = await _context.CompanySettings.AsNoTracking()
+            .Select(c => new { c.MaxSessionsPerAgentPerDay, c.MaxSinglePaymentAmount, c.MaxDailyPaymentPerTenant })
+            .FirstOrDefaultAsync();
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                maxSessionsPerAgentPerDay = s != null && s.MaxSessionsPerAgentPerDay > 0 ? s.MaxSessionsPerAgentPerDay : 5,
+                maxSinglePaymentAmount = s?.MaxSinglePaymentAmount,
+                maxDailyPaymentPerTenant = s?.MaxDailyPaymentPerTenant
+            }
+        });
     }
 
     // PUT /api/companysettings/operations
@@ -153,11 +164,26 @@ public class CompanySettingsController : ControllerBase
             settings = new CompanySettings { Id = Guid.NewGuid(), CreatedAt = DateTime.UtcNow };
             _context.CompanySettings.Add(settings);
         }
+        if (dto.MaxSinglePaymentAmount is < 0 || dto.MaxDailyPaymentPerTenant is < 0)
+            return BadRequest(new { success = false, message = "Payment limits cannot be negative." });
+        if (dto.MaxSinglePaymentAmount > 0 && dto.MaxDailyPaymentPerTenant > 0 && dto.MaxDailyPaymentPerTenant < dto.MaxSinglePaymentAmount)
+            return BadRequest(new { success = false, message = "The daily limit cannot be lower than the single-payment limit." });
         settings.MaxSessionsPerAgentPerDay = dto.MaxSessionsPerAgentPerDay;
+        settings.MaxSinglePaymentAmount = dto.MaxSinglePaymentAmount is > 0 ? dto.MaxSinglePaymentAmount : null;
+        settings.MaxDailyPaymentPerTenant = dto.MaxDailyPaymentPerTenant is > 0 ? dto.MaxDailyPaymentPerTenant : null;
         settings.UpdatedByUserId = GetUserId();
         settings.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
-        return Ok(new { success = true, data = new { maxSessionsPerAgentPerDay = settings.MaxSessionsPerAgentPerDay } });
+        return Ok(new
+        {
+            success = true,
+            data = new
+            {
+                maxSessionsPerAgentPerDay = settings.MaxSessionsPerAgentPerDay,
+                maxSinglePaymentAmount = settings.MaxSinglePaymentAmount,
+                maxDailyPaymentPerTenant = settings.MaxDailyPaymentPerTenant
+            }
+        });
     }
 
     // PUT /api/companysettings
@@ -357,6 +383,8 @@ public class CompanySettingsController : ControllerBase
 public class UpdateOperationsSettingsDto
 {
     public int MaxSessionsPerAgentPerDay { get; set; }
+    public decimal? MaxSinglePaymentAmount { get; set; }
+    public decimal? MaxDailyPaymentPerTenant { get; set; }
 }
 
 public class UpdateCompanySettingsDto
