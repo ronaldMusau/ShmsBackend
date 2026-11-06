@@ -62,44 +62,6 @@ public class AuthController : ControllerBase
     }
 
     [AllowAnonymous]
-    [HttpPost("pre-login")]
-    [EnableRateLimiting("auth")]
-    public async Task<IActionResult> PreLogin([FromBody] LoginDto loginDto)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        var result = await _authService.PreLoginAsync(loginDto);
-        if (!result.Success)
-        {
-            return BadRequest(result);
-        }
-
-        return Ok(result);
-    }
-
-    [AllowAnonymous]
-    [HttpPost("verify-otp")]
-    [EnableRateLimiting("auth")]
-    public async Task<IActionResult> VerifyOtp([FromBody] VerifyLoginDto verifyLoginDto)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        var result = await _authService.VerifyLoginOtpAsync(verifyLoginDto);
-        if (!result.Success)
-        {
-            return BadRequest(result);
-        }
-
-        return Ok(result);
-    }
-
-    [AllowAnonymous]
     [HttpPost("refresh-token")]
     [EnableRateLimiting("auth")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenDto refreshTokenDto)
