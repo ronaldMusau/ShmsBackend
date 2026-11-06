@@ -32,6 +32,8 @@ public class PayloadEncryptionMiddleware
         var p = path.Value ?? "";
         return p.Equals("/api/secure/key", StringComparison.OrdinalIgnoreCase)
             || p.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase)
+            // Public company logo: used directly as an <img src>, where a browser cannot attach headers. Public image only.
+            || p.Equals("/api/companysettings/public/logo", StringComparison.OrdinalIgnoreCase)
             // Safaricom calls this; it cannot encrypt. It is protected by its own secret, IP and signature checks.
             || p.Contains("/mpesa/callback/", StringComparison.OrdinalIgnoreCase);
     }
