@@ -1,6 +1,6 @@
 -- Performance indexes for list pages, charts and the public listing at large data volumes.
 -- Safe to run more than once: each index is created only if it is missing and the table/columns exist.
--- Run:  sqlcmd -S localhost -U sa -P "<password>" -C -d shms_database -i add-performance-indexes.sql
+-- Run:  sqlcmd -I -S localhost -U sa -P "<password>" -C -d shms_database -i add-performance-indexes.sql  (-I is required: one index is filtered)
 SET NOCOUNT ON;
 
 DECLARE @ix TABLE (tbl sysname, name sysname, cols nvarchar(400), incl nvarchar(400) NULL);
