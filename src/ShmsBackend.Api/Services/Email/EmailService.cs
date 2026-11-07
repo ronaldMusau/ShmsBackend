@@ -1143,7 +1143,10 @@ public class EmailService : IEmailService
         var pill = urgent ? "Needs attention now" : "Please review";
         var pillColour = urgent ? "#c0392b" : "#d68910";
         var eat = Eat.From(alert.WhenUtc);
-        var summary = System.Net.WebUtility.HtmlEncode(alert.Summary);
+        // Mail apps turn bare email addresses into blue links that vanish on a dark background, so style them ourselves.
+        var summary = System.Text.RegularExpressions.Regex.Replace(System.Net.WebUtility.HtmlEncode(alert.Summary),
+            @"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}",
+            m => $"<a href='mailto:{m.Value}' style='color:{ColourGold};text-decoration:underline;'>{m.Value}</a>");
         var ip = string.IsNullOrWhiteSpace(alert.Ip) ? "not recorded" : System.Net.WebUtility.HtmlEncode(alert.Ip);
 
         string Row(string label, string value) =>
