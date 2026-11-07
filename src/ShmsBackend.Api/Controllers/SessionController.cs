@@ -348,7 +348,7 @@ public class SessionController : ControllerBase
             try
             {
                 await _notificationService.SendForcedToUserAsync(session.ReassignedFromAgentId.Value.ToString(),
-                    $"The viewing session for house {houseNumber} on {session.ScheduledAt:yyyy-MM-dd HH:mm} has been reassigned to another agent.",
+                    $"The viewing session for house {houseNumber} on {ShmsBackend.Api.Utilities.Eat.From(session.ScheduledAt):yyyy-MM-dd HH:mm} (East Africa Time) has been reassigned to another agent.",
                     "property", "ListingViewingSession", session.Id.ToString());
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to notify previous agent of session reassignment"); }

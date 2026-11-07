@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using ShmsBackend.Api.Utilities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ShmsBackend.Api.Configuration;
 using ShmsBackend.Api.Models.DTOs.Email;
@@ -1141,7 +1142,7 @@ public class EmailService : IEmailService
         var urgent = alert.Severity == "Critical";
         var pill = urgent ? "Needs attention now" : "Please review";
         var pillColour = urgent ? "#c0392b" : "#d68910";
-        var eat = alert.WhenUtc.AddHours(3);   // East Africa Time, where the company operates
+        var eat = Eat.From(alert.WhenUtc);
         var summary = System.Net.WebUtility.HtmlEncode(alert.Summary);
         var ip = string.IsNullOrWhiteSpace(alert.Ip) ? "not recorded" : System.Net.WebUtility.HtmlEncode(alert.Ip);
 
@@ -1414,7 +1415,7 @@ public class EmailService : IEmailService
   <table style='width:100%;border-collapse:collapse;'>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Amount Paid</td><td style='color:{ColourTextSec};font-weight:700;font-size:14px;text-align:right;'>KES {amount:N2}</td></tr>
-    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{Eat.From(paidAt):MMMM dd, yyyy HH:mm} (EAT)</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
   </table>
 ")}
@@ -1443,7 +1444,7 @@ public class EmailService : IEmailService
       <td style='color:{ColourGold};font-weight:700;font-size:16px;text-align:right;'>KES {totalAmount:N2}</td>
     </tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
-    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{Eat.From(paidAt):MMMM dd, yyyy HH:mm} (EAT)</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
   </table>
 ")}
@@ -1475,7 +1476,7 @@ public class EmailService : IEmailService
       <td style='color:{ColourGold};font-weight:700;font-size:16px;text-align:right;'>KES {totalAmount:N2}</td>
     </tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
-    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{Eat.From(paidAt):MMMM dd, yyyy HH:mm} (EAT)</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
   </table>
 ")}";
@@ -1490,7 +1491,7 @@ public class EmailService : IEmailService
   <table style='width:100%;border-collapse:collapse;'>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>M-Pesa Receipt</td><td style='color:{ColourGold};font-weight:700;font-size:14px;text-align:right;'>{mpesaReceiptNumber}</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Amount Paid</td><td style='color:{ColourTextSec};font-weight:700;font-size:14px;text-align:right;'>KES {totalAmount:N2}</td></tr>
-    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{paidAt:MMMM dd, yyyy HH:mm}</td></tr>
+    <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Date</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>{Eat.From(paidAt):MMMM dd, yyyy HH:mm} (EAT)</td></tr>
     <tr><td style='color:{ColourTextMuted};font-size:13px;padding:4px 0;'>Property</td><td style='color:{ColourTextSec};font-size:13px;text-align:right;'>House {houseNumber}, {flatName}</td></tr>
   </table>
 ")}";
@@ -2679,7 +2680,7 @@ public class EmailService : IEmailService
   </span>
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>REQUESTED DATE &amp; TIME</p>
   <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
-    {scheduledAt:dddd, dd MMMM yyyy} at {scheduledAt:HH:mm} UTC
+    {Eat.From(scheduledAt):dddd, dd MMMM yyyy} at {Eat.From(scheduledAt):HH:mm} (East Africa Time)
   </span>
 ")}
 {Para("Please log in to the Romah Estates agent portal to accept or decline this session request.")}
@@ -2712,7 +2713,7 @@ public class EmailService : IEmailService
   </span>
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>DATE &amp; TIME</p>
   <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
-    {scheduledAt:dddd, dd MMMM yyyy} at {scheduledAt:HH:mm} UTC
+    {Eat.From(scheduledAt):dddd, dd MMMM yyyy} at {Eat.From(scheduledAt):HH:mm} (East Africa Time)
   </span>
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>AGENT</p>
   <span style='font-size:15px;font-weight:600;color:{ColourTextPrime};'>{agentName}</span>
@@ -2779,7 +2780,7 @@ public class EmailService : IEmailService
   </span>
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>SCHEDULED DATE &amp; TIME</p>
   <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
-    {scheduledAt:dddd, dd MMMM yyyy} at {scheduledAt:HH:mm} UTC
+    {Eat.From(scheduledAt):dddd, dd MMMM yyyy} at {Eat.From(scheduledAt):HH:mm} (East Africa Time)
   </span>
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>NEW AGENT</p>
   <span style='font-size:15px;font-weight:600;color:{ColourTextPrime};'>{agentName}</span>
@@ -2818,7 +2819,7 @@ public class EmailService : IEmailService
     {
         var inner = $@"
 {H2($"Hello {firstName},")}
-{Para($"Your scheduled viewing session for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system was due on {scheduledAt:dddd, dd MMMM yyyy}. Did your viewing take place?")}
+{Para($"Your scheduled viewing session for house <strong style='color:{ColourGold};'>{houseNumber}</strong> on the <strong style='color:{ColourGold};'>Romah Estates</strong> system was due on {Eat.From(scheduledAt):dddd, dd MMMM yyyy}. Did your viewing take place?")}
 {GoldBox($@"
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 8px 0;'>HOUSE</p>
   <span style='font-family:""Courier New"",monospace;font-size:22px;font-weight:700;color:{ColourGold};letter-spacing:4px;'>
@@ -2826,7 +2827,7 @@ public class EmailService : IEmailService
   </span>
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 8px 0;'>SCHEDULED DATE</p>
   <span style='font-size:16px;font-weight:600;color:{ColourTextPrime};'>
-    {scheduledAt:dddd, dd MMMM yyyy} at {scheduledAt:HH:mm} UTC
+    {Eat.From(scheduledAt):dddd, dd MMMM yyyy} at {Eat.From(scheduledAt):HH:mm} (East Africa Time)
   </span>
 ")}
 {Para("Please log in to the Romah Estates portal and <strong>close the session</strong> if your viewing took place, or <strong>reschedule</strong> if you need a new time. If no action is taken within 24 hours, the session will be automatically forfeited.")}
@@ -2841,7 +2842,7 @@ public class EmailService : IEmailService
     {
         var rows = string.Join("", items.Select(i =>
             $"<tr><td style='color:{ColourGold};font-weight:700;font-size:13px;padding:4px 8px 4px 0;font-family:\"Courier New\",monospace;'>{i.HouseNumber}</td>" +
-            $"<td style='color:{ColourTextSec};font-size:13px;padding:4px 0;text-align:right;'>{i.ScheduledAt:dddd, dd MMMM yyyy} at {i.ScheduledAt:HH:mm} UTC</td></tr>"));
+            $"<td style='color:{ColourTextSec};font-size:13px;padding:4px 0;text-align:right;'>{Eat.From(i.ScheduledAt):dddd, dd MMMM yyyy} at {Eat.From(i.ScheduledAt):HH:mm} (East Africa Time)</td></tr>"));
 
         var inner = $@"
 {H2($"Hello {firstName},")}

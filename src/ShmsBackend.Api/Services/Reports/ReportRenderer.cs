@@ -236,7 +236,7 @@ public class ReportRenderer : IReportRenderer
             titlePara.Format.Font.Bold = true;
             titlePara.Format.SpaceAfter = Unit.FromPoint(2);
 
-            var metaPara = section.AddParagraph($"Generated: {data.GeneratedAt:d MMM yyyy HH:mm} UTC");
+            var metaPara = section.AddParagraph($"Generated: {ShmsBackend.Api.Utilities.Eat.From(data.GeneratedAt):d MMM yyyy HH:mm} (East Africa Time)");
             metaPara.Format.Font.Size = Unit.FromPoint(8);
             metaPara.Format.Font.Color = Colors.Gray;
 
@@ -395,7 +395,7 @@ public class ReportRenderer : IReportRenderer
         titleRange.Style.Font.FontSize = 12;
         row++;
 
-        var metaText = $"Generated: {data.GeneratedAt:d MMM yyyy HH:mm} UTC";
+        var metaText = $"Generated: {ShmsBackend.Api.Utilities.Eat.From(data.GeneratedAt):d MMM yyyy HH:mm} (East Africa Time)";
         if (!string.IsNullOrWhiteSpace(data.FilterSummary)) metaText += "    " + data.FilterSummary;
         var metaRange = ws.Range(row, 1, row, colCount).Merge();
         metaRange.Value = metaText;
@@ -519,7 +519,7 @@ public class ReportRenderer : IReportRenderer
             body.AppendChild(new WordParagraph());
 
             body.AppendChild(BuildParagraph(data.Title, bold: true, sizeHalfPoints: "28"));
-            body.AppendChild(BuildParagraph($"Generated: {data.GeneratedAt:d MMM yyyy HH:mm} UTC", bold: false, sizeHalfPoints: "16", gray: true));
+            body.AppendChild(BuildParagraph($"Generated: {ShmsBackend.Api.Utilities.Eat.From(data.GeneratedAt):d MMM yyyy HH:mm} (East Africa Time)", bold: false, sizeHalfPoints: "16", gray: true));
             if (!string.IsNullOrWhiteSpace(data.FilterSummary))
                 body.AppendChild(BuildParagraph(data.FilterSummary, bold: false, sizeHalfPoints: "16", gray: true));
 
