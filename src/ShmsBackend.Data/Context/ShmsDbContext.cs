@@ -54,6 +54,7 @@ public class ShmsDbContext : DbContext
     public DbSet<SecuritySettings> SecuritySettings { get; set; }
     public DbSet<BlockedIp> BlockedIps { get; set; }
     public DbSet<LoginActivity> LoginActivities { get; set; }
+    public DbSet<LoginChallenge> LoginChallenges { get; set; }
     public DbSet<NotificationPreference> NotificationPreferences { get; set; }
     public DbSet<PushSubscription> PushSubscriptions { get; set; }
 

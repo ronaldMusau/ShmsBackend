@@ -55,15 +55,44 @@ public class AuthController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var result = await _authService.LoginAsync(loginDto);
-        await _guard.OnLoginAsync(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            Request.Headers.UserAgent.ToString(), loginDto.Email, result.Success);
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var result = await _authService.LoginAsync(loginDto, ip);
+        // A correct password only leads to the code step, so only failures count here; the real sign-in is
+        // recorded when the code is verified.
+        if (!result.Success)
+            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), loginDto.Email, false);
         if (!result.Success)
         {
             return Unauthorized(result);
         }
 
         return Ok(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("login/verify-otp")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> VerifyLoginOtp([FromBody] VerifyLoginOtpDto dto)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var result = await _authService.VerifyLoginOtpAsync(dto, ip);
+        if (result.Success && result.Data != null)
+            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), result.Data.Email, true);
+        else
+            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), "code-step", false);
+        return result.Success ? Ok(result) : Unauthorized(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("login/resend-otp")]
+    [EnableRateLimiting("auth-sensitive")]
+    public async Task<IActionResult> ResendLoginOtp([FromBody] ResendLoginOtpDto dto)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var result = await _authService.ResendLoginOtpAsync(dto, ip);
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     [AllowAnonymous]

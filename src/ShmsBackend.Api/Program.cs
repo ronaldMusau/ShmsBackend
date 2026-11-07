@@ -161,6 +161,7 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.ISecurityEventService, ShmsBackend.Api.Services.Security.SecurityEventService>();
 builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.IThreatGuard, ShmsBackend.Api.Services.Security.ThreatGuardService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Security.ILoginOtpService, ShmsBackend.Api.Services.Security.LoginOtpService>();
 builder.Services.AddScoped<INotificationPreferenceService, NotificationPreferenceService>();
 builder.Services.AddScoped<IAgreementService, AgreementService>();
 

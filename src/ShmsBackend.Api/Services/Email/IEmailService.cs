@@ -15,6 +15,7 @@ public interface IEmailService
     Task<bool> SendExplorerWelcomeEmailAsync(string toEmail, string firstName, string loginUrl);
     Task<bool> SendAccountLockedEmailAsync(string toEmail, string firstName);
     Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password);
+    Task<bool> SendLoginCodeEmailAsync(string toEmail, string firstName, string code, int validMinutes);
     Task<bool> SendWeeklyClientPasswordEmailAsync(string toEmail, string firstName, string password);
     Task<bool> SendAgreementReadyToSignEmailAsync(string toEmail, string firstName, string roleLabel);
     // Combines SendPortalVerifyWithPasswordEmailAsync + SendAgreementReadyToSignEmailAsync into one

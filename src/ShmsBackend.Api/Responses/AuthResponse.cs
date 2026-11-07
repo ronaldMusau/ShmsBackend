@@ -13,4 +13,11 @@ public class AuthResponse
     public string LastName { get; set; } = string.Empty;
     public UserType UserType { get; set; }  // Single type instead of list
     public DateTime ExpiresAt { get; set; }
+
+    // Staff sign-in code step: when RequiresOtp is true the tokens above are empty and the client must verify the emailed code.
+    public bool RequiresOtp { get; set; }
+    public Guid? ChallengeId { get; set; }
+    public int ResendAfterSeconds { get; set; }
+    public int CodeValidMinutes { get; set; }
+    public string? MaskedEmail { get; set; }
 }

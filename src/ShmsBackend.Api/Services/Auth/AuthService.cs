@@ -26,6 +26,7 @@ public class AuthService : IAuthService
     private readonly IWeeklyPasswordService _weeklyPasswordService;
     private readonly JwtOptions _jwtOptions;
     private readonly ShmsBackend.Api.Services.Security.ISecurityEventService _events;
+    private readonly ShmsBackend.Api.Services.Security.ILoginOtpService _otp;
 
     public AuthService(
         IUnitOfWork unitOfWork,
@@ -36,9 +37,11 @@ public class AuthService : IAuthService
         IFrontendUrlService frontendUrlService,
         IWeeklyPasswordService weeklyPasswordService,
         IOptions<JwtOptions> jwtOptions,
-        ShmsBackend.Api.Services.Security.ISecurityEventService events)
+        ShmsBackend.Api.Services.Security.ISecurityEventService events,
+        ShmsBackend.Api.Services.Security.ILoginOtpService otp)
     {
         _events = events;
+        _otp = otp;
         _unitOfWork = unitOfWork;
         _tokenService = tokenService;
         _emailService = emailService;
@@ -64,7 +67,7 @@ public class AuthService : IAuthService
             && BCrypt.Net.BCrypt.Verify(password, weeklyHash);
     }
 
-    public async Task<ApiResponse<AuthResponse>> LoginAsync(LoginDto loginDto)
+    public async Task<ApiResponse<AuthResponse>> LoginAsync(LoginDto loginDto, string? ip = null)
     {
         try
         {
@@ -131,7 +134,32 @@ public class AuthService : IAuthService
             }
 
             admin.FailedLoginAttempts = 0;
+            await _unitOfWork.Admins.UpdateAsync(admin);
+            await _unitOfWork.SaveChangesAsync();
 
+            // Email and password are correct for this role. Only now is a one-time code sent; no tokens are
+            // issued and nothing says who the user is until the code has been verified.
+            var issued = await _otp.IssueAsync(admin, ip);
+            return ApiResponse<AuthResponse>.SuccessResponse(new AuthResponse
+            {
+                RequiresOtp = true,
+                ChallengeId = issued.ChallengeId,
+                ResendAfterSeconds = issued.ResendAfterSeconds,
+                CodeValidMinutes = issued.ValidMinutes,
+                MaskedEmail = issued.MaskedEmail
+            }, "Enter the code we emailed you");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during login for email: {Email}", loginDto.Email);
+            return ApiResponse<AuthResponse>.FailureResponse("An error occurred during login. Please try again.");
+        }
+    }
+
+    private async Task<ApiResponse<AuthResponse>> CompleteLoginAsync(Admin admin)
+    {
+        try
+        {
             var accessToken = _tokenService.GenerateAccessToken(admin.Id, admin.Email, admin.UserType);
             var refreshToken = _tokenService.GenerateRefreshToken();
 
@@ -159,8 +187,50 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during login for email: {Email}", loginDto.Email);
+            _logger.LogError(ex, "Error completing login for {UserId}", admin.Id);
             return ApiResponse<AuthResponse>.FailureResponse("An error occurred during login. Please try again.");
+        }
+    }
+
+    public async Task<ApiResponse<AuthResponse>> VerifyLoginOtpAsync(VerifyLoginOtpDto dto, string? ip)
+    {
+        var r = await _otp.VerifyAsync(dto.ChallengeId, dto.Code, ip);
+        switch (r.Result)
+        {
+            case ShmsBackend.Api.Services.Security.OtpResult.Ok:
+                // Only now do we know who is signing in and issue tokens.
+                return await CompleteLoginAsync(r.Admin!);
+            case ShmsBackend.Api.Services.Security.OtpResult.Wrong:
+                return ApiResponse<AuthResponse>.FailureResponse(
+                    $"That code is not correct. {r.TriesLeft} {(r.TriesLeft == 1 ? "try" : "tries")} left.");
+            case ShmsBackend.Api.Services.Security.OtpResult.TooManyTries:
+                return ApiResponse<AuthResponse>.FailureResponse("Too many wrong codes. Please sign in again to get a new code.");
+            case ShmsBackend.Api.Services.Security.OtpResult.AccountLocked:
+                return ApiResponse<AuthResponse>.FailureResponse("This account is locked. Please reset your password to regain access.");
+            case ShmsBackend.Api.Services.Security.OtpResult.Expired:
+                return ApiResponse<AuthResponse>.FailureResponse("That code has expired. Please sign in again to get a new code.");
+            default:
+                return ApiResponse<AuthResponse>.FailureResponse("This code is no longer valid. Please sign in again.");
+        }
+    }
+
+    public async Task<ApiResponse<AuthResponse>> ResendLoginOtpAsync(ResendLoginOtpDto dto, string? ip)
+    {
+        var r = await _otp.ResendAsync(dto.ChallengeId, ip);
+        switch (r.Result)
+        {
+            case ShmsBackend.Api.Services.Security.OtpResult.Ok:
+                return ApiResponse<AuthResponse>.SuccessResponse(new AuthResponse
+                {
+                    RequiresOtp = true, ChallengeId = r.Issued!.ChallengeId, ResendAfterSeconds = r.Issued.ResendAfterSeconds,
+                    CodeValidMinutes = r.Issued.ValidMinutes, MaskedEmail = r.Issued.MaskedEmail
+                }, "A new code has been sent");
+            case ShmsBackend.Api.Services.Security.OtpResult.TooSoon:
+                return ApiResponse<AuthResponse>.FailureResponse($"Please wait {r.WaitSeconds} seconds before asking for another code.");
+            case ShmsBackend.Api.Services.Security.OtpResult.ResendLimit:
+                return ApiResponse<AuthResponse>.FailureResponse("You have asked for too many codes. Please sign in again.");
+            default:
+                return ApiResponse<AuthResponse>.FailureResponse("This code request is no longer valid. Please sign in again.");
         }
     }
 

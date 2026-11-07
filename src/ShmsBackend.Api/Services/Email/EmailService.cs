@@ -239,6 +239,19 @@ public class EmailService : IEmailService
             GetAccountLockedTemplate(firstName));
     }
 
+    public async Task<bool> SendLoginCodeEmailAsync(string toEmail, string firstName, string code, int validMinutes)
+    {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        // Never log the code: only that a code email was sent.
+        _logger.LogInformation("Sending sign-in code email to: {Email}", toEmail);
+        return await SendEmail(
+            toEmail,
+            "Your Romah Estates sign-in code",
+            GetLoginCodeTemplate(firstName, code, validMinutes));
+    }
+
     public async Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password)
     {
         var palette = await ResolveEmailPaletteAsync(null, false);
@@ -1092,6 +1105,32 @@ public class EmailService : IEmailService
     }
 
     // ── Weekly Shared Password Template ───────────────────────────────────
+
+    private string GetLoginCodeTemplate(string firstName, string code, int validMinutes)
+    {
+        // One box per digit so the code is easy to read and to select. Mail apps that detect one-time codes
+        // (for example Gmail) offer their own Copy code button for a clearly formatted code like this one.
+        var boxes = string.Concat(code.Select(c =>
+            $"<span style='display:inline-block;width:38px;height:48px;line-height:48px;margin:0 4px;text-align:center;" +
+            $"font-family:\"Courier New\",monospace;font-size:26px;font-weight:700;color:{ColourGold};" +
+            $"background:rgba(255,255,255,0.06);border:1px solid {ColourGold};border-radius:8px;'>{c}</span>"));
+
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para("Someone entered your email and password to sign in to the Romah Estates management portal. Enter this code to finish signing in.")}
+
+{GoldBox($@"
+  <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 12px 0;'>Your sign-in code</p>
+  <div style='white-space:nowrap;'>{boxes}</div>
+  <p style='color:{ColourTextMuted};font-size:12px;margin:14px 0 0 0;'>Your code is {code}</p>
+")}
+
+{Para($"This code works once and expires in <strong style='color:{ColourGold};'>{validMinutes} minutes</strong>. Romah Estates staff will never ask you for it.")}
+{Divider()}
+{SmallNote("If this was not you, do not share the code. Someone knows your password, so sign in and change it straight away, or ask an administrator to lock the account.")}";
+
+        return WrapInLayout("Your sign-in code — Romah Estates", inner);
+    }
 
     private string GetWeeklyPasswordTemplate(string firstName, string password)
     {
