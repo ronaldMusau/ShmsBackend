@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Services.Auth;
 using ShmsBackend.Api.Services.Notifications;
@@ -138,7 +139,7 @@ public class AuthController : ControllerBase
     {
         var cache = HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
         var key = "authchg:" + id;
-        var n = cache.TryGetValue(key, out int v) ? v : 0;
+        var n = cache.TryGetValue<int>(key, out var v) ? v : 0;
         if (record) { n++; cache.Set(key, n, TimeSpan.FromMinutes(15)); }
         return n >= 5;
     }
