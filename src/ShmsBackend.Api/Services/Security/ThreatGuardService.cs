@@ -13,7 +13,7 @@ public interface IThreatGuard
     bool LockdownActive { get; }
     Task<SecuritySettings> GetSettingsAsync(bool fresh = false);
     void InvalidateSettings();
-    Task OnLoginAsync(string ip, string? userAgent, string email, bool success);
+    Task OnLoginAsync(string ip, string? userAgent, string email, bool success, string? role = null);
     Task OnResponseAsync(HttpContext ctx);
     Task BlockIpAsync(string ip, string reason, bool manual = false, int? minutes = null, string? by = null);
     Task ReleaseIpAsync(string ip, string? by);
@@ -249,7 +249,7 @@ public class ThreatGuardService : IThreatGuard
     }
 
     // ---------- login hook ----------
-    public async Task OnLoginAsync(string ip, string? userAgent, string email, bool success)
+    public async Task OnLoginAsync(string ip, string? userAgent, string email, bool success, string? role = null)
     {
         try
         {
@@ -262,11 +262,17 @@ public class ThreatGuardService : IThreatGuard
             using (var scope = _scopes.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<ShmsDbContext>();
-                userId = await db.Admins.AsNoTracking().Where(a => a.Email.ToLower() == email).Select(a => (Guid?)a.Id).FirstOrDefaultAsync()
-                      ?? await db.PortalUsers.AsNoTracking().Where(u => u.Email.ToLower() == email).Select(u => (Guid?)u.Id).FirstOrDefaultAsync();
+                // The same email can exist under several roles, so look the account up by email AND role.
+                if (role != null && Enum.TryParse<ShmsBackend.Data.Enums.UserType>(role, out var staffType))
+                    userId = await db.Admins.AsNoTracking().Where(a => a.Email.ToLower() == email && a.UserType == staffType).Select(a => (Guid?)a.Id).FirstOrDefaultAsync();
+                else if (role != null && Enum.TryParse<ShmsBackend.Data.Enums.PortalUserType>(role, out var portalType))
+                    userId = await db.PortalUsers.AsNoTracking().Where(u => u.Email.ToLower() == email && u.PortalUserType == portalType).Select(u => (Guid?)u.Id).FirstOrDefaultAsync();
+                else
+                    userId = await db.Admins.AsNoTracking().Where(a => a.Email.ToLower() == email).Select(a => (Guid?)a.Id).FirstOrDefaultAsync()
+                          ?? await db.PortalUsers.AsNoTracking().Where(u => u.Email.ToLower() == email).Select(u => (Guid?)u.Id).FirstOrDefaultAsync();
                 db.LoginActivities.Add(new LoginActivity
                 {
-                    UserId = userId, Email = email.Length > 200 ? email[..200] : email, IpAddress = ip, Success = success,
+                    UserId = userId, Email = email.Length > 200 ? email[..200] : email, IpAddress = ip, Success = success, Role = role,
                     UserAgent = userAgent?.Length > 300 ? userAgent[..300] : userAgent
                 });
                 await db.SaveChangesAsync();
@@ -291,12 +297,23 @@ public class ThreatGuardService : IThreatGuard
                         : $"{total} failed sign-ins in {s.IpFailWindowMinutes} minutes");
                 }
 
+                // Someone is hammering a SuperAdmin account. It is never locked or deactivated by this, but every
+                // SuperAdmin and Admin is told straight away (bell, push and email) so a person can act.
+                if (userId != null && role == "SuperAdmin")
+                {
+                    var (sa, _) = C($"safail:{userId}").Add(now, win, ip);
+                    if (sa >= Math.Max(1, s.SuperAdminFailThreshold) && !Mute($"sa:{userId}", TimeSpan.FromMinutes(10)))
+                        await _events.RecordAsync("Auth", "SuperAdminTargeted", "Critical",
+                            $"Someone is trying to sign in as SuperAdmin ({email}): {sa} failed attempts in {s.IpFailWindowMinutes} minutes, latest from IP {ip}. The account is not locked; check it now.",
+                            userId.ToString(), "SuperAdmin", ip);
+                }
+
                 if (userId != null)
                 {
                     var (t, ips) = C($"acctfailips:{userId}").Add(now, win, ip);
                     if (ips >= 10 && t >= 15 && !Mute($"dist:{userId}", TimeSpan.FromMinutes(10)))
                         await _events.RecordAsync("Auth", "DistributedAttack", "High",
-                            $"One account is being attacked from {ips} different IPs ({t} failed sign-ins).", userId.ToString(), null, ip);
+                            $"One {role ?? "account"} account ({email}) is being attacked from {ips} different IPs ({t} failed sign-ins).", userId.ToString(), role, ip);
                 }
                 return;
             }

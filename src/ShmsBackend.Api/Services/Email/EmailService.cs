@@ -252,6 +252,15 @@ public class EmailService : IEmailService
             GetLoginCodeTemplate(firstName, code, validMinutes));
     }
 
+    public async Task<bool> SendSecurityAlertEmailAsync(string toEmail, string firstName, string summary, DateTime whenUtc)
+    {
+        var palette = await ResolveEmailPaletteAsync(null, false);
+        SetPalette(palette);
+        SetCompanyContext(await GetOrCreateCompanySettingsAsync());
+        _logger.LogInformation("Sending security alert email to: {Email}", toEmail);
+        return await SendEmail(toEmail, "Romah Estates — Security alert", GetSecurityAlertTemplate(firstName, summary, whenUtc));
+    }
+
     public async Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password)
     {
         var palette = await ResolveEmailPaletteAsync(null, false);
@@ -1105,6 +1114,19 @@ public class EmailService : IEmailService
     }
 
     // ── Weekly Shared Password Template ───────────────────────────────────
+
+    private string GetSecurityAlertTemplate(string firstName, string summary, DateTime whenUtc)
+    {
+        var safe = System.Net.WebUtility.HtmlEncode(summary);
+        var inner = $@"
+{H2($"Hello {firstName},")}
+{Para("The security system raised a critical alert that needs a person to look at it.")}
+{GoldBox($@"<p style='color:{ColourTextMuted};font-size:12px;margin:0 0 8px 0;'>{whenUtc:yyyy-MM-dd HH:mm} UTC</p><p style='margin:0;font-size:15px;'>{safe}</p>")}
+{Para("Open the Security Alerts page in the management portal to review it, block the address or deactivate an account if needed.")}
+{Divider()}
+{SmallNote("You receive this because you are a SuperAdmin or Admin. Critical alerts are always sent and cannot be switched off.")}";
+        return WrapInLayout("Security alert — Romah Estates", inner);
+    }
 
     private string GetLoginCodeTemplate(string firstName, string code, int validMinutes)
     {

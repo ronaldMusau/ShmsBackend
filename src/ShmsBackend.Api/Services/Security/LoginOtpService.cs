@@ -122,8 +122,8 @@ public class LoginOtpService : ILoginOtpService
             ch.Burned = true;
             await _db.SaveChangesAsync();
             await _events.RecordAsync("Auth", "OtpTooManyTries", "High",
-                $"Sign-in code for a staff account was entered wrongly {MaxAttempts} times; the code was cancelled.",
-                admin.Id.ToString(), "Staff", ip);
+                $"Sign-in code for a {admin.UserType} account ({admin.Email}) was entered wrongly {MaxAttempts} times; the code was cancelled.",
+                admin.Id.ToString(), admin.UserType.ToString(), ip);
 
             // Several cancelled codes in an hour: someone has the password and keeps guessing. Lock the account.
             var since = now.AddHours(-1);
@@ -133,8 +133,8 @@ public class LoginOtpService : ILoginOtpService
                 admin.IsLockedOut = true;
                 await _db.SaveChangesAsync();
                 await _events.RecordAsync("Auth", "OtpAccountLocked", "Critical",
-                    $"Staff account locked after {burns} cancelled sign-in codes in one hour. It needs a password reset.",
-                    admin.Id.ToString(), "Staff", ip);
+                    $"{admin.UserType} account ({admin.Email}) locked after {burns} cancelled sign-in codes in one hour. It needs a password reset.",
+                    admin.Id.ToString(), admin.UserType.ToString(), ip);
                 try { await _email.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); } catch { /* alert already recorded */ }
                 return new OtpVerify(OtpResult.AccountLocked, null, 0);
             }

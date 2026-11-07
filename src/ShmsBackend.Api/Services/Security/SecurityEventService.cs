@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Services.Notifications;
+using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
 
@@ -64,6 +65,18 @@ public class SecurityEventService : ISecurityEventService
                 // Forced: security alerts ignore each person's mute / preference toggles.
                 foreach (var id in ids)
                     await notifier.SendForcedToUserAsync(id, $"Security alert: {summary}", "security", "SecurityEvent", null);
+
+                // Critical alerts are also emailed (third channel). Never gated by preferences.
+                if (severity == "Critical")
+                {
+                    var mail = scope.ServiceProvider.GetRequiredService<IEmailService>();
+                    var people = await db.Admins.AsNoTracking()
+                        .Where(a => a.IsActive && !a.IsDeleted && (a.UserType == ShmsBackend.Data.Enums.UserType.SuperAdmin || a.UserType == ShmsBackend.Data.Enums.UserType.Admin))
+                        .Select(a => new { a.Email, a.FirstName }).ToListAsync();
+                    foreach (var p in people)
+                        try { await mail.SendSecurityAlertEmailAsync(p.Email, p.FirstName, summary, DateTime.UtcNow); }
+                        catch (Exception ex) { _log.LogWarning(ex, "Security alert email failed"); }
+                }
             }
         }
         catch (Exception ex)

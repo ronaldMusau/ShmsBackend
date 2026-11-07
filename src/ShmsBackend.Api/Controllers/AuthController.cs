@@ -60,7 +60,7 @@ public class AuthController : ControllerBase
         // A correct password only leads to the code step, so only failures count here; the real sign-in is
         // recorded when the code is verified.
         if (!result.Success)
-            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), loginDto.Email, false);
+            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), loginDto.Email, false, loginDto.SelectedUserType.ToString());
         if (!result.Success)
         {
             return Unauthorized(result);
@@ -78,9 +78,15 @@ public class AuthController : ControllerBase
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var result = await _authService.VerifyLoginOtpAsync(dto, ip);
         if (result.Success && result.Data != null)
-            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), result.Data.Email, true);
+            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), result.Data.Email, true, result.Data.UserType.ToString());
         else
-            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), "code-step", false);
+        {
+            // Record the failed code against the real account and role (the caller is told nothing extra).
+            var owner = await _context.LoginChallenges.AsNoTracking().Where(c => c.Id == dto.ChallengeId)
+                .Join(_context.Admins.AsNoTracking(), c => c.AdminId, a => a.Id, (c, a) => new { a.Email, a.UserType })
+                .FirstOrDefaultAsync();
+            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), owner?.Email ?? "code-step", false, owner?.UserType.ToString());
+        }
         return result.Success ? Ok(result) : Unauthorized(result);
     }
 

@@ -54,7 +54,7 @@ public class PortalAuthController : ControllerBase
 
         var result = await _portalAuthService.LoginAsync(dto);
         await _guard.OnLoginAsync(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            Request.Headers.UserAgent.ToString(), dto.Email, result.Success);
+            Request.Headers.UserAgent.ToString(), dto.Email, result.Success, dto.PortalUserType.ToString());
         if (!result.Success)
             return Unauthorized(result);
 

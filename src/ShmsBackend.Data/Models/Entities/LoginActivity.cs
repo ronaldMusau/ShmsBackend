@@ -12,4 +12,7 @@ public class LoginActivity
     public string IpAddress { get; set; } = string.Empty;
     public string? UserAgent { get; set; }
     public bool Success { get; set; }
+    /// <summary>The role that was signed in to (SuperAdmin, Admin, Manager, Accountant, Secretary, Landlord, Agent, Tenant, Explorer). The same email can exist under several roles.</summary>
+    [System.ComponentModel.DataAnnotations.MaxLength(30)]
+    public string? Role { get; set; }
 }

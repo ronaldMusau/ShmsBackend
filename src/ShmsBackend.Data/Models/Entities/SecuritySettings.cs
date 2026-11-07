@@ -11,6 +11,7 @@ public class SecuritySettings
     public int IpFailThreshold { get; set; } = 20;            // failed logins from one IP within the window
     public int IpDistinctAccountsThreshold { get; set; } = 8; // different accounts failed from one IP within the window
     public int IpFailWindowMinutes { get; set; } = 10;
+    public int SuperAdminFailThreshold { get; set; } = 3;     // failed sign-ins on one SuperAdmin account within the window that raise a Critical alert (the account is never locked by this)
     public int SharedIpFactor { get; set; } = 3;              // thresholds x this when the IP looks shared (many real users)
     public int NotFoundThreshold { get; set; } = 40;         // 404s from one IP within the window
     public int NotFoundWindowMinutes { get; set; } = 5;

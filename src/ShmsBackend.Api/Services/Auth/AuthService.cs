@@ -119,9 +119,9 @@ public class AuthService : IAuthService
 
                     if (nowLockedOut)
                     {
-                        await _events.RecordAsync("Auth", "LoginLockout", "High",
-                            $"Staff account locked after repeated wrong passwords ({admin.Email}).",
-                            admin.Id.ToString(), "Staff");
+                        await _events.RecordAsync("Auth", "LoginLockout", admin is SuperAdmin ? "Critical" : "High",
+                            $"{admin.UserType} account locked after repeated wrong passwords ({admin.Email}).",
+                            admin.Id.ToString(), admin.UserType.ToString());
                         try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
                         catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
                     }

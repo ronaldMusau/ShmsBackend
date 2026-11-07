@@ -30,6 +30,7 @@ public class SecurityCenterController : ControllerBase
         public int IpFailThreshold { get; set; }
         public int IpDistinctAccountsThreshold { get; set; }
         public int IpFailWindowMinutes { get; set; }
+        public int SuperAdminFailThreshold { get; set; }
         public int SharedIpFactor { get; set; }
         public int NotFoundThreshold { get; set; }
         public int NotFoundWindowMinutes { get; set; }
@@ -57,6 +58,7 @@ public class SecurityCenterController : ControllerBase
             d.IpFailThreshold < 5 ? "Failed sign-ins per IP must be at least 5."
           : d.IpDistinctAccountsThreshold < 3 ? "Different accounts per IP must be at least 3."
           : d.IpFailWindowMinutes is < 1 or > 1440 ? "Sign-in window must be 1 to 1440 minutes."
+          : d.SuperAdminFailThreshold is < 2 or > 20 ? "Failed sign-ins before a SuperAdmin alert must be 2 to 20."
           : d.SharedIpFactor is < 1 or > 20 ? "Shared-IP multiplier must be 1 to 20."
           : d.NotFoundThreshold < 10 ? "Missing-page requests must be at least 10."
           : d.NotFoundWindowMinutes is < 1 or > 1440 ? "Missing-page window must be 1 to 1440 minutes."
@@ -78,7 +80,7 @@ public class SecurityCenterController : ControllerBase
         var s = await _db.SecuritySettings.OrderBy(x => x.Id).FirstOrDefaultAsync();
         if (s == null) { s = new ShmsBackend.Data.Models.Entities.SecuritySettings(); _db.SecuritySettings.Add(s); }
         s.IpFailThreshold = d.IpFailThreshold; s.IpDistinctAccountsThreshold = d.IpDistinctAccountsThreshold;
-        s.IpFailWindowMinutes = d.IpFailWindowMinutes; s.SharedIpFactor = d.SharedIpFactor;
+        s.IpFailWindowMinutes = d.IpFailWindowMinutes; s.SharedIpFactor = d.SharedIpFactor; s.SuperAdminFailThreshold = d.SuperAdminFailThreshold;
         s.NotFoundThreshold = d.NotFoundThreshold; s.NotFoundWindowMinutes = d.NotFoundWindowMinutes;
         s.RateLimitedThreshold = d.RateLimitedThreshold; s.RateLimitedWindowMinutes = d.RateLimitedWindowMinutes;
         s.BlockMinutesBase = d.BlockMinutesBase; s.BlockMaxHours = d.BlockMaxHours;
@@ -169,12 +171,13 @@ public class SecurityCenterController : ControllerBase
     }
 
     [HttpGet("sign-in-activity")]
-    public async Task<IActionResult> LoginActivity([FromQuery] string? email, [FromQuery] string? ip, [FromQuery] bool? success, [FromQuery] int take = 100)
+    public async Task<IActionResult> LoginActivity([FromQuery] string? email, [FromQuery] string? ip, [FromQuery] bool? success, [FromQuery] string? role, [FromQuery] int take = 100)
     {
         var q = _db.LoginActivities.AsNoTracking().AsQueryable();
         if (!string.IsNullOrWhiteSpace(email)) q = q.Where(a => a.Email.Contains(email.Trim().ToLower()));
         if (!string.IsNullOrWhiteSpace(ip)) q = q.Where(a => a.IpAddress.Contains(ip.Trim()));
         if (success.HasValue) q = q.Where(a => a.Success == success.Value);
+        if (!string.IsNullOrWhiteSpace(role)) q = q.Where(a => a.Role == role.Trim());
         return Ok(await q.OrderByDescending(a => a.CreatedAt).Take(Math.Clamp(take, 1, 500)).ToListAsync());
     }
 
