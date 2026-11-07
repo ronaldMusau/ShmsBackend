@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -193,6 +193,7 @@ public class SecurityCenterController : ControllerBase
     {
         var s = await _db.SecuritySettings.OrderBy(x => x.Id).FirstOrDefaultAsync();
         if (s == null) { s = new ShmsBackend.Data.Models.Entities.SecuritySettings(); _db.SecuritySettings.Add(s); }
+        var wasActive = s.LockdownActive;
         s.LockdownActive = d.Active;
         s.LockdownReason = d.Active ? (string.IsNullOrWhiteSpace(d.Reason) ? "Emergency lockdown" : d.Reason.Trim()) : null;
         s.LockdownBy = d.Active ? Me : null;
@@ -203,6 +204,11 @@ public class SecurityCenterController : ControllerBase
         await _events.RecordAsync("System", d.Active ? "LockdownOn" : "LockdownOff", d.Active ? "Critical" : "High",
             d.Active ? $"EMERGENCY LOCKDOWN switched on: {s.LockdownReason}. Only SuperAdmin and Admin can use the system." : "Emergency lockdown switched off. The system is open again.",
             Me, "Staff");
+        // Tell everyone when the system goes down and when it is back (only when the state really changed).
+        if (d.Active && !wasActive)
+            _events.BroadcastToEveryone("We are sorry: the system is temporarily unavailable while we deal with a security issue. It will be restored shortly, and we will notify you as soon as it is back.");
+        else if (!d.Active && wasActive)
+            _events.BroadcastToEveryone("Good news: the system is back and working normally. Thank you for your patience.");
         return Ok(new { success = true, active = d.Active });
     }
 }

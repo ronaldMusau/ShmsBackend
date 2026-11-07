@@ -18,6 +18,12 @@ public interface ISecurityEventService
     /// only alerted on, so the owner can't be locked out by a false alarm. Returns true if deactivated.
     /// </summary>
     Task<bool> DeactivateAccountAsync(string userId, string reason, string source, string eventType, string? ip = null);
+
+    /// <summary>
+    /// Sends one forced (preference-bypassing) notification to every active user of every portal, in the
+    /// background so the caller is not kept waiting. Used for "system is down" / "system is back" notices.
+    /// </summary>
+    void BroadcastToEveryone(string message, string category = "system");
 }
 
 public class SecurityEventService : ISecurityEventService
@@ -120,5 +126,29 @@ public class SecurityEventService : ISecurityEventService
         // A person's own decision is logged but does not page every admin; an automatic deactivation does.
         await RecordAsync(source, eventType, done && manual ? "Warning" : "Critical", $"{reason} {outcome}", userId, role, ip);
         return done;
+    }
+
+    public void BroadcastToEveryone(string message, string category = "system")
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopes.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ShmsDbContext>();
+                var notifier = scope.ServiceProvider.GetRequiredService<INotificationService>();
+                var ids = new List<string>();
+                ids.AddRange((await db.Admins.AsNoTracking().Where(a => a.IsActive && !a.IsDeleted).Select(a => a.Id).ToListAsync()).Select(i => i.ToString()));
+                ids.AddRange((await db.PortalUsers.AsNoTracking().Where(u => u.IsActive).Select(u => u.Id).ToListAsync()).Select(i => i.ToString()));
+                var sent = 0;
+                foreach (var id in ids)
+                {
+                    try { await notifier.SendForcedToUserAsync(id, message, category, "System", null); sent++; }
+                    catch (Exception ex) { _log.LogWarning(ex, "Broadcast notification failed for one user"); }
+                }
+                _log.LogInformation("System notice sent to {Count} of {Total} users", sent, ids.Count);
+            }
+            catch (Exception ex) { _log.LogError(ex, "System-wide notice failed"); }
+        });
     }
 }
