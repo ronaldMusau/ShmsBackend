@@ -31,6 +31,7 @@ public class SecurityCenterController : ControllerBase
         public int IpDistinctAccountsThreshold { get; set; }
         public int IpFailWindowMinutes { get; set; }
         public int SuperAdminFailThreshold { get; set; }
+        public int RecoveryRequestCooldownMinutes { get; set; }
         public int SharedIpFactor { get; set; }
         public int NotFoundThreshold { get; set; }
         public int NotFoundWindowMinutes { get; set; }
@@ -58,6 +59,7 @@ public class SecurityCenterController : ControllerBase
             d.IpFailThreshold < 5 ? "Failed sign-ins per IP must be at least 5."
           : d.IpDistinctAccountsThreshold < 3 ? "Different accounts per IP must be at least 3."
           : d.IpFailWindowMinutes is < 1 or > 1440 ? "Sign-in window must be 1 to 1440 minutes."
+          : d.RecoveryRequestCooldownMinutes is < 5 or > 1440 ? "Minutes between emergency-recovery requests must be 5 to 1440."
           : d.SuperAdminFailThreshold is < 2 or > 20 ? "Failed sign-ins before a SuperAdmin alert must be 2 to 20."
           : d.SharedIpFactor is < 1 or > 20 ? "Shared-IP multiplier must be 1 to 20."
           : d.NotFoundThreshold < 10 ? "Missing-page requests must be at least 10."
@@ -80,7 +82,7 @@ public class SecurityCenterController : ControllerBase
         var s = await _db.SecuritySettings.OrderBy(x => x.Id).FirstOrDefaultAsync();
         if (s == null) { s = new ShmsBackend.Data.Models.Entities.SecuritySettings(); _db.SecuritySettings.Add(s); }
         s.IpFailThreshold = d.IpFailThreshold; s.IpDistinctAccountsThreshold = d.IpDistinctAccountsThreshold;
-        s.IpFailWindowMinutes = d.IpFailWindowMinutes; s.SharedIpFactor = d.SharedIpFactor; s.SuperAdminFailThreshold = d.SuperAdminFailThreshold;
+        s.IpFailWindowMinutes = d.IpFailWindowMinutes; s.SharedIpFactor = d.SharedIpFactor; s.SuperAdminFailThreshold = d.SuperAdminFailThreshold; s.RecoveryRequestCooldownMinutes = d.RecoveryRequestCooldownMinutes;
         s.NotFoundThreshold = d.NotFoundThreshold; s.NotFoundWindowMinutes = d.NotFoundWindowMinutes;
         s.RateLimitedThreshold = d.RateLimitedThreshold; s.RateLimitedWindowMinutes = d.RateLimitedWindowMinutes;
         s.BlockMinutesBase = d.BlockMinutesBase; s.BlockMaxHours = d.BlockMaxHours;
@@ -172,13 +174,26 @@ public class SecurityCenterController : ControllerBase
 
     // ---- authenticator app status (staff) ----
     [HttpGet("authenticators")]
-    public async Task<IActionResult> Authenticators()
+    public async Task<IActionResult> Authenticators([FromQuery] string? q, [FromQuery] string? role, [FromQuery] bool? activated,
+        [FromQuery] bool recoveryRequested = false, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var rows = await _db.Admins.AsNoTracking().Where(a => !a.IsDeleted)
-            .OrderBy(a => a.UserType).ThenBy(a => a.FirstName)
+        pageSize = Math.Clamp(pageSize, 5, 100); page = Math.Max(1, page);
+        var query = _db.Admins.AsNoTracking().Where(a => !a.IsDeleted);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var t = q.Trim().ToLower();
+            query = query.Where(a => a.Email.ToLower().Contains(t) || (a.FirstName + " " + a.LastName).ToLower().Contains(t));
+        }
+        if (!string.IsNullOrWhiteSpace(role) && Enum.TryParse<ShmsBackend.Data.Enums.UserType>(role, out var rt)) query = query.Where(a => a.UserType == rt);
+        if (activated.HasValue) query = query.Where(a => (a.TotpEnabledAt != null) == activated.Value);
+        if (recoveryRequested) query = query.Where(a => a.RecoveryRequestedAt != null);
+
+        var total = await query.CountAsync();
+        var items = await query.OrderByDescending(a => a.RecoveryRequestedAt != null).ThenBy(a => a.UserType).ThenBy(a => a.FirstName)
+            .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(a => new { id = a.Id, name = a.FirstName + " " + a.LastName, email = a.Email, role = a.UserType.ToString(), isActive = a.IsActive,
-                               authenticatorActivated = a.TotpEnabledAt != null, activatedAt = a.TotpEnabledAt }).ToListAsync();
-        return Ok(rows);
+                               authenticatorActivated = a.TotpEnabledAt != null, activatedAt = a.TotpEnabledAt, recoveryRequestedAt = a.RecoveryRequestedAt }).ToListAsync();
+        return Ok(new { items, total, page, pageSize });
     }
 
     /// <summary>For a lost or replaced phone. Nobody resets their own; SuperAdmin resets anyone, Admin resets only Manager, Accountant and Secretary.</summary>
@@ -193,7 +208,7 @@ public class SecurityCenterController : ControllerBase
             return StatusCode(403, new { success = false, message = "Only a SuperAdmin can reset a SuperAdmin or an Admin." });
 
         target.TotpSecretEnc = null; target.TotpEnabledAt = null; target.TotpLastStep = 0;
-        target.RefreshToken = null; target.RefreshTokenExpiryTime = null;
+        target.RefreshToken = null; target.RefreshTokenExpiryTime = null; target.RecoveryRequestedAt = null;
         _db.AdminRecoveryCodes.RemoveRange(_db.AdminRecoveryCodes.Where(r => r.AdminId == id));
         foreach (var c in _db.LoginChallenges.Where(c => c.AdminId == id && c.UsedAt == null && !c.Burned)) c.Burned = true;
         await _db.SaveChangesAsync();

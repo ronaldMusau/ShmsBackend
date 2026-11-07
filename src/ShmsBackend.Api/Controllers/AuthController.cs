@@ -24,6 +24,7 @@ public class AuthController : ControllerBase
     private readonly IWeeklyPasswordService _weeklyPasswordService;
     private readonly IWeeklyClientPasswordService _weeklyClientPasswordService;
     private readonly ShmsBackend.Api.Services.Security.IThreatGuard _guard;
+    private readonly ShmsBackend.Api.Services.Security.IRecoveryRequestService _recovery;
 
     public AuthController(
         IAuthService authService,
@@ -33,7 +34,8 @@ public class AuthController : ControllerBase
         ShmsDbContext context,
         IWeeklyPasswordService weeklyPasswordService,
         IWeeklyClientPasswordService weeklyClientPasswordService,
-        ShmsBackend.Api.Services.Security.IThreatGuard guard)
+        ShmsBackend.Api.Services.Security.IThreatGuard guard,
+        ShmsBackend.Api.Services.Security.IRecoveryRequestService recovery)
     {
         _guard = guard;
         _authService = authService;
@@ -41,6 +43,7 @@ public class AuthController : ControllerBase
         _unitOfWork = unitOfWork;
         _notificationPreferenceService = notificationPreferenceService;
         _context = context;
+        _recovery = recovery;
         _weeklyPasswordService = weeklyPasswordService;
         _weeklyClientPasswordService = weeklyClientPasswordService;
     }
@@ -99,6 +102,20 @@ public class AuthController : ControllerBase
         var a = await _context.Admins.AsNoTracking().Where(x => x.Id == id).Select(x => new { x.TotpEnabledAt }).FirstOrDefaultAsync();
         if (a == null) return NotFound();
         return Ok(new { activated = a.TotpEnabledAt != null, activatedAt = a.TotpEnabledAt });
+    }
+
+    public class EmergencyRecoveryDto { [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(200)] public string Email { get; set; } = string.Empty; }
+
+    /// <summary>Always answers the same way, so it cannot be used to find out which emails are staff accounts.</summary>
+    [AllowAnonymous]
+    [HttpPost("emergency-recovery")]
+    [EnableRateLimiting("auth-sensitive")]
+    public async Task<IActionResult> EmergencyRecovery([FromBody] EmergencyRecoveryDto dto)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        try { await _recovery.RequestAsync(dto.Email, ip); } catch (Exception ex) { _logger.LogWarning(ex, "Emergency recovery request failed"); }
+        return Ok(new { success = true, message = "If that email belongs to a staff account, an administrator has been told and will contact you." });
     }
 
     [AllowAnonymous]

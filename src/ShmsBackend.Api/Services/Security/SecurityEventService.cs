@@ -11,7 +11,7 @@ public interface ISecurityEventService
     /// <summary>Records an event. Never throws. High/Critical also push to every SuperAdmin and Admin.</summary>
     Task RecordAsync(string source, string eventType, string severity, string summary,
         string? actorUserId = null, string? actorRole = null, string? ip = null,
-        string? entityType = null, Guid? entityId = null);
+        string? entityType = null, Guid? entityId = null, bool alsoEmail = false);
 
     /// <summary>
     /// Deactivates an account suspected of leaking data or being taken over, then records a Critical
@@ -39,7 +39,7 @@ public class SecurityEventService : ISecurityEventService
 
     public async Task RecordAsync(string source, string eventType, string severity, string summary,
         string? actorUserId = null, string? actorRole = null, string? ip = null,
-        string? entityType = null, Guid? entityId = null)
+        string? entityType = null, Guid? entityId = null, bool alsoEmail = false)
     {
         try
         {
@@ -67,7 +67,7 @@ public class SecurityEventService : ISecurityEventService
                     await notifier.SendForcedToUserAsync(id, $"Security alert: {summary}", "security", "SecurityEvent", null);
 
                 // Critical alerts are also emailed (third channel). Never gated by preferences.
-                if (severity == "Critical")
+                if (severity == "Critical" || alsoEmail)
                 {
                     var mail = scope.ServiceProvider.GetRequiredService<IEmailService>();
                     var people = await db.Admins.AsNoTracking()

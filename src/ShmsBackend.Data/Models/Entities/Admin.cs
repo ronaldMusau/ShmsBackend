@@ -33,6 +33,8 @@ public abstract class Admin : ISoftDelete
     public string? TotpSecretEnc { get; set; }
     public DateTime? TotpEnabledAt { get; set; }
     public long TotpLastStep { get; set; }
+    /// <summary>Set when the person used Emergency Recovery to ask an administrator to reset their authenticator. Cleared by the reset.</summary>
+    public DateTime? RecoveryRequestedAt { get; set; }
     public int PasswordResetAttempts { get; set; } = 0;
 
     public DateTime CreatedAt { get; set; }

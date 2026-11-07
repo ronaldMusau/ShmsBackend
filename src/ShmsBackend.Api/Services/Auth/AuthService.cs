@@ -176,6 +176,7 @@ public class AuthService : IAuthService
 
             admin.RefreshToken = refreshToken;
             admin.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenExpirationDays);
+            admin.RecoveryRequestedAt = null;   // they got in, so an open recovery request is settled
             await _unitOfWork.Admins.UpdateAsync(admin);
             await _unitOfWork.SaveChangesAsync();
 

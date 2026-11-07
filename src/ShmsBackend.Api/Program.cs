@@ -162,6 +162,7 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.ISecurityEventService, ShmsBackend.Api.Services.Security.SecurityEventService>();
 builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.IThreatGuard, ShmsBackend.Api.Services.Security.ThreatGuardService>();
 builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.ISecretProtector, ShmsBackend.Api.Services.Security.SecretProtector>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Security.IRecoveryRequestService, ShmsBackend.Api.Services.Security.RecoveryRequestService>();
 builder.Services.AddScoped<ShmsBackend.Api.Services.Security.IAuthenticatorService, ShmsBackend.Api.Services.Security.AuthenticatorService>();
 builder.Services.AddScoped<ShmsBackend.Api.Services.Security.ILoginOtpService, ShmsBackend.Api.Services.Security.LoginOtpService>();
 builder.Services.AddScoped<INotificationPreferenceService, NotificationPreferenceService>();
