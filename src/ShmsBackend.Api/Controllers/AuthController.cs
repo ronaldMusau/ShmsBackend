@@ -95,6 +95,23 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// The staff sign-in page asks this first. When the approved-address rule is on and the caller is not on the list the answer is
+    /// a plain 404, so the page looks like any route that does not exist.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("staff-portal-access")]
+    public async Task<IActionResult> StaffPortalAccess()
+    {
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var st = await _guard.GetSettingsAsync();
+        var cfg = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+        if (ShmsBackend.Api.Services.Security.PrivilegedIpRule.Active(st, cfg)
+            && !ShmsBackend.Api.Services.Security.PrivilegedIpRule.IsAllowed(ip, st.PrivilegedAllowedIps))
+            return NotFound();
+        return Ok(new { allowed = true });
+    }
+
     [AllowAnonymous]
     [HttpPost("login/verify-otp")]
     [EnableRateLimiting("auth")]
