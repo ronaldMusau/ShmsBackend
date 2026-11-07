@@ -111,6 +111,15 @@ namespace ShmsBackend.Data.Migrations
                     b.Property<DateTime?>("RefreshTokenExpiryTime")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("TotpEnabledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long>("TotpLastStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TotpSecretEnc")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
@@ -128,6 +137,30 @@ namespace ShmsBackend.Data.Migrations
                     b.ToTable("Admins", (string)null);
 
                     b.UseTptMappingStrategy();
+                });
+
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.AdminRecoveryCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AdminRecoveryCodes");
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.AgreementTemplate", b =>
@@ -287,6 +320,12 @@ namespace ShmsBackend.Data.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("IpAddress")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PendingSecretEnc")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("ResendAvailableAt")
