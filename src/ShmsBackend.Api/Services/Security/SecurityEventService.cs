@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
 using ShmsBackend.Data.Models.Entities;
@@ -113,8 +113,12 @@ public class SecurityEventService : ISecurityEventService
         // Take effect on the very next request instead of waiting for the 60-second active-account cache.
         if (done) _cache.Remove($"auth:active:{userId}");
 
-        var outcome = done ? "Account deactivated automatically." : "Account was NOT deactivated (SuperAdmin or not found) - review it now.";
-        await RecordAsync(source, eventType, "Critical", $"{reason} {outcome}", userId, role, ip);
+        var manual = eventType.EndsWith("Manual", StringComparison.Ordinal);
+        var outcome = done
+            ? (manual ? "Account deactivated." : "Account deactivated automatically.")
+            : "Account was NOT deactivated (SuperAdmin or not found) - review it now.";
+        // A person's own decision is logged but does not page every admin; an automatic deactivation does.
+        await RecordAsync(source, eventType, done && manual ? "Warning" : "Critical", $"{reason} {outcome}", userId, role, ip);
         return done;
     }
 }
