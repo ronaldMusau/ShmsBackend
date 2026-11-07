@@ -168,7 +168,7 @@ public class SecurityCenterController : ControllerBase
         return ok ? Ok(new { success = true }) : BadRequest(new { success = false, message = "That account could not be deactivated (a SuperAdmin cannot be deactivated here)." });
     }
 
-    [HttpGet("login-activity")]
+    [HttpGet("sign-in-activity")]
     public async Task<IActionResult> LoginActivity([FromQuery] string? email, [FromQuery] string? ip, [FromQuery] bool? success, [FromQuery] int take = 100)
     {
         var q = _db.LoginActivities.AsNoTracking().AsQueryable();
