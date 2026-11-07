@@ -16,7 +16,7 @@ public interface IEmailService
     Task<bool> SendAccountLockedEmailAsync(string toEmail, string firstName);
     Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password);
     Task<bool> SendLoginCodeEmailAsync(string toEmail, string firstName, string code, int validMinutes);
-    Task<bool> SendSecurityAlertEmailAsync(string toEmail, string firstName, string summary, DateTime whenUtc);
+    Task<bool> SendSecurityAlertEmailAsync(string toEmail, string firstName, SecurityAlertEmail alert);
     Task<bool> SendWeeklyClientPasswordEmailAsync(string toEmail, string firstName, string password);
     Task<bool> SendAgreementReadyToSignEmailAsync(string toEmail, string firstName, string roleLabel);
     // Combines SendPortalVerifyWithPasswordEmailAsync + SendAgreementReadyToSignEmailAsync into one
@@ -95,3 +95,6 @@ public interface IEmailService
     Task SendExplorerInterestAgentEmailAsync(string toEmail, string firstName, string houseNumber, string flatName, string availabilityText, string? userId = null, bool isPortalUser = false);
     Task SendExplorerInterestOriginalAgentFyiEmailAsync(string toEmail, string firstName, string houseNumber, string flatName, string currentAgentName, string? userId = null, bool isPortalUser = false);
 }
+
+/// <summary>What a security-alert email needs to explain an event in plain words.</summary>
+public record SecurityAlertEmail(string EventType, string Severity, string Summary, string? Ip, DateTime WhenUtc);

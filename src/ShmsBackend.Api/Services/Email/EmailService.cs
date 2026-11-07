@@ -252,13 +252,14 @@ public class EmailService : IEmailService
             GetLoginCodeTemplate(firstName, code, validMinutes));
     }
 
-    public async Task<bool> SendSecurityAlertEmailAsync(string toEmail, string firstName, string summary, DateTime whenUtc)
+    public async Task<bool> SendSecurityAlertEmailAsync(string toEmail, string firstName, SecurityAlertEmail alert)
     {
         var palette = await ResolveEmailPaletteAsync(null, false);
         SetPalette(palette);
         SetCompanyContext(await GetOrCreateCompanySettingsAsync());
         _logger.LogInformation("Sending security alert email to: {Email}", toEmail);
-        return await SendEmail(toEmail, "Romah Estates — Security alert", GetSecurityAlertTemplate(firstName, summary, whenUtc));
+        var (headline, _) = SecurityAlertText(alert.EventType);
+        return await SendEmail(toEmail, $"Security alert: {headline}", GetSecurityAlertTemplate(firstName, alert));
     }
 
     public async Task<bool> SendWeeklyPasswordEmailAsync(string toEmail, string firstName, string password)
@@ -1115,16 +1116,59 @@ public class EmailService : IEmailService
 
     // ── Weekly Shared Password Template ───────────────────────────────────
 
-    private string GetSecurityAlertTemplate(string firstName, string summary, DateTime whenUtc)
+    /// <summary>Plain-words headline and the steps a person should take, per kind of event.</summary>
+    private static (string Headline, string[] Steps) SecurityAlertText(string eventType) => eventType switch
     {
-        var safe = System.Net.WebUtility.HtmlEncode(summary);
+        "RecoveryRequested" => ("Someone asked for an authenticator reset",
+            new[] { "Contact the person yourself (a phone call is best) and check it really is them.",
+                    "If it is them, open the Authenticators tab and press Reset next to their name.",
+                    "If it is not them, do nothing. Consider deactivating the account." }),
+        "SuperAdminTargeted" => ("Someone is trying to sign in as SuperAdmin",
+            new[] { "Check the sign-in activity for the address the attempts came from.",
+                    "Block the address on the Blocked IPs tab if you do not recognise it.",
+                    "The account is not locked, so you can still sign in normally." }),
+        "OtpAccountLocked" or "LoginLockout" => ("A staff account was locked",
+            new[] { "Find out whether the person simply forgot their details or someone else is guessing.",
+                    "The person must reset their password to get back in." }),
+        _ => ("Something needs your attention",
+            new[] { "Open Security Alerts and read the full entry.",
+                    "Block an address or deactivate an account if it looks like an attack." })
+    };
+
+    private string GetSecurityAlertTemplate(string firstName, SecurityAlertEmail alert)
+    {
+        var (headline, steps) = SecurityAlertText(alert.EventType);
+        var urgent = alert.Severity == "Critical";
+        var pill = urgent ? "Needs attention now" : "Please review";
+        var pillColour = urgent ? "#c0392b" : "#d68910";
+        var eat = alert.WhenUtc.AddHours(3);   // East Africa Time, where the company operates
+        var summary = System.Net.WebUtility.HtmlEncode(alert.Summary);
+        var ip = string.IsNullOrWhiteSpace(alert.Ip) ? "not recorded" : System.Net.WebUtility.HtmlEncode(alert.Ip);
+
+        string Row(string label, string value) =>
+            $"<tr><td style='padding:8px 12px 8px 0;color:{ColourTextMuted};font-size:13px;white-space:nowrap;vertical-align:top;'>{label}</td>" +
+            $"<td style='padding:8px 0;color:{ColourTextPrime};font-size:14px;'>{value}</td></tr>";
+
+        var stepList = string.Concat(steps.Select((t, i) =>
+            $"<tr><td style='padding:6px 12px 6px 0;color:{ColourGold};font-weight:700;vertical-align:top;'>{i + 1}.</td>" +
+            $"<td style='padding:6px 0;color:{ColourTextSec};font-size:15px;line-height:1.6;'>{System.Net.WebUtility.HtmlEncode(t)}</td></tr>"));
+
         var inner = $@"
-{H2($"Hello {firstName},")}
-{Para("The security system raised a critical alert that needs a person to look at it.")}
-{GoldBox($@"<p style='color:{ColourTextMuted};font-size:12px;margin:0 0 8px 0;'>{whenUtc:yyyy-MM-dd HH:mm} UTC</p><p style='margin:0;font-size:15px;'>{safe}</p>")}
-{Para("Open the Security Alerts page in the management portal to review it, block the address or deactivate an account if needed.")}
+<p style='margin:0 0 16px 0;'><span style='display:inline-block;background:{pillColour};color:#ffffff;font-size:12px;font-weight:700;padding:4px 12px;border-radius:20px;'>{pill}</span></p>
+{H2(System.Net.WebUtility.HtmlEncode(headline))}
+{Para($"Hello {System.Net.WebUtility.HtmlEncode(firstName)}, here is what happened.")}
+<div style='background-color:{ColourElevated};border:1px solid {ColourBorderGold};border-radius:10px;padding:16px 20px;margin:0 0 20px 0;'>
+  <p style='color:{ColourTextPrime};font-size:15px;line-height:1.6;margin:0 0 12px 0;'>{summary}</p>
+  <table role='presentation' cellpadding='0' cellspacing='0' style='border-top:1px solid {ColourBorderGold};width:100%;'>
+    {Row("When", $"{eat:dd MMM yyyy, HH:mm} (East Africa Time)")}
+    {Row("From address", ip)}
+  </table>
+</div>
+<p style='color:{ColourTextPrime};font-size:15px;font-weight:700;margin:0 0 6px 0;'>What to do</p>
+<table role='presentation' cellpadding='0' cellspacing='0'>{stepList}</table>
+{GoldButton(_frontendUrlService.GetLoginUrl(), "Sign in to Security Alerts")}
 {Divider()}
-{SmallNote("You receive this because you are a SuperAdmin or Admin. Critical alerts are always sent and cannot be switched off.")}";
+{SmallNote("You receive this because you are a SuperAdmin or Admin. Critical and high security alerts are always sent and cannot be switched off.")}";
         return WrapInLayout("Security alert — Romah Estates", inner);
     }
 
