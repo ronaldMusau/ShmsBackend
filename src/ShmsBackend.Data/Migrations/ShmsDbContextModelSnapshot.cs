@@ -257,6 +257,48 @@ namespace ShmsBackend.Data.Migrations
                     b.ToTable("LoginActivities");
                 });
 
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.LoginChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AdminId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Burned")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("IpAddress")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ResendAvailableAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("SendCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LoginChallenges");
+                });
+
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
