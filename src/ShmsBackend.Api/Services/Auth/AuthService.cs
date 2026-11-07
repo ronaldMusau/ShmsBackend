@@ -11,6 +11,7 @@ using ShmsBackend.Api.Models.DTOs.Email;
 using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Email;
 using ShmsBackend.Api.Services.Common;
+using ShmsBackend.Data.Models.Entities;
 using ShmsBackend.Data.Repositories.Interfaces;
 
 namespace ShmsBackend.Api.Services.Auth;
