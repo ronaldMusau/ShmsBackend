@@ -15,4 +15,7 @@ public class LoginDto
 
     [Required]
     public UserType SelectedUserType { get; set; }  // User selects which role to login as
+
+    /// <summary>True only from the separate staff sign-in page. SuperAdmin and Admin can only sign in there; everyone else only on the public page.</summary>
+    public bool StaffPortal { get; set; }
 }

@@ -557,6 +557,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TokenValidationMiddleware>();
 app.UseMiddleware<ShmsBackend.Api.Middleware.LockdownMiddleware>();
+app.UseMiddleware<ShmsBackend.Api.Middleware.PrivilegedIpMiddleware>();
 app.UseRateLimiter();
 
 // Fail fast if the encryption key is missing in non-development environments.
@@ -568,5 +569,27 @@ app.MapControllers();
 
 // Map SignalR Hub
 app.MapHub<NotificationHub>("/hubs/notifications");
+
+// Last resort for a SuperAdmin who has lost the phone and every recovery code (and the other SuperAdmin cannot help):
+//   dotnet run --project src/ShmsBackend.Api -- reset-superadmin-authenticator someone@example.com
+// Needs access to the server and its database, so it is not reachable from the internet. It is written to the security log.
+if (args.Length == 2 && args[0] == "reset-superadmin-authenticator")
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<ShmsDbContext>();
+    var email = args[1].Trim().ToLowerInvariant();
+    var target = await db.Admins.FirstOrDefaultAsync(a => a.Email.ToLower() == email && a.UserType == ShmsBackend.Data.Enums.UserType.SuperAdmin && !a.IsDeleted);
+    if (target == null) { Console.WriteLine("No SuperAdmin account with that email."); return; }
+    target.TotpSecretEnc = null; target.TotpEnabledAt = null; target.TotpLastStep = 0;
+    target.RefreshToken = null; target.RefreshTokenExpiryTime = null; target.RecoveryRequestedAt = null;
+    db.AdminRecoveryCodes.RemoveRange(db.AdminRecoveryCodes.Where(r => r.AdminId == target.Id));
+    foreach (var c in db.LoginChallenges.Where(c => c.AdminId == target.Id && c.UsedAt == null && !c.Burned)) c.Burned = true;
+    await db.SaveChangesAsync();
+    await scope.ServiceProvider.GetRequiredService<ShmsBackend.Api.Services.Security.ISecurityEventService>().RecordAsync(
+        "Access", "AuthenticatorReset", "High",
+        $"The authenticator of the SuperAdmin account {target.Email} was reset from the server command line. It must be set up again at the next sign-in.", null, "Server");
+    Console.WriteLine("Authenticator reset. The account must set it up again at its next sign-in.");
+    return;
+}
 
 app.Run();

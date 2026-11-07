@@ -72,3 +72,36 @@ public class LockdownMiddleware
         });
     }
 }
+
+/// <summary>
+/// When the SuperAdmin/Admin address rule is on, a signed-in SuperAdmin or Admin who is not on an allowed address is refused,
+/// even with a valid token (a stolen token is useless from elsewhere). Sign-in itself is checked in the auth controller.
+/// </summary>
+public class PrivilegedIpMiddleware
+{
+    private readonly RequestDelegate _next;
+    public PrivilegedIpMiddleware(RequestDelegate next) => _next = next;
+
+    public async Task InvokeAsync(HttpContext ctx, IThreatGuard guard, ShmsBackend.Api.Services.Security.ISecurityEventService events,
+        IConfiguration cfg, Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
+    {
+        var path = ctx.Request.Path.Value ?? "";
+        var skip = !path.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/health", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/secure/key", StringComparison.OrdinalIgnoreCase)
+            || HttpMethods.IsOptions(ctx.Request.Method)
+            || !(ctx.User.IsInRole("SuperAdmin") || ctx.User.IsInRole("Admin"));
+        if (skip) { await _next(ctx); return; }
+
+        var s = await guard.GetSettingsAsync();
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        if (!PrivilegedIpRule.Active(s, cfg) || PrivilegedIpRule.IsAllowed(ip, s.PrivilegedAllowedIps)) { await _next(ctx); return; }
+
+        if (PrivilegedIpRule.ShouldReport(cache, ip))
+            await events.RecordAsync("Access", "PrivilegedIpRefused", "High",
+                $"A signed-in {(ctx.User.IsInRole("SuperAdmin") ? "SuperAdmin" : "Admin")} session was refused because address {ip} is not on the allowed list.",
+                null, null, ip);
+        ctx.Response.StatusCode = 403;
+        await ctx.Response.WriteAsJsonAsync(new { success = false, code = "IP_NOT_ALLOWED", message = "This account can only be used from approved locations." });
+    }
+}

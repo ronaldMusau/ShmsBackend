@@ -99,6 +99,50 @@ public class SecurityCenterController : ControllerBase
         return Ok(new { success = true });
     }
 
+    // ---- where SuperAdmin and Admin may be used from ----
+    [HttpGet("privileged-ip")]
+    public async Task<IActionResult> PrivilegedIp()
+    {
+        var s = await _guard.GetSettingsAsync(true);
+        var cfg = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+        return Ok(new
+        {
+            enabled = s.RestrictPrivilegedIps,
+            allowedIps = s.PrivilegedAllowedIps ?? "",
+            yourIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            overriddenByServer = cfg.GetValue<bool>("Security:DisablePrivilegedIpRestriction"),
+            canEdit = User.IsInRole("SuperAdmin")
+        });
+    }
+
+    public class PrivilegedIpDto { public bool Enabled { get; set; } public string? AllowedIps { get; set; } }
+
+    [HttpPut("privileged-ip")]
+    [Authorize(Roles = "SuperAdmin")]
+    public async Task<IActionResult> SetPrivilegedIp([FromBody] PrivilegedIpDto d)
+    {
+        var list = ShmsBackend.Api.Services.Security.PrivilegedIpRule.Parse(d.AllowedIps);
+        var bad = list.FirstOrDefault(x => !ShmsBackend.Api.Services.Security.PrivilegedIpRule.IsValidEntry(x));
+        if (bad != null) return BadRequest(new { success = false, message = $"\"{bad}\" is not a valid address or range (for example 41.90.12.5 or 41.90.0.0/16)." });
+        if (list.Count > 50) return BadRequest(new { success = false, message = "At most 50 addresses or ranges." });
+        var mine = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        if (d.Enabled)
+        {
+            if (list.Count == 0) return BadRequest(new { success = false, message = "Add at least one address before switching the rule on." });
+            if (!ShmsBackend.Api.Services.Security.PrivilegedIpRule.IsAllowed(mine, string.Join(",", list)))
+                return BadRequest(new { success = false, message = $"Your own address ({mine}) is not on the list. Saving this would lock you out, so add it first." });
+        }
+        var s = await _db.SecuritySettings.OrderBy(x => x.Id).FirstOrDefaultAsync();
+        if (s == null) { s = new ShmsBackend.Data.Models.Entities.SecuritySettings(); _db.SecuritySettings.Add(s); }
+        s.RestrictPrivilegedIps = d.Enabled; s.PrivilegedAllowedIps = string.Join(",", list);
+        s.UpdatedAt = DateTime.UtcNow; s.UpdatedBy = Me;
+        await _db.SaveChangesAsync();
+        _guard.InvalidateSettings(); await _guard.GetSettingsAsync(true);
+        await _events.RecordAsync("System", "PrivilegedIpRuleChanged", "Warning",
+            d.Enabled ? $"SuperAdmin and Admin are now limited to {list.Count} approved address(es)." : "The approved-address rule for SuperAdmin and Admin was switched off.", Me, "SuperAdmin", mine);
+        return Ok(new { success = true });
+    }
+
     // ---- blocked IPs ----
     [HttpGet("blocked-ips")]
     public async Task<IActionResult> BlockedIps([FromQuery] bool activeOnly = false)
@@ -146,7 +190,8 @@ public class SecurityCenterController : ControllerBase
         var ids = evs.Select(e => Guid.TryParse(e.ActorUserId, out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).Distinct().ToList();
 
         var admins = await _db.Admins.AsNoTracking().Where(a => ids.Contains(a.Id) && !a.IsActive)
-            .Select(a => new { a.Id, a.Email, Name = a.FirstName + " " + a.LastName }).ToListAsync();
+            .Select(a => new { a.Id, a.Email, Name = a.FirstName + " " + a.LastName, a.UserType }).ToListAsync();
+        if (!User.IsInRole("SuperAdmin")) admins = admins.Where(a => a.UserType != ShmsBackend.Data.Enums.UserType.SuperAdmin).ToList();
         var portal = await _db.PortalUsers.AsNoTracking().Where(u => ids.Contains(u.Id) && !u.IsActive)
             .Select(u => new { u.Id, u.Email, Name = u.FirstName }).ToListAsync();
 
@@ -179,6 +224,7 @@ public class SecurityCenterController : ControllerBase
     {
         pageSize = Math.Clamp(pageSize, 5, 100); page = Math.Max(1, page);
         var query = _db.Admins.AsNoTracking().Where(a => !a.IsDeleted);
+        if (!User.IsInRole("SuperAdmin")) query = query.Where(a => a.UserType != ShmsBackend.Data.Enums.UserType.SuperAdmin);   // SuperAdmin accounts are invisible to every other role
         if (!string.IsNullOrWhiteSpace(q))
         {
             var t = q.Trim().ToLower();
@@ -222,6 +268,7 @@ public class SecurityCenterController : ControllerBase
     public async Task<IActionResult> LoginActivity([FromQuery] string? email, [FromQuery] string? ip, [FromQuery] bool? success, [FromQuery] string? role, [FromQuery] int take = 100)
     {
         var q = _db.LoginActivities.AsNoTracking().AsQueryable();
+        if (!User.IsInRole("SuperAdmin")) q = q.Where(a => a.Role == null || a.Role != "SuperAdmin");
         if (!string.IsNullOrWhiteSpace(email)) q = q.Where(a => a.Email.Contains(email.Trim().ToLower()));
         if (!string.IsNullOrWhiteSpace(ip)) q = q.Where(a => a.IpAddress.Contains(ip.Trim()));
         if (success.HasValue) q = q.Where(a => a.Success == success.Value);

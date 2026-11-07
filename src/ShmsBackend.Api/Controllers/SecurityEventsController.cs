@@ -17,10 +17,14 @@ public class SecurityEventsController : ControllerBase
     private readonly ShmsDbContext _db;
     public SecurityEventsController(ShmsDbContext db) => _db = db;
 
+    /// <summary>Anything about a SuperAdmin account is for SuperAdmins only.</summary>
+    private IQueryable<SecurityEvent> Visible(IQueryable<SecurityEvent> q) =>
+        User.IsInRole("SuperAdmin") ? q : q.Where(e => e.EventType != "SuperAdminTargeted" && (e.ActorRole == null || e.ActorRole != "SuperAdmin"));
+
     private IQueryable<SecurityEvent> Filter(DateTime? from, DateTime? to, string? severity, string? source,
         bool? acknowledged, string? search)
     {
-        var q = _db.SecurityEvents.AsNoTracking().AsQueryable();
+        var q = Visible(_db.SecurityEvents.AsNoTracking().AsQueryable());
         if (from.HasValue) q = q.Where(e => e.CreatedAt >= from.Value.ToUniversalTime());
         if (to.HasValue) q = q.Where(e => e.CreatedAt < to.Value.ToUniversalTime().AddDays(1));
         if (!string.IsNullOrWhiteSpace(severity)) q = q.Where(e => e.Severity == severity);
@@ -52,7 +56,7 @@ public class SecurityEventsController : ControllerBase
     {
         days = Math.Clamp(days, 1, 90);
         var since = DateTime.UtcNow.AddDays(-days);
-        var rows = await _db.SecurityEvents.AsNoTracking().Where(e => e.CreatedAt >= since).ToListAsync();
+        var rows = await Visible(_db.SecurityEvents.AsNoTracking()).Where(e => e.CreatedAt >= since).ToListAsync();
         return Ok(new
         {
             days,

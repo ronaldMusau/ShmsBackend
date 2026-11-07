@@ -1167,7 +1167,7 @@ public class EmailService : IEmailService
 </div>
 <p style='color:{ColourTextPrime};font-size:15px;font-weight:700;margin:0 0 6px 0;'>What to do</p>
 <table role='presentation' cellpadding='0' cellspacing='0'>{stepList}</table>
-{GoldButton(_frontendUrlService.GetLoginUrl(), "Sign in to Security Alerts")}
+{GoldButton(_frontendUrlService.GetBaseUrl().TrimEnd('/') + "/staff-portal", "Sign in to Security Alerts")}
 {Divider()}
 {SmallNote("You receive this because you are a SuperAdmin or Admin. Critical and high security alerts are always sent and cannot be switched off.")}";
         return WrapInLayout("Security alert — Romah Estates", inner);

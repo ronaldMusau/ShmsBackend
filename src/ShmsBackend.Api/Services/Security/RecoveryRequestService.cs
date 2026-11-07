@@ -9,7 +9,7 @@ public interface IRecoveryRequestService
     /// Someone who cannot sign in (lost phone, no recovery codes) asks an administrator to reset their authenticator.
     /// Nothing is reset here and the caller learns nothing about whether the email exists.
     /// </summary>
-    Task RequestAsync(string email, string? ip);
+    Task RequestAsync(string email, string? ip, bool staffPortal = false);
 }
 
 public class RecoveryRequestService : IRecoveryRequestService
@@ -20,7 +20,7 @@ public class RecoveryRequestService : IRecoveryRequestService
     public RecoveryRequestService(ShmsDbContext db, ISecurityEventService events, IThreatGuard guard)
     { _db = db; _events = events; _guard = guard; }
 
-    public async Task RequestAsync(string email, string? ip)
+    public async Task RequestAsync(string email, string? ip, bool staffPortal = false)
     {
         email = (email ?? "").Trim().ToLowerInvariant();
         if (email.Length is < 5 or > 200 || !email.Contains('@')) return;
@@ -31,6 +31,8 @@ public class RecoveryRequestService : IRecoveryRequestService
 
         // Only enrolled, active staff accounts can need an authenticator reset.
         var accounts = await _db.Admins.Where(a => a.Email.ToLower() == email && a.IsActive && !a.IsDeleted && a.TotpEnabledAt != null).ToListAsync();
+        // SuperAdmin and Admin accounts are only ever reachable from the staff page, and the other roles only from the public page.
+        accounts = accounts.Where(a => (a.UserType is ShmsBackend.Data.Enums.UserType.SuperAdmin or ShmsBackend.Data.Enums.UserType.Admin) == staffPortal).ToList();
         foreach (var a in accounts)
         {
             if (a.RecoveryRequestedAt != null && now - a.RecoveryRequestedAt < cooldown) continue;

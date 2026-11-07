@@ -33,6 +33,10 @@ public class SecuritySettings
     public int AccountStrikesBeforeDeactivate { get; set; } = 2; // 1 = deactivate on the first breach, 2 = warn first (default)
     public bool AutoDeactivateEnabled { get; set; } = true;
 
+    // --- Where SuperAdmin and Admin may be used from ---
+    public bool RestrictPrivilegedIps { get; set; }          // off by default; when on, SuperAdmin/Admin only work from the addresses below
+    public string? PrivilegedAllowedIps { get; set; }        // single IPs or ranges (CIDR), separated by commas, spaces or new lines
+
     // --- Emergency lockdown ---
     public bool LockdownActive { get; set; }
     public string? LockdownReason { get; set; }

@@ -61,7 +61,9 @@ public class SecurityEventService : ISecurityEventService
                 var notifier = scope.ServiceProvider.GetRequiredService<INotificationService>();
                 var ids = new List<string>();
                 ids.AddRange((await db.SuperAdmins.AsNoTracking().Select(u => u.Id).ToListAsync()).Select(i => i.ToString()));
-                ids.AddRange((await db.AdminUsers.AsNoTracking().Select(u => u.Id).ToListAsync()).Select(i => i.ToString()));
+                // Anything about a SuperAdmin account goes to SuperAdmins only.
+                var superOnly = actorRole == "SuperAdmin" || eventType == "SuperAdminTargeted";
+                if (!superOnly) ids.AddRange((await db.AdminUsers.AsNoTracking().Select(u => u.Id).ToListAsync()).Select(i => i.ToString()));
                 // Forced: security alerts ignore each person's mute / preference toggles.
                 foreach (var id in ids)
                     await notifier.SendForcedToUserAsync(id, $"Security alert: {summary}", "security", "SecurityEvent", null);
@@ -72,7 +74,7 @@ public class SecurityEventService : ISecurityEventService
                     var mail = scope.ServiceProvider.GetRequiredService<IEmailService>();
                     var severityNow = severity; var typeNow = eventType;
                     var people = await db.Admins.AsNoTracking()
-                        .Where(a => a.IsActive && !a.IsDeleted && (a.UserType == ShmsBackend.Data.Enums.UserType.SuperAdmin || a.UserType == ShmsBackend.Data.Enums.UserType.Admin))
+                        .Where(a => a.IsActive && !a.IsDeleted && (a.UserType == ShmsBackend.Data.Enums.UserType.SuperAdmin || (!superOnly && a.UserType == ShmsBackend.Data.Enums.UserType.Admin)))
                         .Select(a => new { a.Email, a.FirstName }).ToListAsync();
                     foreach (var p in people)
                         try { await mail.SendSecurityAlertEmailAsync(p.Email, p.FirstName, new SecurityAlertEmail(typeNow, severityNow, summary, ip, DateTime.UtcNow)); }

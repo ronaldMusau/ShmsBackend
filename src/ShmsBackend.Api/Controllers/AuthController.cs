@@ -59,7 +59,29 @@ public class AuthController : ControllerBase
         }
 
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var result = await _authService.LoginAsync(loginDto, ip);
+
+        // SuperAdmin and Admin sign in only on the separate staff page, everyone else only on the public page. The
+        // refusal looks exactly like a wrong password, so the public page never reveals that those roles exist.
+        var privileged = loginDto.SelectedUserType is ShmsBackend.Data.Enums.UserType.SuperAdmin or ShmsBackend.Data.Enums.UserType.Admin;
+        var refused = privileged != loginDto.StaffPortal;
+        if (!refused && privileged)
+        {
+            var st = await _guard.GetSettingsAsync();
+            var cfg = HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+            if (ShmsBackend.Api.Services.Security.PrivilegedIpRule.Active(st, cfg)
+                && !ShmsBackend.Api.Services.Security.PrivilegedIpRule.IsAllowed(ip, st.PrivilegedAllowedIps))
+            {
+                refused = true;
+                var cache = HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+                if (ShmsBackend.Api.Services.Security.PrivilegedIpRule.ShouldReport(cache, ip))
+                    await HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.ISecurityEventService>().RecordAsync(
+                        "Access", "PrivilegedIpRefused", "High",
+                        $"A {loginDto.SelectedUserType} sign-in for {loginDto.Email} was refused because address {ip} is not on the allowed list.", null, null, ip);
+            }
+        }
+        var result = refused
+            ? ShmsBackend.Api.Models.Responses.ApiResponse<ShmsBackend.Api.Models.Responses.AuthResponse>.FailureResponse("Invalid email, password, or user type")
+            : await _authService.LoginAsync(loginDto, ip);
         // A correct password only leads to the code step, so only failures count here; the real sign-in is
         // recorded when the code is verified.
         if (!result.Success)
@@ -104,7 +126,96 @@ public class AuthController : ControllerBase
         return Ok(new { activated = a.TotpEnabledAt != null, activatedAt = a.TotpEnabledAt });
     }
 
-    public class EmergencyRecoveryDto { [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(200)] public string Email { get; set; } = string.Empty; }
+
+    // ---- change phone / new recovery codes (signed-in staff, asks for a current app code first) ----
+    public class CurrentCodeDto { [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(16)] public string Code { get; set; } = string.Empty; }
+    public class ReplaceConfirmDto { [System.ComponentModel.DataAnnotations.Required] public string Pending { get; set; } = string.Empty; [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(16)] public string Code { get; set; } = string.Empty; }
+
+    private Guid MyId => Guid.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var g) ? g : Guid.Empty;
+
+    /// <summary>Five wrong codes in 15 minutes pauses these screens for that person, so a stolen session cannot guess the app code.</summary>
+    private bool TooManyWrong(Guid id, bool record)
+    {
+        var cache = HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+        var key = "authchg:" + id;
+        var n = cache.TryGetValue(key, out int v) ? v : 0;
+        if (record) { n++; cache.Set(key, n, TimeSpan.FromMinutes(15)); }
+        return n >= 5;
+    }
+
+    private async Task<(Admin? admin, long? step)> CheckCurrentAppCodeAsync(string code)
+    {
+        var totp = HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.IAuthenticatorService>();
+        var protector = HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.ISecretProtector>();
+        var admin = await _context.Admins.FirstOrDefaultAsync(a => a.Id == MyId && a.IsActive && !a.IsDeleted);
+        var secret = protector.Unprotect(admin?.TotpSecretEnc);
+        if (admin == null || secret == null) return (null, null);
+        var step = totp.VerifyCode(secret, code, admin.TotpLastStep);
+        if (step == null) return (admin, null);
+        admin.TotpLastStep = step.Value;
+        await _context.SaveChangesAsync();
+        return (admin, step);
+    }
+
+    [Authorize]
+    [HttpPost("authenticator/new-recovery-codes")]
+    [EnableRateLimiting("auth-sensitive")]
+    public async Task<IActionResult> NewRecoveryCodes([FromBody] CurrentCodeDto dto)
+    {
+        if (TooManyWrong(MyId, false)) return StatusCode(429, new { success = false, message = "Too many wrong codes. Try again in 15 minutes." });
+        var (admin, step) = await CheckCurrentAppCodeAsync(dto.Code);
+        if (admin == null || step == null) { TooManyWrong(MyId, true); return BadRequest(new { success = false, message = "That code is not correct. Use the 6-digit code from your authenticator app." }); }
+        var codes = await HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.IAuthenticatorService>().CreateRecoveryCodesAsync(admin.Id);
+        await HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.ISecurityEventService>().RecordAsync(
+            "Access", "RecoveryCodesRenewed", "Info", $"The {admin.UserType} account {admin.Email} made a new set of recovery codes. The old set no longer works.",
+            admin.Id.ToString(), admin.UserType.ToString(), HttpContext.Connection.RemoteIpAddress?.ToString());
+        return Ok(new { success = true, recoveryCodes = codes });
+    }
+
+    [Authorize]
+    [HttpPost("authenticator/replace/start")]
+    [EnableRateLimiting("auth-sensitive")]
+    public async Task<IActionResult> ReplaceStart([FromBody] CurrentCodeDto dto)
+    {
+        if (TooManyWrong(MyId, false)) return StatusCode(429, new { success = false, message = "Too many wrong codes. Try again in 15 minutes." });
+        var (admin, step) = await CheckCurrentAppCodeAsync(dto.Code);
+        if (admin == null || step == null) { TooManyWrong(MyId, true); return BadRequest(new { success = false, message = "That code is not correct. Use the 6-digit code from your current authenticator app." }); }
+        var totp = HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.IAuthenticatorService>();
+        var protector = HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.ISecretProtector>();
+        var secret = totp.NewSecret();
+        // Nothing is stored yet: the new secret travels back sealed, bound to this person and valid for 10 minutes.
+        var pending = protector.Protect($"{admin.Id:N}|{DateTime.UtcNow.AddMinutes(10).Ticks}|{secret}");
+        return Ok(new { success = true, pending, secret, otpAuthUri = totp.BuildUri(admin.Email, secret), account = admin.Email });
+    }
+
+    [Authorize]
+    [HttpPost("authenticator/replace/confirm")]
+    [EnableRateLimiting("auth-sensitive")]
+    public async Task<IActionResult> ReplaceConfirm([FromBody] ReplaceConfirmDto dto)
+    {
+        if (TooManyWrong(MyId, false)) return StatusCode(429, new { success = false, message = "Too many wrong codes. Try again in 15 minutes." });
+        var totp = HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.IAuthenticatorService>();
+        var protector = HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.ISecretProtector>();
+        var plain = protector.Unprotect(dto.Pending);
+        var parts = plain?.Split('|');
+        if (parts == null || parts.Length != 3 || parts[0] != MyId.ToString("N") || !long.TryParse(parts[1], out var ticks) || ticks < DateTime.UtcNow.Ticks)
+            return BadRequest(new { success = false, message = "This change has expired. Start again." });
+        var admin = await _context.Admins.FirstOrDefaultAsync(a => a.Id == MyId && a.IsActive && !a.IsDeleted);
+        if (admin == null) return NotFound();
+        var step = totp.VerifyCode(parts[2], dto.Code, 0);
+        if (step == null) { TooManyWrong(MyId, true); return BadRequest(new { success = false, message = "That code is not correct. Scan the new QR code, then enter the code the new app shows." }); }
+        admin.TotpSecretEnc = protector.Protect(parts[2]);
+        admin.TotpEnabledAt = DateTime.UtcNow;
+        admin.TotpLastStep = step.Value;
+        await _context.SaveChangesAsync();
+        var codes = await totp.CreateRecoveryCodesAsync(admin.Id);
+        await HttpContext.RequestServices.GetRequiredService<ShmsBackend.Api.Services.Security.ISecurityEventService>().RecordAsync(
+            "Access", "AuthenticatorReplaced", "Warning", $"The {admin.UserType} account {admin.Email} moved its authenticator to a new phone or app. Old recovery codes no longer work.",
+            admin.Id.ToString(), admin.UserType.ToString(), HttpContext.Connection.RemoteIpAddress?.ToString());
+        return Ok(new { success = true, recoveryCodes = codes });
+    }
+
+    public class EmergencyRecoveryDto { [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(200)] public string Email { get; set; } = string.Empty; public bool StaffPortal { get; set; } }
 
     /// <summary>Always answers the same way, so it cannot be used to find out which emails are staff accounts.</summary>
     [AllowAnonymous]
@@ -114,7 +225,7 @@ public class AuthController : ControllerBase
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        try { await _recovery.RequestAsync(dto.Email, ip); } catch (Exception ex) { _logger.LogWarning(ex, "Emergency recovery request failed"); }
+        try { await _recovery.RequestAsync(dto.Email, ip, dto.StaffPortal); } catch (Exception ex) { _logger.LogWarning(ex, "Emergency recovery request failed"); }
         return Ok(new { success = true, message = "If that email belongs to a staff account, an administrator has been told and will contact you." });
     }
 
