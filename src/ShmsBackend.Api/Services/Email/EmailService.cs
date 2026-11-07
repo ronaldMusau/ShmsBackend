@@ -1108,12 +1108,12 @@ public class EmailService : IEmailService
 
     private string GetLoginCodeTemplate(string firstName, string code, int validMinutes)
     {
-        // One box per digit so the code is easy to read and to select. Mail apps that detect one-time codes
-        // (for example Gmail) offer their own Copy code button for a clearly formatted code like this one.
-        var boxes = string.Concat(code.Select(c =>
-            $"<span style='display:inline-block;width:38px;height:48px;line-height:48px;margin:0 4px;text-align:center;" +
-            $"font-family:\"Courier New\",monospace;font-size:26px;font-weight:700;color:{ColourGold};" +
-            $"background:rgba(255,255,255,0.06);border:1px solid {ColourGold};border-radius:8px;'>{c}</span>"));
+        // The whole code is ONE selectable element, so a double-click or a long-press selects all six digits
+        // at once and it can be copied in one go. (Email clients do not run scripts, so a real copy button
+        // cannot exist; one solid block of digits is the nearest thing and also lets phones offer autofill.)
+        var boxes = $"<span style='display:inline-block;padding:10px 22px;font-family:\"Courier New\",monospace;font-size:34px;" +
+                    $"font-weight:700;letter-spacing:10px;color:{ColourGold};background:rgba(255,255,255,0.06);" +
+                    $"border:1px solid {ColourGold};border-radius:10px;-webkit-user-select:all;user-select:all;'>{code}</span>";
 
         var inner = $@"
 {H2($"Hello {firstName},")}
@@ -1122,7 +1122,7 @@ public class EmailService : IEmailService
 {GoldBox($@"
   <p style='color:{ColourTextMuted};font-size:12px;letter-spacing:1px;text-transform:uppercase;margin:0 0 12px 0;'>Your sign-in code</p>
   <div style='white-space:nowrap;'>{boxes}</div>
-  <p style='color:{ColourTextMuted};font-size:12px;margin:14px 0 0 0;'>Your code is {code}</p>
+  <p style='color:{ColourTextMuted};font-size:12px;margin:14px 0 0 0;'>Double-click (or press and hold) the code to select it, then copy.</p>
 ")}
 
 {Para($"This code works once and expires in <strong style='color:{ColourGold};'>{validMinutes} minutes</strong>. Romah Estates staff will never ask you for it.")}
