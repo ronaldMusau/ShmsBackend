@@ -192,6 +192,71 @@ namespace ShmsBackend.Data.Migrations
                     b.ToTable("AgreementTemplateHistories", (string)null);
                 });
 
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.BlockedIp", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("BlockedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("IpAddress")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsManual")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("ReleasedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReleasedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("BlockedIps");
+                });
+
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.LoginActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("IpAddress")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("Success")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("LoginActivities");
+                });
+
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2913,6 +2978,97 @@ namespace ShmsBackend.Data.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("SecurityEvents");
+                });
+
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.SecuritySettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AccountStrikesBeforeDeactivate")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("AutoDeactivateEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("BlockMaxHours")
+                        .HasColumnType("int");
+
+                    b.Property<int>("BlockMinutesBase")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("BlockPrivateIps")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("DistinctIpsThreshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DistinctIpsWindowMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("EscalateAfterBlocks")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ForbiddenThreshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ForbiddenWindowMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("IpDistinctAccountsThreshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("IpFailThreshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("IpFailWindowMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("LockdownActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LockdownAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LockdownBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("LockdownReason")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("NotFoundThreshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("NotFoundWindowMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RateLimitedThreshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RateLimitedWindowMinutes")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReadsPerMinuteThreshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SharedIpFactor")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SprayDistinctAccounts")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SecuritySettings");
                 });
 
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.ServiceChargeSetting", b =>

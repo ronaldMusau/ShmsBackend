@@ -24,9 +24,11 @@ public class SecurityEventService : ISecurityEventService
 {
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<SecurityEventService> _log;
+    private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _cache;
 
-    public SecurityEventService(IServiceScopeFactory scopes, ILogger<SecurityEventService> log)
-    { _scopes = scopes; _log = log; }
+    public SecurityEventService(IServiceScopeFactory scopes, ILogger<SecurityEventService> log,
+        Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
+    { _scopes = scopes; _log = log; _cache = cache; }
 
     public async Task RecordAsync(string source, string eventType, string severity, string summary,
         string? actorUserId = null, string? actorRole = null, string? ip = null,
@@ -96,6 +98,8 @@ public class SecurityEventService : ISecurityEventService
                     {
                         role = "Portal user";
                         portal.IsActive = false;
+                        portal.RefreshToken = null;
+                        portal.RefreshTokenExpiryTime = null;
                         await db.SaveChangesAsync();
                         done = true;
                     }
@@ -106,6 +110,8 @@ public class SecurityEventService : ISecurityEventService
         {
             _log.LogError(ex, "Could not deactivate account {UserId}", userId);
         }
+        // Take effect on the very next request instead of waiting for the 60-second active-account cache.
+        if (done) _cache.Remove($"auth:active:{userId}");
 
         var outcome = done ? "Account deactivated automatically." : "Account was NOT deactivated (SuperAdmin or not found) - review it now.";
         await RecordAsync(source, eventType, "Critical", $"{reason} {outcome}", userId, role, ip);

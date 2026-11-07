@@ -25,13 +25,16 @@ public class PortalAuthController : ControllerBase
     private readonly ILogger<PortalAuthController> _logger;
     private readonly ShmsDbContext _context;
     private readonly INotificationPreferenceService _notificationPreferenceService;
+    private readonly ShmsBackend.Api.Services.Security.IThreatGuard _guard;
 
     public PortalAuthController(
         IPortalAuthService portalAuthService,
         ILogger<PortalAuthController> logger,
         ShmsDbContext context,
-        INotificationPreferenceService notificationPreferenceService)
+        INotificationPreferenceService notificationPreferenceService,
+        ShmsBackend.Api.Services.Security.IThreatGuard guard)
     {
+        _guard = guard;
         _portalAuthService = portalAuthService;
         _logger = logger;
         _context = context;
@@ -50,6 +53,8 @@ public class PortalAuthController : ControllerBase
             return BadRequest(ModelState);
 
         var result = await _portalAuthService.LoginAsync(dto);
+        await _guard.OnLoginAsync(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            Request.Headers.UserAgent.ToString(), dto.Email, result.Success);
         if (!result.Success)
             return Unauthorized(result);
 

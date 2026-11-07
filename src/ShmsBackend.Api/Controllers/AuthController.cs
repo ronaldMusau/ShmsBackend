@@ -23,6 +23,7 @@ public class AuthController : ControllerBase
     private readonly ShmsDbContext _context;
     private readonly IWeeklyPasswordService _weeklyPasswordService;
     private readonly IWeeklyClientPasswordService _weeklyClientPasswordService;
+    private readonly ShmsBackend.Api.Services.Security.IThreatGuard _guard;
 
     public AuthController(
         IAuthService authService,
@@ -31,8 +32,10 @@ public class AuthController : ControllerBase
         INotificationPreferenceService notificationPreferenceService,
         ShmsDbContext context,
         IWeeklyPasswordService weeklyPasswordService,
-        IWeeklyClientPasswordService weeklyClientPasswordService)
+        IWeeklyClientPasswordService weeklyClientPasswordService,
+        ShmsBackend.Api.Services.Security.IThreatGuard guard)
     {
+        _guard = guard;
         _authService = authService;
         _logger = logger;
         _unitOfWork = unitOfWork;
@@ -53,6 +56,8 @@ public class AuthController : ControllerBase
         }
 
         var result = await _authService.LoginAsync(loginDto);
+        await _guard.OnLoginAsync(HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            Request.Headers.UserAgent.ToString(), loginDto.Email, result.Success);
         if (!result.Success)
         {
             return Unauthorized(result);

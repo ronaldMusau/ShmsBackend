@@ -160,6 +160,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.ISecurityEventService, ShmsBackend.Api.Services.Security.SecurityEventService>();
+builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.IThreatGuard, ShmsBackend.Api.Services.Security.ThreatGuardService>();
 builder.Services.AddScoped<INotificationPreferenceService, NotificationPreferenceService>();
 builder.Services.AddScoped<IAgreementService, AgreementService>();
 
@@ -540,6 +541,9 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseCors("AllowAll");
 
+// Blocked IPs are turned away first (cheapest possible rejection); the guard watches results after each request.
+app.UseMiddleware<ShmsBackend.Api.Middleware.ThreatGuardMiddleware>();
+
 // Always-on payload encryption: every /api request/response body is encrypted (see PayloadEncryptionMiddleware).
 // Exception + logging middleware sit INSIDE it so error responses are encrypted too and logs never see ciphertext-only noise.
 app.UseMiddleware<ShmsBackend.Api.Middleware.PayloadEncryptionMiddleware>();
@@ -548,10 +552,13 @@ app.UseMiddleware<LoggingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TokenValidationMiddleware>();
+app.UseMiddleware<ShmsBackend.Api.Middleware.LockdownMiddleware>();
 app.UseRateLimiter();
 
 // Fail fast if the encryption key is missing in non-development environments.
 app.Services.GetRequiredService<ShmsBackend.Api.Services.Security.PayloadEncryptionService>();
+
+_ = app.Services.GetRequiredService<ShmsBackend.Api.Services.Security.IThreatGuard>().GetSettingsAsync(true);
 
 app.MapControllers();
 
