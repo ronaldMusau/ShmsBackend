@@ -302,7 +302,7 @@ public class ThreatGuardService : IThreatGuard
                 if (userId != null && role == "SuperAdmin")
                 {
                     var (sa, _) = C($"safail:{userId}").Add(now, win, ip);
-                    if (sa >= Math.Max(1, s.SuperAdminFailThreshold) && !Mute($"sa:{userId}", TimeSpan.FromMinutes(10)))
+                    if (sa >= (s.SuperAdminFailThreshold > 0 ? s.SuperAdminFailThreshold : 3) && !Mute($"sa:{userId}", TimeSpan.FromMinutes(10)))
                         await _events.RecordAsync("Auth", "SuperAdminTargeted", "Critical",
                             $"Someone is trying to sign in as SuperAdmin ({email}): {sa} failed attempts in {s.IpFailWindowMinutes} minutes, latest from IP {ip}. The account is not locked; check it now.",
                             userId.ToString(), "SuperAdmin", ip);
