@@ -105,6 +105,9 @@ namespace ShmsBackend.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<DateTime?>("RecoveryRequestedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("RefreshToken")
                         .HasColumnType("nvarchar(max)");
 
@@ -3137,6 +3140,9 @@ namespace ShmsBackend.Data.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("ReadsPerMinuteThreshold")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RecoveryRequestCooldownMinutes")
                         .HasColumnType("int");
 
                     b.Property<int>("SharedIpFactor")
