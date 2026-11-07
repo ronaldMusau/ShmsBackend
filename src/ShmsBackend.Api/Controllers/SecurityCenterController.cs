@@ -170,6 +170,39 @@ public class SecurityCenterController : ControllerBase
         return ok ? Ok(new { success = true }) : BadRequest(new { success = false, message = "That account could not be deactivated (a SuperAdmin cannot be deactivated here)." });
     }
 
+    // ---- authenticator app status (staff) ----
+    [HttpGet("authenticators")]
+    public async Task<IActionResult> Authenticators()
+    {
+        var rows = await _db.Admins.AsNoTracking().Where(a => !a.IsDeleted)
+            .OrderBy(a => a.UserType).ThenBy(a => a.FirstName)
+            .Select(a => new { id = a.Id, name = a.FirstName + " " + a.LastName, email = a.Email, role = a.UserType.ToString(), isActive = a.IsActive,
+                               authenticatorActivated = a.TotpEnabledAt != null, activatedAt = a.TotpEnabledAt }).ToListAsync();
+        return Ok(rows);
+    }
+
+    /// <summary>For a lost or replaced phone. Nobody resets their own; SuperAdmin resets anyone, Admin resets only Manager, Accountant and Secretary.</summary>
+    [HttpPost("accounts/{id:guid}/authenticator-reset")]
+    public async Task<IActionResult> ResetAuthenticator(Guid id)
+    {
+        if (id.ToString() == Me) return BadRequest(new { success = false, message = "You cannot reset your own authenticator." });
+        var target = await _db.Admins.FirstOrDefaultAsync(a => a.Id == id && !a.IsDeleted);
+        if (target == null) return NotFound();
+        var iAmSuper = User.IsInRole("SuperAdmin");
+        if (!iAmSuper && target.UserType is ShmsBackend.Data.Enums.UserType.SuperAdmin or ShmsBackend.Data.Enums.UserType.Admin)
+            return StatusCode(403, new { success = false, message = "Only a SuperAdmin can reset a SuperAdmin or an Admin." });
+
+        target.TotpSecretEnc = null; target.TotpEnabledAt = null; target.TotpLastStep = 0;
+        target.RefreshToken = null; target.RefreshTokenExpiryTime = null;
+        _db.AdminRecoveryCodes.RemoveRange(_db.AdminRecoveryCodes.Where(r => r.AdminId == id));
+        foreach (var c in _db.LoginChallenges.Where(c => c.AdminId == id && c.UsedAt == null && !c.Burned)) c.Burned = true;
+        await _db.SaveChangesAsync();
+        await _events.RecordAsync("Access", "AuthenticatorReset", "Warning",
+            $"The authenticator of the {target.UserType} account {target.Email} was reset by staff. The person must set it up again at the next sign-in.",
+            Me, User.FindFirstValue(ClaimTypes.Role), null, "Account", id);
+        return Ok(new { success = true });
+    }
+
     [HttpGet("sign-in-activity")]
     public async Task<IActionResult> LoginActivity([FromQuery] string? email, [FromQuery] string? ip, [FromQuery] bool? success, [FromQuery] string? role, [FromQuery] int take = 100)
     {

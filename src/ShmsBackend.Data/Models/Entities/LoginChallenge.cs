@@ -19,4 +19,8 @@ public class LoginChallenge
     public DateTime? UsedAt { get; set; }
     public bool Burned { get; set; }
     public string? IpAddress { get; set; }
+    /// <summary>0 = emailed code, 1 = authenticator code (already enrolled), 2 = authenticator enrolment (after the emailed code).</summary>
+    public int Kind { get; set; }
+    /// <summary>Enrolment only: the secret being set up, encrypted. Moved to the account once the first code is confirmed.</summary>
+    public string? PendingSecretEnc { get; set; }
 }

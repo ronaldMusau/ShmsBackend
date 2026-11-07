@@ -77,9 +77,9 @@ public class AuthController : ControllerBase
         if (!ModelState.IsValid) return BadRequest(ModelState);
         var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var result = await _authService.VerifyLoginOtpAsync(dto, ip);
-        if (result.Success && result.Data != null)
+        if (result.Success && result.Data != null && !string.IsNullOrEmpty(result.Data.AccessToken))
             await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), result.Data.Email, true, result.Data.UserType.ToString());
-        else
+        else if (!result.Success)
         {
             // Record the failed code against the real account and role (the caller is told nothing extra).
             var owner = await _context.LoginChallenges.AsNoTracking().Where(c => c.Id == dto.ChallengeId)
@@ -87,6 +87,40 @@ public class AuthController : ControllerBase
                 .FirstOrDefaultAsync();
             await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), owner?.Email ?? "code-step", false, owner?.UserType.ToString());
         }
+        return result.Success ? Ok(result) : Unauthorized(result);
+    }
+
+    /// <summary>Whether the signed-in staff member's authenticator app is activated. It cannot be switched off by the user.</summary>
+    [Authorize]
+    [HttpGet("authenticator-status")]
+    public async Task<IActionResult> AuthenticatorStatus()
+    {
+        var id = Guid.TryParse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var g) ? g : Guid.Empty;
+        var a = await _context.Admins.AsNoTracking().Where(x => x.Id == id).Select(x => new { x.TotpEnabledAt }).FirstOrDefaultAsync();
+        if (a == null) return NotFound();
+        return Ok(new { activated = a.TotpEnabledAt != null, activatedAt = a.TotpEnabledAt });
+    }
+
+    [AllowAnonymous]
+    [HttpPost("login/enrol/start")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> StartEnrol([FromBody] EnrolStartDto dto)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var result = await _authService.StartEnrolAsync(dto);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("login/enrol/confirm")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> ConfirmEnrol([FromBody] EnrolConfirmDto dto)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var result = await _authService.ConfirmEnrolAsync(dto, ip);
+        if (result.Success && result.Data != null && !string.IsNullOrEmpty(result.Data.AccessToken))
+            await _guard.OnLoginAsync(ip, Request.Headers.UserAgent.ToString(), result.Data.Email, true, result.Data.UserType.ToString());
         return result.Success ? Ok(result) : Unauthorized(result);
     }
 

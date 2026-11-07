@@ -20,4 +20,10 @@ public class AuthResponse
     public int ResendAfterSeconds { get; set; }
     public int CodeValidMinutes { get; set; }
     public string? MaskedEmail { get; set; }
+    /// <summary>Which code the user must enter next: email or authenticator.</summary>
+    public string? Method { get; set; }
+    /// <summary>True when the account must set up its authenticator app before it can sign in.</summary>
+    public bool RequiresEnrolment { get; set; }
+    /// <summary>Shown exactly once, right after the authenticator is activated. Never stored in readable form.</summary>
+    public List<string>? RecoveryCodes { get; set; }
 }

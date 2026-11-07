@@ -138,12 +138,22 @@ public class AuthService : IAuthService
             await _unitOfWork.Admins.UpdateAsync(admin);
             await _unitOfWork.SaveChangesAsync();
 
-            // Email and password are correct for this role. Only now is a one-time code sent; no tokens are
-            // issued and nothing says who the user is until the code has been verified.
+            // Email and password are correct for this role. No tokens are issued and nothing says who the user is
+            // until the second step is done. An account that has its authenticator app asks for the app code only
+            // (no email is sent). An account without one gets the emailed code once, then must set the app up.
+            if (admin.TotpEnabledAt != null)
+            {
+                var cid = await _otp.IssueAuthenticatorAsync(admin, ip);
+                return ApiResponse<AuthResponse>.SuccessResponse(new AuthResponse
+                {
+                    RequiresOtp = true, ChallengeId = cid, Method = "authenticator"
+                }, "Enter the code from your authenticator app");
+            }
             var issued = await _otp.IssueAsync(admin, ip);
             return ApiResponse<AuthResponse>.SuccessResponse(new AuthResponse
             {
                 RequiresOtp = true,
+                Method = "email",
                 ChallengeId = issued.ChallengeId,
                 ResendAfterSeconds = issued.ResendAfterSeconds,
                 CodeValidMinutes = issued.ValidMinutes,
@@ -157,7 +167,7 @@ public class AuthService : IAuthService
         }
     }
 
-    private async Task<ApiResponse<AuthResponse>> CompleteLoginAsync(Admin admin)
+    private async Task<ApiResponse<AuthResponse>> CompleteLoginAsync(Admin admin, List<string>? recoveryCodes = null)
     {
         try
         {
@@ -178,7 +188,8 @@ public class AuthService : IAuthService
                 FirstName = admin.FirstName,
                 LastName = admin.LastName,
                 UserType = admin.UserType,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AdminAccessTokenExpirationMinutes)
+                ExpiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.AdminAccessTokenExpirationMinutes),
+                RecoveryCodes = recoveryCodes
             };
 
             _logger.LogInformation("User logged in successfully: {Email} as {UserType}",
@@ -199,7 +210,15 @@ public class AuthService : IAuthService
         switch (r.Result)
         {
             case ShmsBackend.Api.Services.Security.OtpResult.Ok:
-                // Only now do we know who is signing in and issue tokens.
+                // The emailed code proves the mailbox, not the person's device: an account with no authenticator app yet
+                // must now set one up. No tokens are issued until that is done.
+                if (r.Kind == 0)
+                {
+                    var enrol = await _otp.IssueEnrolAsync(r.Admin!, ip);
+                    return ApiResponse<AuthResponse>.SuccessResponse(new AuthResponse
+                    { RequiresEnrolment = true, ChallengeId = enrol, Method = "enrol", FirstName = r.Admin!.FirstName },
+                    "Set up your authenticator app to finish signing in");
+                }
                 return await CompleteLoginAsync(r.Admin!);
             case ShmsBackend.Api.Services.Security.OtpResult.Wrong:
                 return ApiResponse<AuthResponse>.FailureResponse(
@@ -212,6 +231,30 @@ public class AuthService : IAuthService
                 return ApiResponse<AuthResponse>.FailureResponse("That code has expired. Please sign in again to get a new code.");
             default:
                 return ApiResponse<AuthResponse>.FailureResponse("This code is no longer valid. Please sign in again.");
+        }
+    }
+
+    public async Task<ApiResponse<EnrolSetupDto>> StartEnrolAsync(EnrolStartDto dto)
+    {
+        var r = await _otp.StartEnrolAsync(dto.ChallengeId);
+        if (r.Result != ShmsBackend.Api.Services.Security.OtpResult.Ok)
+            return ApiResponse<EnrolSetupDto>.FailureResponse("This set-up link has expired. Please sign in again.");
+        return ApiResponse<EnrolSetupDto>.SuccessResponse(new EnrolSetupDto { Secret = r.Secret!, OtpAuthUri = r.Uri!, Account = r.Admin!.Email }, "Scan the QR code with your authenticator app");
+    }
+
+    public async Task<ApiResponse<AuthResponse>> ConfirmEnrolAsync(EnrolConfirmDto dto, string? ip)
+    {
+        var r = await _otp.ConfirmEnrolAsync(dto.ChallengeId, dto.Code, ip);
+        switch (r.Result)
+        {
+            case ShmsBackend.Api.Services.Security.OtpResult.Ok:
+                return await CompleteLoginAsync(r.Admin!, r.RecoveryCodes);
+            case ShmsBackend.Api.Services.Security.OtpResult.Wrong:
+                return ApiResponse<AuthResponse>.FailureResponse($"That code is not correct. {r.TriesLeft} {(r.TriesLeft == 1 ? "try" : "tries")} left. Check that your phone's clock is automatic.");
+            case ShmsBackend.Api.Services.Security.OtpResult.TooManyTries:
+                return ApiResponse<AuthResponse>.FailureResponse("Too many wrong codes. Please sign in again to restart the set-up.");
+            default:
+                return ApiResponse<AuthResponse>.FailureResponse("This set-up has expired. Please sign in again.");
         }
     }
 

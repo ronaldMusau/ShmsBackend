@@ -9,6 +9,8 @@ public interface IAuthService
     Task<ApiResponse<AuthResponse>> LoginAsync(LoginDto loginDto, string? ip = null);
     Task<ApiResponse<AuthResponse>> VerifyLoginOtpAsync(VerifyLoginOtpDto dto, string? ip);
     Task<ApiResponse<AuthResponse>> ResendLoginOtpAsync(ResendLoginOtpDto dto, string? ip);
+    Task<ApiResponse<EnrolSetupDto>> StartEnrolAsync(EnrolStartDto dto);
+    Task<ApiResponse<AuthResponse>> ConfirmEnrolAsync(EnrolConfirmDto dto, string? ip);
     Task<ApiResponse<AuthResponse>> RefreshTokenAsync(RefreshTokenDto refreshTokenDto);
     Task<ApiResponse<string>> LogoutAsync(string token);
     Task<ApiResponse<string>> RequestPasswordResetAsync(RequestPasswordResetDto requestPasswordResetDto);

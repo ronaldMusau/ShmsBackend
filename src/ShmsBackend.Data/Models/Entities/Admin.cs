@@ -28,6 +28,11 @@ public abstract class Admin : ISoftDelete
     // Login lockout + reset-attempt hardening
     public int FailedLoginAttempts { get; set; } = 0;
     public bool IsLockedOut { get; set; } = false;
+
+    // Authenticator app (TOTP). The secret is stored encrypted; it is never returned by any endpoint after enrolment.
+    public string? TotpSecretEnc { get; set; }
+    public DateTime? TotpEnabledAt { get; set; }
+    public long TotpLastStep { get; set; }
     public int PasswordResetAttempts { get; set; } = 0;
 
     public DateTime CreatedAt { get; set; }
