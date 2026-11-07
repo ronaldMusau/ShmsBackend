@@ -243,6 +243,10 @@ namespace ShmsBackend.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("Role")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.Property<bool>("Success")
                         .HasColumnType("bit");
 
@@ -3100,6 +3104,9 @@ namespace ShmsBackend.Data.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("SprayDistinctAccounts")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SuperAdminFailThreshold")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAt")
