@@ -226,8 +226,10 @@ public class PortalComplaintController : ControllerBase
         if (!Guid.TryParse(landlordIdStr, out var landlordId))
             return Unauthorized();
 
-        var complaints = await (
-            from c in _context.Complaints
+        // Main rows first, then all attachments for those complaints in ONE query. (A nested collection inside
+        // this projection made the database do a correlated lookup per complaint and the page took ~25 s.)
+        var rows = await (
+            from c in _context.Complaints.AsNoTracking()
             join h in _context.Houses on c.HouseId equals h.Id
             join f in _context.Flats on h.FlatId equals f.Id
             join t in _context.Tenants on c.TenantId equals t.Id
@@ -254,13 +256,24 @@ public class PortalComplaintController : ControllerBase
                 agentCompletionNotes = c.AgentCompletionNotes,
                 tenantVerificationStatus = c.TenantVerificationStatus,
                 tenantRejectionReason = c.TenantRejectionReason,
-                agentRedoCount = c.AgentRedoCount,
-                attachments = _context.ComplaintAttachments
-                    .Where(a => a.ComplaintId == c.Id)
-                    .Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt })
-                    .ToList()
+                agentRedoCount = c.AgentRedoCount
             }
         ).Take(Math.Clamp(limit, 1, 2000)).ToListAsync();
+
+        var ids = rows.Select(r => r.id).ToList();
+        var attachmentRows = ids.Count == 0
+            ? new List<ComplaintAttachment>()
+            : await _context.ComplaintAttachments.AsNoTracking().Where(a => ids.Contains(a.ComplaintId)).ToListAsync();
+        var byComplaint = attachmentRows.ToLookup(a => a.ComplaintId);
+
+        var complaints = rows.Select(r => new
+        {
+            r.id, r.ticketNumber, r.complaintTypeId, r.complaintTypeName, r.description, r.status, r.isBillable,
+            r.billableTarget, r.createdAt, r.houseNumber, r.flatId, r.flatName, r.tenantFirstName, r.tenantLastName,
+            r.escalatedAt, r.closedAt, r.agentCompletionNotes, r.tenantVerificationStatus, r.tenantRejectionReason,
+            r.agentRedoCount,
+            attachments = byComplaint[r.id].Select(a => new { a.FilePath, a.FileType, a.FileSizeBytes, a.UploadedAt }).ToList()
+        }).ToList();
 
         return Ok(new { success = true, complaints });
     }
