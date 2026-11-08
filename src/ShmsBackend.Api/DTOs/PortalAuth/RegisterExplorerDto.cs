@@ -28,4 +28,7 @@ public class RegisterExplorerDto
 
     // Registration is for adults only; the server rejects the request unless this is true.
     public bool ConfirmedAge18 { get; set; }
+
+    // The explorer ticked "I have read the terms and conditions". Required whenever terms are published for explorers.
+    public bool AcceptedTerms { get; set; }
 }

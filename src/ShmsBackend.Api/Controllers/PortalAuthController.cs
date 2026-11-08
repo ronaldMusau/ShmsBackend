@@ -380,6 +380,26 @@ public class PortalAuthController : ControllerBase
     }
 
     /// <summary>
+    /// The explorer terms, readable before an account exists so the registration form can link to them.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("terms/explorer")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> GetExplorerTerms()
+    {
+        var roleValue = (int)PortalUserType.Explorer;
+        var terms = await _context.TermsAndConditions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Role == roleValue);
+
+        return Ok(new
+        {
+            success = true,
+            data = new { content = terms?.Content, version = terms?.Version ?? 0 }
+        });
+    }
+
+    /// <summary>
     /// Returns the current terms &amp; conditions for the authenticated user's role,
     /// plus whether this user has accepted the current version.
     /// </summary>

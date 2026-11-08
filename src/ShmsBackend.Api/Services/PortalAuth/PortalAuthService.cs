@@ -203,6 +203,15 @@ public class PortalAuthService : IPortalAuthService
                 return ApiResponse<string>.FailureResponse(
                     "You must confirm that you are 18 years or older to create an account.");
 
+            var explorerRole = (int)PortalUserType.Explorer;
+            var explorerTerms = await _context.TermsAndConditions
+                .AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Role == explorerRole);
+
+            if (explorerTerms != null && !string.IsNullOrWhiteSpace(explorerTerms.Content) && !dto.AcceptedTerms)
+                return ApiResponse<string>.FailureResponse(
+                    "You must read and accept the terms and conditions to create an account.");
+
             var existingExplorer = await _context.Explorers
                 .FirstOrDefaultAsync(u => u.Email.ToLower() == dto.Email.ToLower());
 
@@ -232,6 +241,19 @@ public class PortalAuthService : IPortalAuthService
 
             await _unitOfWork.Explorers.AddAsync(explorer);
             await _unitOfWork.SaveChangesAsync();
+
+            if (explorerTerms != null && !string.IsNullOrWhiteSpace(explorerTerms.Content) && dto.AcceptedTerms)
+            {
+                _context.TermsAcceptances.Add(new TermsAcceptance
+                {
+                    Id = Guid.NewGuid(),
+                    PortalUserId = explorer.Id,
+                    Role = explorerRole,
+                    Version = explorerTerms.Version,
+                    AcceptedAt = DateTime.UtcNow
+                });
+                await _context.SaveChangesAsync();
+            }
 
             try
             {
