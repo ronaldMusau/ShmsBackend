@@ -558,6 +558,7 @@ app.UseAuthorization();
 app.UseMiddleware<TokenValidationMiddleware>();
 app.UseMiddleware<ShmsBackend.Api.Middleware.LockdownMiddleware>();
 app.UseMiddleware<ShmsBackend.Api.Middleware.PrivilegedIpMiddleware>();
+app.UseMiddleware<ShmsBackend.Api.Middleware.TermsAcceptanceMiddleware>();
 app.UseRateLimiter();
 
 // Fail fast if the encryption key is missing in non-development environments.

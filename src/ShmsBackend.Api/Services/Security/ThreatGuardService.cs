@@ -371,7 +371,7 @@ public class ThreatGuardService : IThreatGuard
                 if (n >= s.RateLimitedThreshold && !Mute($"blk:{ip}", TimeSpan.FromMinutes(1)))
                 { C($"rl:{ip}").Clear(); await BlockIpAsync(ip, $"kept hitting the rate limit ({n} times in {s.RateLimitedWindowMinutes} minutes)"); }
             }
-            else if (status == 403 && uid != null)
+            else if (status == 403 && uid != null && !ctx.Items.ContainsKey("terms-required"))
             {
                 var (n, _) = C($"403:{uid}").Add(now, TimeSpan.FromMinutes(s.ForbiddenWindowMinutes));
                 if (n >= s.ForbiddenThreshold)

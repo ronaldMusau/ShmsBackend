@@ -17,10 +17,12 @@ namespace ShmsBackend.Api.Controllers;
 public class TermsAdminController : ControllerBase
 {
     private readonly ShmsDbContext _context;
+    private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _cache;
 
-    public TermsAdminController(ShmsDbContext context)
+    public TermsAdminController(ShmsDbContext context, Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
     {
         _context = context;
+        _cache = cache;
     }
 
     // GET /api/admin/terms — current terms for every portal role
@@ -95,6 +97,8 @@ public class TermsAdminController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        // The terms gate caches the current version for a minute; clear it so the new version applies at once.
+        _cache.Remove(ShmsBackend.Api.Middleware.TermsAcceptanceMiddleware.CurrentKey(role));
         return Ok(new { success = true, message = "Terms updated.", data = new { role, terms.Version } });
     }
 
