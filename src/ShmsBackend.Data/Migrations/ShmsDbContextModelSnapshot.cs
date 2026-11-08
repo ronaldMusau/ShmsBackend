@@ -3133,6 +3133,9 @@ namespace ShmsBackend.Data.Migrations
                     b.Property<int>("NotFoundWindowMinutes")
                         .HasColumnType("int");
 
+                    b.Property<string>("PrivilegedAllowedIps")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int>("RateLimitedThreshold")
                         .HasColumnType("int");
 
@@ -3144,6 +3147,9 @@ namespace ShmsBackend.Data.Migrations
 
                     b.Property<int>("RecoveryRequestCooldownMinutes")
                         .HasColumnType("int");
+
+                    b.Property<bool>("RestrictPrivilegedIps")
+                        .HasColumnType("bit");
 
                     b.Property<int>("SharedIpFactor")
                         .HasColumnType("int");
