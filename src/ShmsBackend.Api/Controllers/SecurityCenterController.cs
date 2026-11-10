@@ -49,6 +49,7 @@ public class SecurityCenterController : ControllerBase
         public int ReadsPerMinuteThreshold { get; set; }
         public int AccountStrikesBeforeDeactivate { get; set; }
         public bool AutoDeactivateEnabled { get; set; }
+        public int AuthenticatorDeadlineDays { get; set; }
     }
 
     [HttpPut("settings")]
@@ -76,6 +77,7 @@ public class SecurityCenterController : ControllerBase
           : d.ForbiddenWindowMinutes is < 1 or > 1440 ? "Refused-request window must be 1 to 1440 minutes."
           : d.ReadsPerMinuteThreshold < 60 ? "Reads per minute must be at least 60."
           : d.AccountStrikesBeforeDeactivate is < 1 or > 5 ? "Breaches before deactivation must be 1 to 5."
+          : d.AuthenticatorDeadlineDays is < 0 or > 90 ? "Days to set up the authenticator must be 0 (no deadline) to 90."
           : null;
         if (bad != null) return BadRequest(new { success = false, message = bad });
 
@@ -90,7 +92,7 @@ public class SecurityCenterController : ControllerBase
         s.SprayDistinctAccounts = d.SprayDistinctAccounts; s.DistinctIpsThreshold = d.DistinctIpsThreshold;
         s.DistinctIpsWindowMinutes = d.DistinctIpsWindowMinutes; s.ForbiddenThreshold = d.ForbiddenThreshold;
         s.ForbiddenWindowMinutes = d.ForbiddenWindowMinutes; s.ReadsPerMinuteThreshold = d.ReadsPerMinuteThreshold;
-        s.AccountStrikesBeforeDeactivate = d.AccountStrikesBeforeDeactivate; s.AutoDeactivateEnabled = d.AutoDeactivateEnabled;
+        s.AccountStrikesBeforeDeactivate = d.AccountStrikesBeforeDeactivate; s.AutoDeactivateEnabled = d.AutoDeactivateEnabled; s.AuthenticatorDeadlineDays = d.AuthenticatorDeadlineDays;
         s.UpdatedAt = DateTime.UtcNow; s.UpdatedBy = Me;
         await _db.SaveChangesAsync();
         _guard.InvalidateSettings();
@@ -235,10 +237,14 @@ public class SecurityCenterController : ControllerBase
         if (recoveryRequested) query = query.Where(a => a.RecoveryRequestedAt != null);
 
         var total = await query.CountAsync();
-        var items = await query.OrderByDescending(a => a.RecoveryRequestedAt != null).ThenBy(a => a.UserType).ThenBy(a => a.FirstName)
+        var deadlineDays = (await _guard.GetSettingsAsync()).AuthenticatorDeadlineDays;
+        var rows = await query.OrderByDescending(a => a.RecoveryRequestedAt != null).ThenBy(a => a.UserType).ThenBy(a => a.FirstName)
             .Skip((page - 1) * pageSize).Take(pageSize)
             .Select(a => new { id = a.Id, name = a.FirstName + " " + a.LastName, email = a.Email, role = a.UserType.ToString(), isActive = a.IsActive,
-                               authenticatorActivated = a.TotpEnabledAt != null, activatedAt = a.TotpEnabledAt, recoveryRequestedAt = a.RecoveryRequestedAt }).ToListAsync();
+                               authenticatorActivated = a.TotpEnabledAt != null, activatedAt = a.TotpEnabledAt, recoveryRequestedAt = a.RecoveryRequestedAt,
+                               startedAt = a.AuthenticatorGraceFrom ?? a.CreatedAt }).ToListAsync();
+        var items = rows.Select(r => new { r.id, r.name, r.email, r.role, r.isActive, r.authenticatorActivated, r.activatedAt, r.recoveryRequestedAt,
+            dueAt = (!r.authenticatorActivated && deadlineDays > 0 && r.role != "SuperAdmin") ? (DateTime?)r.startedAt.AddDays(deadlineDays) : null });
         return Ok(new { items, total, page, pageSize });
     }
 
@@ -253,7 +259,7 @@ public class SecurityCenterController : ControllerBase
         if (!iAmSuper && target.UserType is ShmsBackend.Data.Enums.UserType.SuperAdmin or ShmsBackend.Data.Enums.UserType.Admin)
             return StatusCode(403, new { success = false, message = "Only a SuperAdmin can reset a SuperAdmin or an Admin." });
 
-        target.TotpSecretEnc = null; target.TotpEnabledAt = null; target.TotpLastStep = 0;
+        target.TotpSecretEnc = null; target.TotpEnabledAt = null; target.TotpLastStep = 0; target.AuthenticatorGraceFrom = DateTime.UtcNow;
         target.RefreshToken = null; target.RefreshTokenExpiryTime = null; target.RecoveryRequestedAt = null;
         _db.AdminRecoveryCodes.RemoveRange(_db.AdminRecoveryCodes.Where(r => r.AdminId == id));
         foreach (var c in _db.LoginChallenges.Where(c => c.AdminId == id && c.UsedAt == null && !c.Burned)) c.Burned = true;

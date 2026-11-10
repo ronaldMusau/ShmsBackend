@@ -242,7 +242,11 @@ public class UserService : IUserService
             user.DateOfBirth = updateUserDto.DateOfBirth.Value;
 
         if (updateUserDto.IsActive.HasValue)
+        {
+            // Re-activating someone who still has no authenticator starts a fresh set-up window.
+            if (updateUserDto.IsActive.Value && !user.IsActive && user.TotpEnabledAt == null) user.AuthenticatorGraceFrom = DateTime.UtcNow;
             user.IsActive = updateUserDto.IsActive.Value;
+        }
 
         // Update UserType if provided (only SuperAdmin can do this)
         if (updateUserDto.UserType.HasValue && updateUserDto.UserType.Value != user.UserType)
@@ -399,6 +403,7 @@ public class UserService : IUserService
         }
 
         user.IsActive = !user.IsActive;
+        if (user.IsActive && user.TotpEnabledAt == null) user.AuthenticatorGraceFrom = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
 
         await _unitOfWork.Admins.UpdateAsync(user);

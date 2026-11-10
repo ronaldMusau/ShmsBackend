@@ -35,6 +35,8 @@ public abstract class Admin : ISoftDelete
     public long TotpLastStep { get; set; }
     /// <summary>Set when the person used Emergency Recovery to ask an administrator to reset their authenticator. Cleared by the reset.</summary>
     public DateTime? RecoveryRequestedAt { get; set; }
+    /// <summary>Start of the authenticator set-up deadline when it is not the account creation time (set on re-activation and on authenticator reset).</summary>
+    public DateTime? AuthenticatorGraceFrom { get; set; }
     public int PasswordResetAttempts { get; set; } = 0;
 
     public DateTime CreatedAt { get; set; }

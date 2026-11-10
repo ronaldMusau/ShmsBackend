@@ -189,7 +189,7 @@ public class ThreatGuardService : IThreatGuard
         var db = scope.ServiceProvider.GetRequiredService<ShmsDbContext>();
         var ok = false;
         var admin = await db.Admins.FirstOrDefaultAsync(a => a.Id == userId);
-        if (admin != null) { admin.IsActive = true; admin.IsLockedOut = false; admin.FailedLoginAttempts = 0; ok = true; }
+        if (admin != null) { admin.IsActive = true; admin.IsLockedOut = false; admin.FailedLoginAttempts = 0; if (admin.TotpEnabledAt == null) admin.AuthenticatorGraceFrom = DateTime.UtcNow; ok = true; }
         else
         {
             var p = await db.PortalUsers.FirstOrDefaultAsync(u => u.Id == userId);

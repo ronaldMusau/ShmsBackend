@@ -185,6 +185,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<SessionSchedulerSe
 builder.Services.AddHostedService<WeeklyPasswordSchedulerService>();
 builder.Services.AddHostedService<WeeklyClientPasswordSchedulerService>();
 builder.Services.AddHostedService<PreRegistrationExpirySchedulerService>();
+builder.Services.AddHostedService<ShmsBackend.Api.Services.Security.AuthenticatorDeadlineSchedulerService>();
 
 // Add JWT Authentication
 var jwtOptions = builder.Configuration.GetSection("JwtOptions").Get<JwtOptions>();

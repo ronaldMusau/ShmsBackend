@@ -105,6 +105,9 @@ namespace ShmsBackend.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<DateTime?>("AuthenticatorGraceFrom")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("RecoveryRequestedAt")
                         .HasColumnType("datetime2");
 
@@ -3077,6 +3080,9 @@ namespace ShmsBackend.Data.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<int>("AccountStrikesBeforeDeactivate")
+                        .HasColumnType("int");
+
+                    b.Property<int>("AuthenticatorDeadlineDays")
                         .HasColumnType("int");
 
                     b.Property<bool>("AutoDeactivateEnabled")

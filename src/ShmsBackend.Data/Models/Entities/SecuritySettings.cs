@@ -32,6 +32,7 @@ public class SecuritySettings
     public int ReadsPerMinuteThreshold { get; set; } = 400;  // GET requests per minute for one signed-in user
     public int AccountStrikesBeforeDeactivate { get; set; } = 2; // 1 = deactivate on the first breach, 2 = warn first (default)
     public bool AutoDeactivateEnabled { get; set; } = true;
+    public int AuthenticatorDeadlineDays { get; set; } = 7;  // staff must activate the authenticator app within this many days or the account is deactivated; 0 = no deadline
 
     // --- Where SuperAdmin and Admin may be used from ---
     public bool RestrictPrivilegedIps { get; set; }          // off by default; when on, SuperAdmin/Admin only work from the addresses below
