@@ -20,7 +20,7 @@ namespace ShmsBackend.Api.Controllers;
 [ApiController]
 [Route("api/money-approvals")]
 [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
-public class MoneyApprovalsController : ControllerBase
+public class MoneyApprovalsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter
 {
     private readonly ShmsDbContext _db;
     private readonly IReversalService _reversal;
@@ -32,11 +32,19 @@ public class MoneyApprovalsController : ControllerBase
 
     private string? Uid => User.FindFirstValue(ClaimTypes.NameIdentifier);
     private Guid MyId => Guid.TryParse(Uid, out var g) ? g : Guid.Empty;
-    private string Who => User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
+    private string? _who;
+    private string Who => _who ?? User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
+
+    public async Task OnActionExecutionAsync(Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
+    {
+        _who = await StaffName.ResolveAsync(_db, User);
+        await next();
+    }
+
     private static string Mask(string p) => p.Length >= 7 ? p[..4] + "****" + p[^3..] : "****";
 
     public record Item(string Kind, Guid Id, string Title, decimal? Amount, string? TenantName, string? Reason, string? Detail,
-        string? RequestedByName, DateTime RequestedAt, int StepOrder, int StepCount, string Status, object? Trail);
+        string? RequestedByName, DateTime RequestedAt, int StepOrder, int StepCount, string Status, object? Trail, bool Mine = false);
 
     private async Task<Dictionary<Guid, List<MoneyApprovalAction>>> TrailsAsync(string kind, IEnumerable<Guid> ids)
     {
@@ -62,7 +70,7 @@ public class MoneyApprovalsController : ControllerBase
             var tr = await TrailsAsync("Reversal", revs.Select(r => r.Id));
             items.AddRange(revs.Select(r => new Item("Reversal", r.Id, $"Reverse payment {r.Reference}", r.Amount, r.TenantName, r.Reason, r.Detail,
                 r.RequestedByName, r.RequestedAt, r.CurrentStepOrder, counts.GetValueOrDefault("Reversal"), r.Status,
-                tr.GetValueOrDefault(r.Id)?.Select(a => new { a.StepOrder, a.ApproverName, a.Decision, a.Notes, a.ActionedAt }))));
+                tr.GetValueOrDefault(r.Id)?.Select(a => new { a.StepOrder, a.ApproverName, a.Decision, a.Notes, a.ActionedAt }), r.RequestedByUserId == Uid)));
         }
         var payRows = mySteps.Where(s => s.Module == "Payout").Select(s => s.StepOrder).ToList();
         if (payRows.Count > 0)
@@ -71,7 +79,7 @@ public class MoneyApprovalsController : ControllerBase
             var tr = await TrailsAsync("Payout", pays.Select(p => p.Id));
             items.AddRange(pays.Select(p => new Item("Payout", p.Id, $"Pay out KES {p.Amount:N0} to {p.TenantName ?? Mask(p.ReceiverPhone)}", p.Amount, p.TenantName, p.Reason,
                 $"{p.Purpose} · {Mask(p.ReceiverPhone)}", p.RequestedByName, p.RequestedAt, p.CurrentStepOrder, counts.GetValueOrDefault("Payout"), p.Status,
-                tr.GetValueOrDefault(p.Id)?.Select(a => new { a.StepOrder, a.ApproverName, a.Decision, a.Notes, a.ActionedAt }))));
+                tr.GetValueOrDefault(p.Id)?.Select(a => new { a.StepOrder, a.ApproverName, a.Decision, a.Notes, a.ActionedAt }), p.RequestedByUserId == Uid)));
         }
         return Ok(new { success = true, data = items.OrderBy(i => i.RequestedAt) });
     }

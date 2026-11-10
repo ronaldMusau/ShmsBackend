@@ -20,7 +20,7 @@ namespace ShmsBackend.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/payouts")]
-public class PayoutsController : ControllerBase
+public class PayoutsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter
 {
     private static readonly string[] Purposes = { "AdvanceRefund", "DepositRefund", "Other" };
 
@@ -38,7 +38,15 @@ public class PayoutsController : ControllerBase
     { _db = db; _b2c = b2c; _cfg = cfg.Value; _events = events; _notify = notify; _log = log; _payouts = payouts; _stepUp = stepUp; }
 
     private string? Uid => User.FindFirstValue(ClaimTypes.NameIdentifier);
-    private string Who => User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
+    private string? _who;
+    private string Who => _who ?? User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
+
+    public async Task OnActionExecutionAsync(Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
+    {
+        _who = await StaffName.ResolveAsync(_db, User);
+        await next();
+    }
+
     private static string Mask(string p) => p.Length >= 7 ? p[..4] + "****" + p[^3..] : "****";
 
     [HttpGet]

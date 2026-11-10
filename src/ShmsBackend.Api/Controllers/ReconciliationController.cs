@@ -20,7 +20,7 @@ namespace ShmsBackend.Api.Controllers;
 [ApiController]
 [Route("api/reconciliation")]
 [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
-public class ReconciliationController : ControllerBase
+public class ReconciliationController : ControllerBase, Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter
 {
     private const decimal Tolerance = 0.01m;
     private const int MaxIssues = 500;
@@ -191,7 +191,15 @@ public class ReconciliationController : ControllerBase
     }
 
     private static string Cut(string? v, int max) => string.IsNullOrEmpty(v) ? "" : (v.Length <= max ? v : v[..max]);
-    private string WhoName() => User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
+    private string? _who;
+    private string WhoName() => _who ?? User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
+
+    public async Task OnActionExecutionAsync(Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
+    {
+        _who = await StaffName.ResolveAsync(_db, User);
+        await next();
+    }
+
 
     public record ReviewRequest(string Type, string Source, string Reference, decimal? Amount, string Detail, DateTime At,
         Guid? PaymentId, string? CheckoutRequestId, string? Note, string? MpesaAnswer);
