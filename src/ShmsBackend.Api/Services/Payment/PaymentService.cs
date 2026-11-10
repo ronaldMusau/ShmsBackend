@@ -18,7 +18,7 @@ public interface IPaymentService
     Task<PaymentRecord> CreateInitialPaymentAsync(Guid tenantId, Guid houseId, string phoneNumber);
     Task<(PaymentRecord? Payment, bool PastVacateMonth)> CreateAdvancePaymentRowAsync(Guid tenantId);
     Task<STKPushResponse> InitiatePaymentAsync(Guid paymentId, string phoneNumber, decimal? overrideAmount = null);
-    Task EnsureServiceChargeAsync(PaymentRecord payment);
+    Task EnsureServiceChargeAsync(PaymentRecord payment, decimal? payingAmount = null);
     Task ProcessCallbackAsync(MpesaCallback callback);
     Task<STKQueryResponse> QueryPaymentStatusAsync(string checkoutRequestId);
     Task<List<PaymentRecord>> GetTenantPaymentHistoryAsync(Guid tenantId);
@@ -88,10 +88,20 @@ public class PaymentService : IPaymentService
     // stored (seeded/older rows, leaving-tenant arrears) is given the charge for its rent tier here, so the
     // STK amount is always rent + charge. Points-redeemed rows are never charged; rows with no matching
     // tier stay at 0. Saved by the caller.
-    public async Task EnsureServiceChargeAsync(PaymentRecord payment)
+    public async Task EnsureServiceChargeAsync(PaymentRecord payment, decimal? payingAmount = null)
     {
-        if ((payment.ServiceChargeAmount ?? 0m) > 0m) return;
         if (!string.IsNullOrEmpty(payment.RedemptionReference) && string.IsNullOrEmpty(payment.MpesaReceiptNumber)) return;
+
+        // The service charge is a per-transaction fee: it is looked up from the amount being prompted (the typed
+        // amount), not from the whole rent. Recomputed on every typed-amount push so a small payment never leaves
+        // a different charge behind for a later one on the same row.
+        if (payingAmount.HasValue && payingAmount.Value > 0m)
+        {
+            payment.ServiceChargeAmount = await GetServiceChargeAsync(payingAmount.Value);
+            return;
+        }
+
+        if ((payment.ServiceChargeAmount ?? 0m) > 0m) return;
         var basis = (payment.RentAmount ?? 0m) > 0m ? payment.RentAmount!.Value : payment.Amount;
         var charge = await GetServiceChargeAsync(basis);
         if (charge > 0m) payment.ServiceChargeAmount = charge;
