@@ -255,7 +255,7 @@ public class HouseController : ControllerBase
     }
 
     [HttpPatch("{id:guid}/listing-visibility")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> SetListingVisibility(Guid id, [FromBody] SetListingVisibilityDto dto)
     {
         var house = await _context.Houses.FindAsync(id);
@@ -268,7 +268,7 @@ public class HouseController : ControllerBase
     }
 
     [HttpPatch("{id:guid}/comments-mute")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> SetCommentsMute(Guid id, [FromBody] SetCommentsMuteDto dto)
     {
         var house = await _context.Houses.FindAsync(id);

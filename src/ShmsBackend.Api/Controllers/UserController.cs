@@ -48,6 +48,11 @@ public class UserController : ControllerBase
             if (currentUserRole == UserType.Admin && createUserDto.UserType == UserType.Admin)
                 return Forbid();
 
+            // A Manager may only add Secretary or Accountant staff to the team.
+            if (currentUserRole == UserType.Manager &&
+                createUserDto.UserType != UserType.Secretary && createUserDto.UserType != UserType.Accountant)
+                return Forbid();
+
             var user = await _userService.CreateUserAsync(createUserDto, createdBy);
 
             return CreatedAtAction(nameof(GetUser), new { id = user.Id },
@@ -136,6 +141,14 @@ public class UserController : ControllerBase
                 {
                     userList.Add(MapUserToResponse(user));
                 }
+                else if (currentUserRole == UserType.Manager)
+                {
+                    // A Manager's team is the Secretary and Accountant staff.
+                    if (user.UserType == UserType.Accountant || user.UserType == UserType.Secretary)
+                    {
+                        userList.Add(MapUserToResponse(user));
+                    }
+                }
                 else if (currentUserRole == UserType.Admin)
                 {
                     if (user.UserType == UserType.Manager ||
@@ -185,6 +198,14 @@ public class UserController : ControllerBase
                 // Admin cannot change the user's role
                 updateUserDto.UserType = null;
             }
+            else if (currentUserRole == UserType.Manager)
+            {
+                // Manager can only edit Secretary/Accountant team members, and never change their role.
+                if (userToUpdate.UserType != UserType.Secretary && userToUpdate.UserType != UserType.Accountant)
+                    return Forbid();
+
+                updateUserDto.UserType = null;
+            }
 
             var user = await _userService.UpdateUserAsync(id, updateUserDto);
 
@@ -218,7 +239,7 @@ public class UserController : ControllerBase
     /// - Admin: can delete Manager/Accountant/Secretary only (except self)
     /// </summary>
     [HttpDelete("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Manager")]  // ← was "SuperAdmin" only
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> DeleteUser(Guid id)
     {
         try

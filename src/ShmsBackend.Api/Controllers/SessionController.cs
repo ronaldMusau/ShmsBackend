@@ -305,7 +305,7 @@ public class SessionController : ControllerBase
 
     // PATCH /api/sessions/{id}/reassign
     [HttpPatch("{id:guid}/reassign")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> ReassignSession(Guid id, [FromBody] ReassignViewingSessionDto dto)
     {
         var session = await _context.ListingViewingSessions.FindAsync(id);
