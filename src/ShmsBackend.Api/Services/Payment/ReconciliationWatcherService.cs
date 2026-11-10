@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using ShmsBackend.Api.Controllers;
 using Microsoft.EntityFrameworkCore;
 using ShmsBackend.Api.Services.Notifications;
 using ShmsBackend.Data.Context;
