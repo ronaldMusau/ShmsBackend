@@ -48,12 +48,23 @@ public class ReconciliationHealer
                 var stored = await _db.MpesaCallbackLogs
                     .Where(l => l.CheckoutRequestId == cid && l.ResultCode == 0 && !l.Applied && l.ReceivedAt < settled)
                     .OrderByDescending(l => l.ReceivedAt).FirstOrDefaultAsync();
-                if (stored != null)
+                // A rent prompt that is no longer its row's newest one is refused by the payment code as a possible duplicate,
+                // so it is never replayed here: a person records it from Reconciliation.
+                var rentAtt = await _db.PaymentCheckoutAttempts.IgnoreQueryFilters().Include(x => x.Payment).FirstOrDefaultAsync(x => x.CheckoutRequestId == cid);
+                var superseded = rentAtt?.Payment != null && rentAtt.Payment.CheckoutRequestId != cid;
+                if (stored != null && !superseded)
                 {
                     var cb = JsonSerializer.Deserialize<MpesaCallback>(stored.RawJson);
                     if (cb != null)
                     {
                         await _payments.ProcessCallbackAsync(cb);
+                        _db.ChangeTracker.Clear();
+                        // only call it fixed when the prompt really ended up recorded
+                        var done = await _db.PaymentCheckoutAttempts.IgnoreQueryFilters().AnyAsync(x => x.CheckoutRequestId == cid && x.AttemptStatus == "Success")
+                                   || await _db.ComplaintCheckoutAttempts.AnyAsync(x => x.CheckoutRequestId == cid && x.AttemptStatus == "Success")
+                                   || await _db.VacateCheckoutAttempts.AnyAsync(x => x.CheckoutRequestId == cid && x.AttemptStatus == "Success");
+                        if (!done) { _log.LogWarning("Stored callback for {Checkout} could not be applied; left for a person.", cid); continue; }
+                        stored = await _db.MpesaCallbackLogs.FirstAsync(l => l.Id == stored.Id);
                         var details = _mpesa.ExtractPaymentDetails(cb);
                         stored.Applied = true; stored.AppliedAt = DateTime.UtcNow; stored.Error = null;
                         await _db.SaveChangesAsync();
