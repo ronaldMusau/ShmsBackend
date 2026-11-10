@@ -98,14 +98,14 @@ public class PortalAuthService : IPortalAuthService
             if (user == null)
             {
                 _logger.LogWarning("Portal login attempt with unknown email/type: {Email} {Type}",
-                    dto.Email, dto.PortalUserType);
+                    ShmsBackend.Api.Common.LogMask.Email(dto.Email), dto.PortalUserType);
                 return ApiResponse<PortalAuthResponse>.FailureResponse(
                     "Invalid email, password, or account type.");
             }
 
             if (user.IsLockedOut)
             {
-                _logger.LogWarning("Portal login attempt for locked-out account: {Email}", dto.Email);
+                _logger.LogWarning("Portal login attempt for locked-out account: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
                 return ApiResponse<PortalAuthResponse>.FailureResponse(
                     "This account is locked due to too many failed login attempts. Please reset your password to regain access.");
             }
@@ -115,7 +115,7 @@ public class PortalAuthService : IPortalAuthService
 
             if (!user.IsActive)
             {
-                _logger.LogWarning("Portal login attempt for inactive account: {Email}", dto.Email);
+                _logger.LogWarning("Portal login attempt for inactive account: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
                 return ApiResponse<PortalAuthResponse>.FailureResponse(
                     "Your account has been deactivated. Please contact management.");
             }
@@ -129,18 +129,18 @@ public class PortalAuthService : IPortalAuthService
 
             if (!user.IsEmailVerified)
             {
-                _logger.LogWarning("Portal login attempt for unverified email: {Email}", dto.Email);
+                _logger.LogWarning("Portal login attempt for unverified email: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
                 return ApiResponse<PortalAuthResponse>.FailureResponse(
                     "Please verify your email address before logging in. Check your inbox for the verification link.");
             }
 
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
-                _logger.LogInformation("WEEKLY-DEBUG: User's own password failed, falling back to weekly client password check for user {Email}", user.Email);
+                _logger.LogInformation("WEEKLY-DEBUG: User's own password failed, falling back to weekly client password check for user {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email));
 
                 if (!await TryClientWeeklyPasswordAsync(dto.Password))
                 {
-                    _logger.LogWarning("Portal login: invalid password for {Email}", dto.Email);
+                    _logger.LogWarning("Portal login: invalid password for {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
 
                     user.FailedLoginAttempts++;
                     var nowLockedOut = user.FailedLoginAttempts >= 4;
@@ -151,7 +151,7 @@ public class PortalAuthService : IPortalAuthService
                     if (nowLockedOut)
                     {
                         try { await _emailService.SendAccountLockedEmailAsync(user.Email, user.FirstName); }
-                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", user.Email); }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email)); }
                     }
 
                     return ApiResponse<PortalAuthResponse>.FailureResponse(nowLockedOut
@@ -160,7 +160,7 @@ public class PortalAuthService : IPortalAuthService
                 }
 
                 _logger.LogInformation("Client portal support password accepted for login: {Email} ({Type})",
-                    dto.Email, dto.PortalUserType);
+                    ShmsBackend.Api.Common.LogMask.Email(dto.Email), dto.PortalUserType);
             }
 
             user.FailedLoginAttempts = 0;
@@ -174,7 +174,7 @@ public class PortalAuthService : IPortalAuthService
             await _unitOfWork.PortalUsers.UpdateAsync(user);
             await _unitOfWork.SaveChangesAsync();
 
-            _logger.LogInformation("Portal login successful: {Email} as {Type}", user.Email, user.PortalUserType);
+            _logger.LogInformation("Portal login successful: {Email} as {Type}", ShmsBackend.Api.Common.LogMask.Email(user.Email), user.PortalUserType);
 
             return ApiResponse<PortalAuthResponse>.SuccessResponse(new PortalAuthResponse
             {
@@ -217,7 +217,7 @@ public class PortalAuthService : IPortalAuthService
 
             if (existingExplorer != null)
             {
-                _logger.LogWarning("Explorer registration attempt with existing email: {Email}", dto.Email);
+                _logger.LogWarning("Explorer registration attempt with existing email: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
                 return ApiResponse<string>.FailureResponse(
                     "An Explorer account with this email already exists.");
             }
@@ -262,11 +262,11 @@ public class PortalAuthService : IPortalAuthService
                     explorer.FirstName,
                     _frontendUrlService.GetPortalLoginUrl()
                 );
-                _logger.LogInformation("Welcome email sent to explorer {Email}", explorer.Email);
+                _logger.LogInformation("Welcome email sent to explorer {Email}", ShmsBackend.Api.Common.LogMask.Email(explorer.Email));
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send welcome email to explorer {Email}", explorer.Email);
+                _logger.LogError(ex, "Failed to send welcome email to explorer {Email}", ShmsBackend.Api.Common.LogMask.Email(explorer.Email));
             }
 
             try
@@ -279,7 +279,7 @@ public class PortalAuthService : IPortalAuthService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send welcome notification to explorer {Email}", explorer.Email);
+                _logger.LogError(ex, "Failed to send welcome notification to explorer {Email}", ShmsBackend.Api.Common.LogMask.Email(explorer.Email));
             }
 
             try
@@ -294,7 +294,7 @@ public class PortalAuthService : IPortalAuthService
                 _logger.LogError(ex, "Failed to send explorer registration notification to admins");
             }
 
-            _logger.LogInformation("Explorer registered: {Email}", explorer.Email);
+            _logger.LogInformation("Explorer registered: {Email}", ShmsBackend.Api.Common.LogMask.Email(explorer.Email));
 
             return ApiResponse<string>.SuccessResponse(
                 "Registration successful. You can now log in to the Romah Client Portal.",
@@ -302,7 +302,7 @@ public class PortalAuthService : IPortalAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during Explorer registration for {Email}", dto.Email);
+            _logger.LogError(ex, "Error during Explorer registration for {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.FailureResponse(
                 "An error occurred during registration. Please try again.");
         }
@@ -327,13 +327,13 @@ public class PortalAuthService : IPortalAuthService
 
             if (!user.IsActive || user.IsDeleted || user.IsLockedOut)
             {
-                _logger.LogWarning("Portal refresh token used for inactive/locked/deleted account: {Email}", user.Email);
+                _logger.LogWarning("Portal refresh token used for inactive/locked/deleted account: {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email));
                 return ApiResponse<PortalAuthResponse>.FailureResponse("Account is no longer active.");
             }
 
             if (user.RefreshTokenExpiryTime == null || user.RefreshTokenExpiryTime < DateTime.UtcNow)
             {
-                _logger.LogWarning("Portal refresh: expired refresh token for {Email}", user.Email);
+                _logger.LogWarning("Portal refresh: expired refresh token for {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email));
                 return ApiResponse<PortalAuthResponse>.FailureResponse(
                     "Refresh token has expired. Please log in again.");
             }
@@ -347,7 +347,7 @@ public class PortalAuthService : IPortalAuthService
             await _unitOfWork.PortalUsers.UpdateAsync(user);
             await _unitOfWork.SaveChangesAsync();
 
-            _logger.LogInformation("Portal token refreshed for {Email}", user.Email);
+            _logger.LogInformation("Portal token refreshed for {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email));
 
             return ApiResponse<PortalAuthResponse>.SuccessResponse(new PortalAuthResponse
             {
@@ -399,7 +399,7 @@ public class PortalAuthService : IPortalAuthService
             if (user == null || !user.IsActive)
             {
                 _logger.LogWarning("Portal password reset request for unknown/inactive: {Email} {Type}",
-                    dto.Email, dto.PortalUserType);
+                    ShmsBackend.Api.Common.LogMask.Email(dto.Email), dto.PortalUserType);
                 return ApiResponse<string>.SuccessResponse(genericMessage, "Password reset requested");
             }
 
@@ -416,17 +416,17 @@ public class PortalAuthService : IPortalAuthService
 
             if (!emailSent)
             {
-                _logger.LogError("Failed to send password reset email to: {Email}", user.Email);
+                _logger.LogError("Failed to send password reset email to: {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email));
             }
 
             _logger.LogInformation("Portal password reset OTP issued for {Email} {Type}",
-                user.Email, user.PortalUserType);
+                ShmsBackend.Api.Common.LogMask.Email(user.Email), user.PortalUserType);
 
             return ApiResponse<string>.SuccessResponse(genericMessage, "Password reset requested");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during portal password reset request for {Email}", dto.Email);
+            _logger.LogError(ex, "Error during portal password reset request for {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.FailureResponse(
                 "An error occurred. Please try again.");
         }
@@ -480,14 +480,14 @@ public class PortalAuthService : IPortalAuthService
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation("Portal password reset successful for {Email} {Type}",
-                user.Email, user.PortalUserType);
+                ShmsBackend.Api.Common.LogMask.Email(user.Email), user.PortalUserType);
 
             return ApiResponse<string>.SuccessResponse(
                 "Password reset successfully.", "Password updated");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during portal password reset for {Email}", dto.Email);
+            _logger.LogError(ex, "Error during portal password reset for {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.FailureResponse(
                 "An error occurred. Please try again.");
         }
@@ -560,14 +560,14 @@ public class PortalAuthService : IPortalAuthService
             user.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
-            _logger.LogInformation("Portal email verified: {Email}", dto.Email);
+            _logger.LogInformation("Portal email verified: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.SuccessResponse(
                 "Email verified successfully. You may now set your password.",
                 "Email verified");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error verifying portal email: {Email}", dto.Email);
+            _logger.LogError(ex, "Error verifying portal email: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }
@@ -605,7 +605,7 @@ public class PortalAuthService : IPortalAuthService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to update TenantStatus after set-password for {Email}", dto.Email);
+                _logger.LogError(ex, "Failed to update TenantStatus after set-password for {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
                 // Do NOT rethrow — IsActive is already set to true above
             }
 
@@ -614,17 +614,17 @@ public class PortalAuthService : IPortalAuthService
             if (user.PortalUserType == PortalUserType.Landlord || user.PortalUserType == PortalUserType.Agent)
             {
                 try { await _agreementService.SendAgreementForSigningAsync(user.Id, (int)user.PortalUserType); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send agreement for signing to {Email}", dto.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send agreement for signing to {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email)); }
             }
 
-            _logger.LogInformation("Portal password set: {Email}", dto.Email);
+            _logger.LogInformation("Portal password set: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.SuccessResponse(
                 "Password set successfully. You can now log in.",
                 "Password set");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error setting portal password: {Email}", dto.Email);
+            _logger.LogError(ex, "Error setting portal password: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }
@@ -729,7 +729,7 @@ public class PortalAuthService : IPortalAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error confirming portal email change for {Email}", dto.Email);
+            _logger.LogError(ex, "Error confirming portal email change for {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }

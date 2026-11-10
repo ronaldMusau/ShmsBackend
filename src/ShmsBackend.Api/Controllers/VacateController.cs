@@ -278,7 +278,7 @@ public class VacateController : ControllerBase
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendVacateSubmittedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate submitted email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate submitted email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate submitted email"); }
@@ -470,7 +470,7 @@ public class VacateController : ControllerBase
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendVacateCancelledManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate cancelled email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate cancelled email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate cancelled email"); }
@@ -789,7 +789,7 @@ public class VacateController : ControllerBase
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendVacateInspectionSubmittedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate inspection submitted email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate inspection submitted email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate inspection submitted email"); }
@@ -1314,7 +1314,7 @@ public class VacateController : ControllerBase
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendVacateAppealManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send appeal email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send appeal email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate appeal email"); }
@@ -1523,7 +1523,7 @@ public class VacateController : ControllerBase
                 foreach (var mgr in managementUsers)
                 {
                     try { await _emailService.SendVacateRejectedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, dto.Notes, mgr.Id.ToString(), false); }
-                    catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email to {Email}", mgr.Email); }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
                 }
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate rejection email"); }
@@ -2276,7 +2276,7 @@ public class VacateController : ControllerBase
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendVacateTenantMessageManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, dto.Message, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate tenant message email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate tenant message email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate tenant message email"); }

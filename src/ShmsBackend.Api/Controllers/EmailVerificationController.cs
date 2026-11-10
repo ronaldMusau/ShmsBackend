@@ -46,40 +46,40 @@ public class EmailVerificationController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Verifying email for: {Email}", verifyEmailDto.Email);
+            _logger.LogInformation("Verifying email for: {Email}", ShmsBackend.Api.Common.LogMask.Email(verifyEmailDto.Email));
 
             var user = await _unitOfWork.Admins.GetFirstOrDefaultAsync(
                 a => a.EmailVerificationToken == verifyEmailDto.Token);
 
             if (user == null)
             {
-                _logger.LogWarning("No user found with token: {Token}", verifyEmailDto.Token);
+                _logger.LogWarning("Verification attempted with an unknown token");
                 return NotFound(ApiResponse<object>.FailureResponse("Invalid verification token"));
             }
 
             if (!string.Equals(user.Email, verifyEmailDto.Email, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Token/email mismatch. Token owner: {TokenEmail}, Requested: {Email}",
-                    user.Email, verifyEmailDto.Email);
+                    ShmsBackend.Api.Common.LogMask.Email(user.Email), ShmsBackend.Api.Common.LogMask.Email(verifyEmailDto.Email));
                 return BadRequest(ApiResponse<object>.FailureResponse("Invalid verification token"));
             }
 
             if (user.IsEmailVerified)
             {
                 _logger.LogWarning("Email already verified for: {Email} (UserType: {UserType})",
-                    user.Email, user.UserType);
+                    ShmsBackend.Api.Common.LogMask.Email(user.Email), user.UserType);
                 return BadRequest(ApiResponse<object>.FailureResponse("Email already verified"));
             }
 
             if (user.EmailVerificationTokenExpiry < DateTime.UtcNow)
             {
                 _logger.LogWarning("Expired verification token for: {Email} (UserType: {UserType})",
-                    user.Email, user.UserType);
+                    ShmsBackend.Api.Common.LogMask.Email(user.Email), user.UserType);
                 return BadRequest(ApiResponse<object>.FailureResponse("Verification token has expired"));
             }
 
             _logger.LogInformation("Email verified successfully for: {Email} (UserType: {UserType})",
-                user.Email, user.UserType);
+                ShmsBackend.Api.Common.LogMask.Email(user.Email), user.UserType);
 
             return Ok(ApiResponse<object>.SuccessResponse(new
             {
@@ -89,7 +89,7 @@ public class EmailVerificationController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error verifying email for: {Email}", verifyEmailDto?.Email ?? "unknown");
+            _logger.LogError(ex, "Error verifying email for: {Email}", ShmsBackend.Api.Common.LogMask.Email(verifyEmailDto?.Email ?? "unknown"));
             return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred during email verification"));
         }
     }
@@ -108,7 +108,7 @@ public class EmailVerificationController : ControllerBase
         try
         {
             _logger.LogInformation("Setting password for: {Email}, Flow: {Flow}",
-                setPasswordDto.Email, setPasswordDto.Flow);
+                ShmsBackend.Api.Common.LogMask.Email(setPasswordDto.Email), setPasswordDto.Flow);
 
             // Look up by token (unique) not email (not unique across roles)
             var user = await _unitOfWork.Admins.GetFirstOrDefaultAsync(
@@ -116,21 +116,21 @@ public class EmailVerificationController : ControllerBase
 
             if (user == null)
             {
-                _logger.LogWarning("No user found with token: {Token}", setPasswordDto.Token);
+                _logger.LogWarning("Set-password attempted with an unknown token");
                 return NotFound(ApiResponse<object>.FailureResponse("Invalid verification token"));
             }
 
             if (!string.Equals(user.Email, setPasswordDto.Email, StringComparison.OrdinalIgnoreCase))
             {
                 _logger.LogWarning("Token/email mismatch. Token owner: {TokenEmail}, Requested: {Email}",
-                    user.Email, setPasswordDto.Email);
+                    ShmsBackend.Api.Common.LogMask.Email(user.Email), ShmsBackend.Api.Common.LogMask.Email(setPasswordDto.Email));
                 return BadRequest(ApiResponse<object>.FailureResponse("Invalid verification token"));
             }
 
             if (user.EmailVerificationTokenExpiry < DateTime.UtcNow)
             {
                 _logger.LogWarning("Expired token for: {Email} (UserType: {UserType})",
-                    user.Email, user.UserType);
+                    ShmsBackend.Api.Common.LogMask.Email(user.Email), user.UserType);
                 return BadRequest(ApiResponse<object>.FailureResponse("Verification token has expired"));
             }
 
@@ -147,7 +147,7 @@ public class EmailVerificationController : ControllerBase
 
                 if (!BCrypt.Net.BCrypt.Verify(setPasswordDto.CurrentPassword, user.PasswordHash))
                 {
-                    _logger.LogWarning("Invalid current password for new-user flow: {Email}", user.Email);
+                    _logger.LogWarning("Invalid current password for new-user flow: {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email));
                     return BadRequest(ApiResponse<object>.FailureResponse(
                         "Current password is incorrect"));
                 }
@@ -164,7 +164,7 @@ public class EmailVerificationController : ControllerBase
             await _unitOfWork.SaveChangesAsync();
 
             _logger.LogInformation("User {Email} (UserType: {UserType}) set password successfully via {Flow} flow",
-                user.Email, user.UserType, setPasswordDto.Flow);
+                ShmsBackend.Api.Common.LogMask.Email(user.Email), user.UserType, setPasswordDto.Flow);
 
             return Ok(ApiResponse<object>.SuccessResponse(new
             {
@@ -173,7 +173,7 @@ public class EmailVerificationController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error setting password for: {Email}", setPasswordDto?.Email ?? "unknown");
+            _logger.LogError(ex, "Error setting password for: {Email}", ShmsBackend.Api.Common.LogMask.Email(setPasswordDto?.Email ?? "unknown"));
             return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while setting password"));
         }
     }
@@ -187,7 +187,7 @@ public class EmailVerificationController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Resending verification email to: {Email}", resendDto.Email);
+            _logger.LogInformation("Resending verification email to: {Email}", ShmsBackend.Api.Common.LogMask.Email(resendDto.Email));
 
             var unverifiedUsers = (await _unitOfWork.Admins.FindAsync(
                 a => a.Email.ToLower() == resendDto.Email.ToLower() && !a.IsEmailVerified))
@@ -218,7 +218,7 @@ public class EmailVerificationController : ControllerBase
                     user.EmailVerificationToken!, user.Email);
 
                 _logger.LogInformation("Resending to {Email} (UserType: {UserType})",
-                    user.Email, user.UserType);
+                    ShmsBackend.Api.Common.LogMask.Email(user.Email), user.UserType);
 
                 await _emailService.SendEmailVerificationEmailAsync(
                     user.Email, user.FirstName, verificationLink);
@@ -228,7 +228,7 @@ public class EmailVerificationController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error resending verification to: {Email}", resendDto?.Email ?? "unknown");
+            _logger.LogError(ex, "Error resending verification to: {Email}", ShmsBackend.Api.Common.LogMask.Email(resendDto?.Email ?? "unknown"));
             return StatusCode(500, ApiResponse<object>.FailureResponse("An error occurred while resending verification"));
         }
     }

@@ -201,7 +201,7 @@ public class TenantService : ITenantService
                 if (sourceInterest != null)
                     sourceInterest.Status = "Converted";
                 else
-                    _logger.LogWarning("SourceExplorerInterestId {InterestId} provided for revived tenant {Email} but no matching ExplorerInterest row was found", dto.SourceExplorerInterestId, dto.Email);
+                    _logger.LogWarning("SourceExplorerInterestId {InterestId} provided for revived tenant {Email} but no matching ExplorerInterest row was found", dto.SourceExplorerInterestId, ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             }
 
             deleted.UpdatedAt = DateTime.UtcNow;
@@ -313,7 +313,7 @@ public class TenantService : ITenantService
             if (sourceInterest != null)
                 sourceInterest.Status = "Converted";
             else
-                _logger.LogWarning("SourceExplorerInterestId {InterestId} provided for new tenant {Email} but no matching ExplorerInterest row was found", dto.SourceExplorerInterestId, dto.Email);
+                _logger.LogWarning("SourceExplorerInterestId {InterestId} provided for new tenant {Email} but no matching ExplorerInterest row was found", dto.SourceExplorerInterestId, ShmsBackend.Api.Common.LogMask.Email(dto.Email));
         }
 
         await _unitOfWork.Tenants.AddAsync(tenant);
@@ -341,7 +341,7 @@ public class TenantService : ITenantService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send notification for tenant creation {Email}", tenant.Email);
+            _logger.LogError(ex, "Failed to send notification for tenant creation {Email}", ShmsBackend.Api.Common.LogMask.Email(tenant.Email));
         }
 
         if (dto.HouseId.HasValue)
@@ -402,7 +402,7 @@ public class TenantService : ITenantService
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to send account-ready email to existing tenant {Email} (attempt {Attempt}/3)", tenant.Email, attempt);
+                        _logger.LogError(ex, "Failed to send account-ready email to existing tenant {Email} (attempt {Attempt}/3)", ShmsBackend.Api.Common.LogMask.Email(tenant.Email), attempt);
                         if (attempt < 3) await Task.Delay(2000);
                     }
                 }
@@ -462,7 +462,7 @@ public class TenantService : ITenantService
             }
         }
 
-        _logger.LogInformation("Tenant created: {Email}", tenant.Email);
+        _logger.LogInformation("Tenant created: {Email}", ShmsBackend.Api.Common.LogMask.Email(tenant.Email));
         return tenant;
     }
 
@@ -704,7 +704,7 @@ public class TenantService : ITenantService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send deactivation email to {Email}", tenant.Email);
+                _logger.LogError(ex, "Failed to send deactivation email to {Email}", ShmsBackend.Api.Common.LogMask.Email(tenant.Email));
             }
         }
         else
@@ -715,7 +715,7 @@ public class TenantService : ITenantService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send reactivation email to {Email}", tenant.Email);
+                _logger.LogError(ex, "Failed to send reactivation email to {Email}", ShmsBackend.Api.Common.LogMask.Email(tenant.Email));
             }
         }
 

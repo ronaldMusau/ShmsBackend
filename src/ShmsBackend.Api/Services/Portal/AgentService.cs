@@ -104,7 +104,7 @@ public class AgentService : IAgentService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to send verification email to agent {Email} (attempt {Attempt}/3)", deleted.Email, attempt);
+                    _logger.LogError(ex, "Failed to send verification email to agent {Email} (attempt {Attempt}/3)", ShmsBackend.Api.Common.LogMask.Email(deleted.Email), attempt);
                     if (attempt < 3) await Task.Delay(2000);
                 }
             }
@@ -156,7 +156,7 @@ public class AgentService : IAgentService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send verification email to agent {Email} (attempt {Attempt}/3)", agent.Email, attempt);
+                _logger.LogError(ex, "Failed to send verification email to agent {Email} (attempt {Attempt}/3)", ShmsBackend.Api.Common.LogMask.Email(agent.Email), attempt);
                 if (attempt < 3) await Task.Delay(2000);
             }
         }
@@ -198,10 +198,10 @@ public class AgentService : IAgentService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send notification for agent creation {Email}", agent.Email);
+            _logger.LogError(ex, "Failed to send notification for agent creation {Email}", ShmsBackend.Api.Common.LogMask.Email(agent.Email));
         }
 
-        _logger.LogInformation("Agent created: {Email}", agent.Email);
+        _logger.LogInformation("Agent created: {Email}", ShmsBackend.Api.Common.LogMask.Email(agent.Email));
         return agent;
     }
 
@@ -303,7 +303,7 @@ public class AgentService : IAgentService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send deactivation email to {Email}", agent.Email);
+                _logger.LogError(ex, "Failed to send deactivation email to {Email}", ShmsBackend.Api.Common.LogMask.Email(agent.Email));
             }
         }
         else
@@ -314,7 +314,7 @@ public class AgentService : IAgentService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send reactivation email to {Email}", agent.Email);
+                _logger.LogError(ex, "Failed to send reactivation email to {Email}", ShmsBackend.Api.Common.LogMask.Email(agent.Email));
             }
         }
 

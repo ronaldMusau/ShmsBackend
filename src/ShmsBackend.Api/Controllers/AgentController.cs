@@ -467,7 +467,7 @@ public class AgentController : ControllerBase
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Resend verification email failed for agent {Email} (attempt {Attempt}/3)", agent.Email, attempt);
+                _logger.LogError(ex, "Resend verification email failed for agent {Email} (attempt {Attempt}/3)", ShmsBackend.Api.Common.LogMask.Email(agent.Email), attempt);
                 if (attempt < 3) await Task.Delay(2000);
             }
         }

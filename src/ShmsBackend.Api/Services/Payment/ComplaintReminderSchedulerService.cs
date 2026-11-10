@@ -133,7 +133,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
         foreach (var mgr in managementUsers)
         {
             try { await emailService.SendComplaintOverdueManagementGroupedEmailAsync(mgr.Email, mgr.FirstName, allItems, mgr.Id.ToString(), false); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to {Email}", mgr.Email); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
 
             try
             {
@@ -142,7 +142,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
                     $"{complaints.Count} complaint(s) require attention: {BuildComplaintSummary(complaints)}",
                     "property", "Complaint", null);
             }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to {Email}", mgr.Email); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
         }
 
         // Agent — one grouped email per distinct escalated agent, containing only their own complaints.
@@ -172,7 +172,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
             if (agent == null) continue;
             var groupItems = group.Value;
             try { await emailService.SendComplaintOverdueAgentGroupedEmailAsync(agent.Email, agent.FirstName, groupItems.Select(ToItem).ToList(), agent.Id.ToString(), true); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to agent {Email}", agent.Email); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to agent {Email}", ShmsBackend.Api.Common.LogMask.Email(agent.Email)); }
 
             try
             {
@@ -181,7 +181,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
                     $"{groupItems.Count} complaint(s) awaiting your work: {BuildComplaintSummary(groupItems)}",
                     "property", "Complaint", null);
             }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to agent {Email}", agent.Email); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to agent {Email}", ShmsBackend.Api.Common.LogMask.Email(agent.Email)); }
         }
 
         // Landlord — one grouped email per distinct landlord, for complaints billable to Management
@@ -199,7 +199,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
             if (landlord == null) continue;
             var groupItems = group.ToList();
             try { await emailService.SendComplaintOverdueLandlordGroupedEmailAsync(landlord.Email, landlord.FirstName, groupItems.Select(ToItem).ToList(), landlord.Id.ToString(), true); }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to landlord {Email}", landlord.Email); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint email to landlord {Email}", ShmsBackend.Api.Common.LogMask.Email(landlord.Email)); }
 
             try
             {
@@ -208,7 +208,7 @@ public class ComplaintReminderSchedulerService : BackgroundService
                     $"{groupItems.Count} complaint(s) awaiting your decision: {BuildComplaintSummary(groupItems)}",
                     "property", "Complaint", null);
             }
-            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to landlord {Email}", landlord.Email); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to send grouped overdue complaint notification to landlord {Email}", ShmsBackend.Api.Common.LogMask.Email(landlord.Email)); }
         }
 
         // Tenant — things only the tenant can move forward: a billed repair awaiting their decision, an

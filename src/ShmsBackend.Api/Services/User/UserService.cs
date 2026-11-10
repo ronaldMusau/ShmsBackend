@@ -171,7 +171,7 @@ public class UserService : IUserService
         await _unitOfWork.SaveChangesAsync();
 
         var verificationLink = _frontendUrlService.GetEmailVerificationUrl(verificationToken, admin.Email);
-        _logger.LogInformation("Sending verification email to {Email} with link: {VerificationLink}", admin.Email, verificationLink);
+        _logger.LogInformation("Sending verification email to {Email} with link: {VerificationLink}", ShmsBackend.Api.Common.LogMask.Email(admin.Email), verificationLink);
         await _emailService.SendPortalVerifyWithPasswordEmailAsync(
             admin.Email,
             admin.FirstName,
@@ -180,7 +180,7 @@ public class UserService : IUserService
         );
 
         _logger.LogInformation("User created successfully: {Email} as {UserType}. Verification email sent.",
-            admin.Email, admin.UserType);
+            ShmsBackend.Api.Common.LogMask.Email(admin.Email), admin.UserType);
 
         return admin;
     }

@@ -91,7 +91,7 @@ public class LandlordService : ILandlordService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to send verification email to landlord {Email} (attempt {Attempt}/3)", deleted.Email, attempt);
+                    _logger.LogError(ex, "Failed to send verification email to landlord {Email} (attempt {Attempt}/3)", ShmsBackend.Api.Common.LogMask.Email(deleted.Email), attempt);
                     if (attempt < 3) await Task.Delay(2000);
                 }
             }
@@ -139,7 +139,7 @@ public class LandlordService : ILandlordService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send verification email to landlord {Email} (attempt {Attempt}/3)", landlord.Email, attempt);
+                _logger.LogError(ex, "Failed to send verification email to landlord {Email} (attempt {Attempt}/3)", ShmsBackend.Api.Common.LogMask.Email(landlord.Email), attempt);
                 if (attempt < 3) await Task.Delay(2000);
             }
         }
@@ -166,10 +166,10 @@ public class LandlordService : ILandlordService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send notification for landlord creation {Email}", landlord.Email);
+            _logger.LogError(ex, "Failed to send notification for landlord creation {Email}", ShmsBackend.Api.Common.LogMask.Email(landlord.Email));
         }
 
-        _logger.LogInformation("Landlord created: {Email}", landlord.Email);
+        _logger.LogInformation("Landlord created: {Email}", ShmsBackend.Api.Common.LogMask.Email(landlord.Email));
         return landlord;
     }
 
@@ -246,7 +246,7 @@ public class LandlordService : ILandlordService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send deactivation email to {Email}", landlord.Email);
+                _logger.LogError(ex, "Failed to send deactivation email to {Email}", ShmsBackend.Api.Common.LogMask.Email(landlord.Email));
             }
         }
         else
@@ -257,7 +257,7 @@ public class LandlordService : ILandlordService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to send reactivation email to {Email}", landlord.Email);
+                _logger.LogError(ex, "Failed to send reactivation email to {Email}", ShmsBackend.Api.Common.LogMask.Email(landlord.Email));
             }
         }
 

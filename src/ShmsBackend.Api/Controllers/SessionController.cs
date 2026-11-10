@@ -143,7 +143,7 @@ public class SessionController : ControllerBase
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendSessionCapacityAlertEmailAsync(mgr.Email, mgr.FirstName, agentName, scheduledDate, mgr.Id.ToString(), false, maxPerDay); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send capacity alert email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send capacity alert email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for capacity alert email"); }
@@ -295,7 +295,7 @@ public class SessionController : ControllerBase
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendSessionDeclinedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, agentName, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send session declined email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send session declined email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for session declined email"); }

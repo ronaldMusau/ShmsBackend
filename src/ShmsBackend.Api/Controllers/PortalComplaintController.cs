@@ -136,7 +136,7 @@ public class PortalComplaintController : ControllerBase
                         mgr.Email, mgr.FirstName, complaint.TicketNumber, complaintType.Name,
                         $"{tenant.FirstName} {tenant.LastName}", tenant.House.HouseNumber, tenant.House.Flat.FlatName, mgr.Id.ToString(), false);
                 }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send management complaint email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send management complaint email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
 
             await _notificationService.SendToRolesAsync(
@@ -995,7 +995,7 @@ public class PortalComplaintController : ControllerBase
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendLandlordDecisionEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, complaint.LandlordDecision!, complaint.LandlordDecisionNotes, complaint.BillableAmount, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord-decision email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send landlord-decision email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to process landlord-decision management emails"); }

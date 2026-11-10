@@ -175,7 +175,7 @@ public class VacateClosureService
             foreach (var mgr in managementUsers)
             {
                 try { await _emailService.SendVacateClosedManagementEmailAsync(mgr.Email, mgr.FirstName, houseNumber, mgr.Id.ToString(), false); }
-                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate closed email to {Email}", mgr.Email); }
+                catch (Exception ex) { _logger.LogError(ex, "Failed to send vacate closed email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
             }
         }
         catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for vacate closed email"); }

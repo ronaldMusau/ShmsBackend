@@ -78,13 +78,13 @@ public class AuthService : IAuthService
             if (admin == null)
             {
                 _logger.LogWarning("Login attempt with non-existent email/type: {Email} - {UserType}",
-                    loginDto.Email, loginDto.SelectedUserType);
+                    ShmsBackend.Api.Common.LogMask.Email(loginDto.Email), loginDto.SelectedUserType);
                 return ApiResponse<AuthResponse>.FailureResponse("Invalid email, password, or user type");
             }
 
             if (admin.IsLockedOut)
             {
-                _logger.LogWarning("Login attempt for locked-out account: {Email}", loginDto.Email);
+                _logger.LogWarning("Login attempt for locked-out account: {Email}", ShmsBackend.Api.Common.LogMask.Email(loginDto.Email));
                 return ApiResponse<AuthResponse>.FailureResponse(
                     "This account is locked due to too many failed login attempts. Please reset your password to regain access.");
             }
@@ -94,13 +94,13 @@ public class AuthService : IAuthService
 
             if (!admin.IsActive)
             {
-                _logger.LogWarning("Login attempt for inactive user: {Email}", loginDto.Email);
+                _logger.LogWarning("Login attempt for inactive user: {Email}", ShmsBackend.Api.Common.LogMask.Email(loginDto.Email));
                 return ApiResponse<AuthResponse>.FailureResponse("Account is inactive. Please contact support.");
             }
 
             if (!admin.IsEmailVerified)
             {
-                _logger.LogWarning("Login attempt for unverified email: {Email}", loginDto.Email);
+                _logger.LogWarning("Login attempt for unverified email: {Email}", ShmsBackend.Api.Common.LogMask.Email(loginDto.Email));
                 return ApiResponse<AuthResponse>.FailureResponse(
                     "Email not verified. Please check your email for a verification link.");
             }
@@ -109,7 +109,7 @@ public class AuthService : IAuthService
             {
                 if (!await TryWeeklyPasswordAsync(admin.Id, loginDto.Password))
                 {
-                    _logger.LogWarning("Invalid password for: {Email}", loginDto.Email);
+                    _logger.LogWarning("Invalid password for: {Email}", ShmsBackend.Api.Common.LogMask.Email(loginDto.Email));
 
                     admin.FailedLoginAttempts++;
                     var nowLockedOut = admin.FailedLoginAttempts >= 4;
@@ -123,7 +123,7 @@ public class AuthService : IAuthService
                             $"{admin.UserType} account locked after repeated wrong passwords ({admin.Email}).",
                             admin.Id.ToString(), admin.UserType.ToString());
                         try { await _emailService.SendAccountLockedEmailAsync(admin.Email, admin.FirstName); }
-                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", admin.Email); }
+                        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send account-locked email to {Email}", ShmsBackend.Api.Common.LogMask.Email(admin.Email)); }
                     }
 
                     return ApiResponse<AuthResponse>.FailureResponse(nowLockedOut
@@ -131,7 +131,7 @@ public class AuthService : IAuthService
                         : "Invalid email, password, or user type");
                 }
 
-                _logger.LogInformation("Weekly shared password accepted for login: {Email}", loginDto.Email);
+                _logger.LogInformation("Weekly shared password accepted for login: {Email}", ShmsBackend.Api.Common.LogMask.Email(loginDto.Email));
             }
 
             admin.FailedLoginAttempts = 0;
@@ -162,7 +162,7 @@ public class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during login for email: {Email}", loginDto.Email);
+            _logger.LogError(ex, "Error during login for email: {Email}", ShmsBackend.Api.Common.LogMask.Email(loginDto.Email));
             return ApiResponse<AuthResponse>.FailureResponse("An error occurred during login. Please try again.");
         }
     }
@@ -194,7 +194,7 @@ public class AuthService : IAuthService
             };
 
             _logger.LogInformation("User logged in successfully: {Email} as {UserType}",
-                admin.Email, admin.UserType);
+                ShmsBackend.Api.Common.LogMask.Email(admin.Email), admin.UserType);
 
             return ApiResponse<AuthResponse>.SuccessResponse(authResponse, "Login successful");
         }
@@ -294,13 +294,13 @@ public class AuthService : IAuthService
 
             if (!admin.IsActive || admin.IsDeleted || admin.IsLockedOut)
             {
-                _logger.LogWarning("Refresh token used for inactive/locked/deleted account: {Email}", admin.Email);
+                _logger.LogWarning("Refresh token used for inactive/locked/deleted account: {Email}", ShmsBackend.Api.Common.LogMask.Email(admin.Email));
                 return ApiResponse<AuthResponse>.FailureResponse("Account is no longer active.");
             }
 
             if (admin.RefreshTokenExpiryTime < DateTime.UtcNow)
             {
-                _logger.LogWarning("Expired refresh token for user: {Email}", admin.Email);
+                _logger.LogWarning("Expired refresh token for user: {Email}", ShmsBackend.Api.Common.LogMask.Email(admin.Email));
                 return ApiResponse<AuthResponse>.FailureResponse("Refresh token expired");
             }
 
@@ -325,7 +325,7 @@ public class AuthService : IAuthService
             };
 
             _logger.LogInformation("Token refreshed successfully for user: {Email}. New token expires in {ExpirationMinutes} minutes",
-                admin.Email, _jwtOptions.AdminAccessTokenExpirationMinutes);
+                ShmsBackend.Api.Common.LogMask.Email(admin.Email), _jwtOptions.AdminAccessTokenExpirationMinutes);
 
             return ApiResponse<AuthResponse>.SuccessResponse(authResponse, "Token refreshed successfully");
         }
@@ -362,7 +362,7 @@ public class AuthService : IAuthService
             if (admin == null || !admin.IsActive)
             {
                 _logger.LogWarning("Password reset requested for non-existent/inactive email: {Email}",
-                    requestPasswordResetDto.Email);
+                    ShmsBackend.Api.Common.LogMask.Email(requestPasswordResetDto.Email));
                 return ApiResponse<string>.SuccessResponse(
                     "If an account exists with this email, a password reset link has been sent",
                     "Password reset email sent");
@@ -377,7 +377,7 @@ public class AuthService : IAuthService
 
             await _emailService.SendPasswordResetOtpEmailAsync(admin.Email, admin.FirstName, otp);
 
-            _logger.LogInformation("Password reset OTP requested for: {Email}", admin.Email);
+            _logger.LogInformation("Password reset OTP requested for: {Email}", ShmsBackend.Api.Common.LogMask.Email(admin.Email));
             return ApiResponse<string>.SuccessResponse(
                 "If an account exists with this email, a password reset link has been sent",
                 "Password reset email sent");
@@ -385,7 +385,7 @@ public class AuthService : IAuthService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during password reset request for email: {Email}",
-                requestPasswordResetDto.Email);
+                ShmsBackend.Api.Common.LogMask.Email(requestPasswordResetDto.Email));
             return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }
@@ -433,12 +433,12 @@ public class AuthService : IAuthService
             await _unitOfWork.Admins.UpdateAsync(admin);
             await _unitOfWork.SaveChangesAsync();
 
-            _logger.LogInformation("Password reset successful for: {Email} type: {Type}", dto.Email, dto.UserType);
+            _logger.LogInformation("Password reset successful for: {Email} type: {Type}", ShmsBackend.Api.Common.LogMask.Email(dto.Email), dto.UserType);
             return ApiResponse<string>.SuccessResponse("Password reset successfully.", "Password updated");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during password reset for: {Email}", dto.Email);
+            _logger.LogError(ex, "Error during password reset for: {Email}", ShmsBackend.Api.Common.LogMask.Email(dto.Email));
             return ApiResponse<string>.FailureResponse("An error occurred. Please try again.");
         }
     }

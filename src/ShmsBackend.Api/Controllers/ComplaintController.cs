@@ -737,7 +737,7 @@ public class ComplaintController : ControllerBase
                 foreach (var mgr in managementUsers)
                 {
                     try { await _emailService.SendComplaintRejectedManagementEmailAsync(mgr.Email, mgr.FirstName, complaint.TicketNumber, dto.Notes, mgr.Id.ToString(), false); }
-                    catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email to {Email}", mgr.Email); }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to send rejection email to {Email}", ShmsBackend.Api.Common.LogMask.Email(mgr.Email)); }
                 }
             }
             catch (Exception ex) { _logger.LogError(ex, "Failed to query management users for complaint rejection email"); }

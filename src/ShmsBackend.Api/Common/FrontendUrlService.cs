@@ -35,7 +35,7 @@ public class FrontendUrlService : IFrontendUrlService
         var baseUrl = GetBaseUrl();
         var url = $"{baseUrl}/verify-email?token={Uri.EscapeDataString(token)}&email={Uri.EscapeDataString(email)}";
 
-        _logger.LogDebug("Generated email verification URL: {Url}", url);
+        _logger.LogDebug("Generated an email verification URL for {Email}", ShmsBackend.Api.Common.LogMask.Email(email));
         return url;
     }
 

@@ -71,7 +71,7 @@ public class WeeklyClientPasswordService : IWeeklyClientPasswordService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to send rotated weekly client password email to {Email}", sub.Email);
+                _logger.LogWarning(ex, "Failed to send rotated weekly client password email to {Email}", ShmsBackend.Api.Common.LogMask.Email(sub.Email));
             }
         }
 

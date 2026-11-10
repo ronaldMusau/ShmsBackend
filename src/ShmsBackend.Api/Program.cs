@@ -411,16 +411,26 @@ var devOrigins = new[]
     "http://localhost:4200", "http://localhost:4201",
     "https://n6lscp1j-4200.eun1.devtunnels.ms", "https://n6lscp1j-4201.eun1.devtunnels.ms"
 };
+static bool IsLocalOrigin(string o) =>
+    Uri.TryCreate(o, UriKind.Absolute, out var u) && (u.IsLoopback || u.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) || u.Host.EndsWith(".devtunnels.ms", StringComparison.OrdinalIgnoreCase));
+var isDev = builder.Environment.IsDevelopment();
 var corsOrigins = (builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>())
-    .Where(o => !string.IsNullOrWhiteSpace(o) && !o.Contains("your-production-frontend"))
-    .Concat(builder.Environment.IsDevelopment() ? devOrigins : Array.Empty<string>())
+    .Select(o => (o ?? "").Trim().TrimEnd('/'))
+    .Where(o => !string.IsNullOrWhiteSpace(o) && !o.Contains("your-production-frontend") && o != "*")
+    .Where(o => isDev || !IsLocalOrigin(o))          // outside Development, localhost / dev-tunnel origins are never allowed
+    .Concat(isDev ? devOrigins : Array.Empty<string>())
     .Distinct(StringComparer.OrdinalIgnoreCase)
     .ToArray();
-if (corsOrigins.Length == 0) corsOrigins = devOrigins;
+if (corsOrigins.Length == 0)
+{
+    // Fail closed: a production start without the real portal addresses must not silently allow anything.
+    if (!isDev) throw new InvalidOperationException("Cors:AllowedOrigins must list the management and client portal addresses (https only) in this environment.");
+    corsOrigins = devOrigins;
+}
 builder.Services.AddSingleton<ShmsBackend.Api.Services.Security.PayloadEncryptionService>();
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("Frontends", policy =>
     {
         policy.WithOrigins(corsOrigins)
             .AllowAnyMethod()
@@ -544,7 +554,7 @@ if (builder.Configuration.GetValue<bool>("Security:UseHttpsRedirection"))
 }
 app.UseStaticFiles();
 app.UseRouting();
-app.UseCors("AllowAll");
+app.UseCors("Frontends");
 
 // Blocked IPs are turned away first (cheapest possible rejection); the guard watches results after each request.
 app.UseMiddleware<ShmsBackend.Api.Middleware.ThreatGuardMiddleware>();

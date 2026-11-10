@@ -479,7 +479,7 @@ public class LandlordController : ControllerBase
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Resend verification email failed for landlord {Email} (attempt {Attempt}/3)", landlord.Email, attempt);
+                _logger.LogError(ex, "Resend verification email failed for landlord {Email} (attempt {Attempt}/3)", ShmsBackend.Api.Common.LogMask.Email(landlord.Email), attempt);
                 if (attempt < 3) await Task.Delay(2000);
             }
         }

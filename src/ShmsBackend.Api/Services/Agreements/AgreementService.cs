@@ -159,7 +159,7 @@ public class AgreementService : IAgreementService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to send agreement-ready email to {Email}", user.Email);
+            _logger.LogWarning(ex, "Failed to send agreement-ready email to {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email));
         }
 
         _logger.LogInformation("Agreement sent for signing to portal user {UserId} (role {Role}, template v{Version})",
@@ -232,7 +232,7 @@ public class AgreementService : IAgreementService
         if (user != null)
         {
             try { await _emailService.SendAgreementVerifiedEmailAsync(user.Email, user.FirstName, user.Id.ToString(), true); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to send agreement-verified email to {Email}", user.Email); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to send agreement-verified email to {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email)); }
 
             try
             {
@@ -263,7 +263,7 @@ public class AgreementService : IAgreementService
         if (user != null)
         {
             try { await _emailService.SendAgreementRejectedEmailAsync(user.Email, user.FirstName, reason, user.Id.ToString(), true); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Failed to send agreement-rejected email to {Email}", user.Email); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Failed to send agreement-rejected email to {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email)); }
 
             try
             {
@@ -346,7 +346,7 @@ public class AgreementService : IAgreementService
                 user.Email, user.FirstName, roleLabel, user.Id.ToString(), true,
                 attachmentFileName, attachmentBytes);
         }
-        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send agreement-reminder email to {Email}", user.Email); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Failed to send agreement-reminder email to {Email}", ShmsBackend.Api.Common.LogMask.Email(user.Email)); }
 
         try
         {
