@@ -16,6 +16,8 @@ public class ReconciliationWatcherService : BackgroundService
 {
     private static readonly TimeSpan Every = TimeSpan.FromMinutes(10);
     private const string EntityType = "ReconciliationIssue";
+    private const string PaidEntityType = "ReconciliationPaid";
+    private bool _first = true;
 
     private readonly IServiceProvider _sp;
     private readonly ILogger<ReconciliationWatcherService> _log;
@@ -24,12 +26,29 @@ public class ReconciliationWatcherService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        try { await Task.Delay(TimeSpan.FromMinutes(1), ct); } catch (OperationCanceledException) { return; }
+        try { await Task.Delay(TimeSpan.FromSeconds(20), ct); } catch (OperationCanceledException) { return; }
         while (!ct.IsCancellationRequested)
         {
             try { await RunOnceAsync(ct); }
             catch (Exception ex) when (ex is not OperationCanceledException) { _log.LogError(ex, "Reconciliation watcher run failed"); }
             try { await Task.Delay(Every, ct); } catch (OperationCanceledException) { return; }
+        }
+    }
+
+    /// <summary>M-Pesa has taken the money but no callback reached the app: tell the accountant once, with the exact next step.</summary>
+    private static async Task AnnouncePaidAsync(ShmsDbContext db, INotificationService notify, List<ReconciliationController.Issue> paid, CancellationToken ct)
+    {
+        if (paid.Count == 0) return;
+        var ids = paid.Select(i => IdFor("paid|" + i.Key)).Distinct().ToList();
+        var told = (await db.Notifications.IgnoreQueryFilters().AsNoTracking()
+            .Where(n => n.EntityType == PaidEntityType && n.EntityId != null && ids.Contains(n.EntityId.Value))
+            .Select(n => n.EntityId!.Value).ToListAsync(ct)).ToHashSet();
+        foreach (var i in paid.Where(i => !told.Contains(IdFor("paid|" + i.Key))).Take(20))
+        {
+            var who = string.IsNullOrWhiteSpace(i.TenantName) ? "" : $" for {i.TenantName}{(string.IsNullOrWhiteSpace(i.House) ? "" : $" ({i.House})")}";
+            await notify.SendToRoleAsync(NotificationAudience.Accountant,
+                $"M-Pesa confirms a prompt{who} was paid, but the app never received it. Open Reconciliation, check it with M-Pesa and record it with the receipt number from the M-Pesa message.",
+                "payment", PaidEntityType, IdFor("paid|" + i.Key).ToString());
         }
     }
 
@@ -48,7 +67,10 @@ public class ReconciliationWatcherService : BackgroundService
 
         // fix what can be fixed safely first; only what is left needs a person
         var healer = scope.ServiceProvider.GetRequiredService<ReconciliationHealer>();
-        var healed = await healer.HealAsync(scan.Open);
+        // the first run after a start looks harder: the server may have been down while payments were made
+        var healed = await healer.HealAsync(scan.Open, _first ? 60 : 10);
+        _first = false;
+        await AnnouncePaidAsync(db, notify, healer.PaidAtMpesa, ct);
         var open = scan.Open.Where(i => !healed.Contains(i.Key)).ToList();
         if (healed.Count > 0) _log.LogInformation("Reconciliation auto-fixed {Count} findings", healed.Count);
 

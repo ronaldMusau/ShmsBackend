@@ -731,7 +731,7 @@ public class PaymentController : ControllerBase
         {
             var s = search.Trim();
             query = query.Where(p =>
-                (p.Tenant != null && (p.Tenant.FirstName.Contains(s) || p.Tenant.LastName.Contains(s) || p.Tenant.Email.Contains(s))) ||
+                (p.Tenant != null && (p.Tenant.FirstName.Contains(s) || p.Tenant.LastName.Contains(s) || (p.Tenant.FirstName + " " + p.Tenant.LastName).Contains(s) || p.Tenant.Email.Contains(s))) ||
                 (p.House != null && (p.House.HouseNumber.Contains(s) || (p.House.Flat != null && p.House.Flat.FlatName.Contains(s)))) ||
                 (p.MpesaReceiptNumber != null && p.MpesaReceiptNumber.Contains(s)) ||
                 (p.RedemptionReference != null && p.RedemptionReference.Contains(s)));

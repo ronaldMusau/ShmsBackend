@@ -26,6 +26,9 @@ public class ReconciliationHealer
     public ReconciliationHealer(ShmsDbContext db, IMpesaService mpesa, IPaymentService payments, ILogger<ReconciliationHealer> log)
     { _db = db; _mpesa = mpesa; _payments = payments; _log = log; }
 
+    /// <summary>Findings where M-Pesa says the prompt was paid but the app has no callback to apply: a person must record them.</summary>
+    public List<ReconciliationController.Issue> PaidAtMpesa { get; } = new();
+
     /// <summary>Returns the keys of the findings that were fixed and closed.</summary>
     public async Task<HashSet<string>> HealAsync(IEnumerable<ReconciliationController.Issue> open, int maxMpesaQueries = 10)
     {
@@ -66,6 +69,7 @@ public class ReconciliationHealer
                     queries++;
                     var r = await _mpesa.QuerySTKStatusAsync(cid);
                     // 4999 means M-Pesa is still processing it: that is no answer yet, never a failure
+                    if (r.ResultCode == "0") PaidAtMpesa.Add(i);
                     if (!string.IsNullOrEmpty(r.ResultCode) && r.ResultCode != "0" && r.ResultCode != "4999")
                     {
                         var closed = await CloseAttemptAsync(cid, r.ResultCode, r.ResultDesc);
