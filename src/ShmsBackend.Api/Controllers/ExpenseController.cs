@@ -323,7 +323,7 @@ public class ExpenseController : ControllerBase
 
     // DELETE /api/expenses/{id}
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> DeleteExpense(Guid id)
     {
         var expense = await _context.Expenses.FirstOrDefaultAsync(x => x.Id == id && x.LandlordId == null);
