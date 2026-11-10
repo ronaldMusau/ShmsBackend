@@ -31,13 +31,14 @@ public class ReconciliationController : ControllerBase
     private readonly IMpesaService _mpesa;
     private readonly ISecurityEventService _events;
     private readonly INotificationService _notify;
+    private readonly IReversalService _reversal;
 
-    public ReconciliationController(ShmsDbContext db, IMpesaService mpesa, ISecurityEventService events, INotificationService notify)
-    { _db = db; _mpesa = mpesa; _events = events; _notify = notify; }
+    public ReconciliationController(ShmsDbContext db, IMpesaService mpesa, ISecurityEventService events, INotificationService notify, IReversalService reversal)
+    { _db = db; _mpesa = mpesa; _events = events; _notify = notify; _reversal = reversal; }
 
     public record Issue(string Type, string Severity, string Source, string Reference, decimal? Amount,
         string Detail, DateTime At, Guid? PaymentId, string? CheckoutRequestId,
-        Guid? TenantId = null, string? TenantName = null, string? House = null, string Key = "");
+        Guid? TenantId = null, string? TenantName = null, string? House = null, string Key = "", bool ReversalPending = false);
 
     private static readonly string[] IssueTypes = { "PaidNoReceipt", "AmountMismatch", "DuplicateReceipt", "StuckPrompt", "NoResult", "SuccessNotApplied", "PaymentRemoved" };
 
@@ -151,6 +152,8 @@ public class ReconciliationController : ControllerBase
         var reviewed = await _db.ReconciliationReviews.AsNoTracking()
             .Where(r => keys.Contains(r.IssueKey)).ToDictionaryAsync(r => r.IssueKey);
         var open = issues.Where(i => !reviewed.TryGetValue(i.Key, out var rv) || rv.Amount != i.Amount).ToList();
+        var pendingKeys = (await _db.ReversalRequests.AsNoTracking().Where(q => q.Status == "AwaitingApproval" && keys.Contains(q.IssueKey)).Select(q => q.IssueKey).ToListAsync()).ToHashSet();
+        open = open.Select(i => i with { ReversalPending = pendingKeys.Contains(i.Key) }).ToList();
 
         var done = await _db.ReconciliationReviews.AsNoTracking()
             .Where(r => (r.ReviewedAt >= start && r.ReviewedAt < end) || (r.IssueAt >= start && r.IssueAt < end))
@@ -169,7 +172,7 @@ public class ReconciliationController : ControllerBase
             counts = ordered.GroupBy(i => i.Type).ToDictionary(g => g.Key, g => g.Count()),
             reconciledTotal = done.Count,
             reversedTotal = done.Count(d => d.Outcome == "Reversed"),
-            canReverse = User.IsInRole("SuperAdmin") || User.IsInRole("Admin"),
+            canReverse = true,
             issues = shown,
             reconciled = done
         });
@@ -223,144 +226,49 @@ public class ReconciliationController : ControllerBase
         string? CheckoutRequestId, string Reason);
 
     /// <summary>
-    /// Undoes what the system recorded as paid when M-Pesa never received the money. Records only: no money moves.
-    /// It first asks M-Pesa again and refuses if M-Pesa says any of the prompts was paid.
+    /// Asks for a payment record to be reversed (records only, no money moves). The request goes through the "Reversal"
+    /// approval sequence set up in Setups, and the reversal runs only when the last approver approves.
     /// </summary>
     [HttpPost("reverse")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
     [EnableRateLimiting("payment")]
     public async Task<IActionResult> Reverse([FromBody] ReverseRequest r)
     {
         var reason = (r?.Reason ?? "").Trim();
         if (r == null || reason.Length < 10 || reason.Length > 500)
             return BadRequest(new { success = false, message = "Give a reason of at least 10 characters." });
-        if (r.Source != "Rent payment" || (r.Type != "PaidNoReceipt" && r.Type != "AmountMismatch"))
-            return BadRequest(new { success = false, message = "Only rent payments flagged for a missing receipt or an amount that does not add up can be reversed." });
         var key = KeyOf(r.Type, Cut(r.Reference, 200), r.PaymentId, string.IsNullOrWhiteSpace(r.CheckoutRequestId) ? null : r.CheckoutRequestId);
         if (await _db.ReconciliationReviews.AnyAsync(x => x.IssueKey == key))
             return Conflict(new { success = false, message = "This finding has already been reconciled." });
+        if (await _db.ReversalRequests.AnyAsync(x => x.IssueKey == key && x.Status == "AwaitingApproval"))
+            return Conflict(new { success = false, message = "A reversal for this finding is already waiting for approval." });
 
-        var target = await _db.Payments.Include(p => p.Applications).Include(p => p.Tenant).Include(p => p.House)
-            .FirstOrDefaultAsync(p => p.Id == r.PaymentId && !p.IsDeleted);
-        if (target == null) return NotFound(new { success = false, message = "That payment was not found." });
-        if (target.PaymentMethod != PaymentMethod.Mpesa || !string.IsNullOrEmpty(target.RedemptionReference))
-            return BadRequest(new { success = false, message = "Only payments made purely by M-Pesa can be reversed here." });
-        if (target.AmountPaid <= 0 && !target.Applications.Any())
-            return BadRequest(new { success = false, message = "Nothing is recorded as paid on this payment." });
+        var first = await _db.ApprovalSequenceSteps.Where(s => s.Module == "Reversal").OrderBy(s => s.StepOrder).FirstOrDefaultAsync();
+        if (first == null)
+            return BadRequest(new { success = false, message = "No approval sequence has been set up for Reversals. Add one in Setups, under Approvals." });
 
-        var receipts = target.Applications.Select(a => a.MpesaReceiptNumber).Append(target.MpesaReceiptNumber ?? "")
-            .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
-        var checkouts = target.Applications.Select(a => a.CheckoutRequestId ?? "").Append(target.CheckoutRequestId ?? "")
-            .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToList();
+        // refuse early if the payment cannot be reversed, or M-Pesa says it was paid, so nobody is asked to approve it for nothing
+        var pre = await _reversal.PrecheckAsync(r.PaymentId, r.Type, r.Source);
+        if (!pre.Ok) return StatusCode(pre.HttpStatus, new { success = false, message = pre.Message });
 
-        // 1. ask M-Pesa again: if any prompt really was paid, the record is right and must not be reversed
-        var answered = 0;
-        foreach (var c in checkouts)
+        var info = (await PaymentInfoAsync(new List<Guid> { r.PaymentId })).GetValueOrDefault(r.PaymentId);
+        var req = new ReversalRequest
         {
-            var q = await _mpesa.QuerySTKStatusAsync(c);
-            if (q.ResultCode == "0")
-                return Conflict(new { success = false, message = $"M-Pesa says prompt {c} was paid, so this payment is not wrong and was not reversed. Mark it as reconciled instead." });
-            if (!string.IsNullOrEmpty(q.ResultCode)) answered++;
-        }
-        var mpesaNote = checkouts.Count == 0 ? "No M-Pesa prompt is on record for this payment."
-            : answered == checkouts.Count ? "M-Pesa confirmed none of its prompts was paid."
-            : "M-Pesa gave no final answer (the prompts may be too old to look up).";
-
-        // 2. take the receipts' applications off this payment and any later months they were spread over
-        var apps = receipts.Count == 0 ? new List<PaymentApplication>()
-            : await _db.PaymentApplications.Where(a => receipts.Contains(a.MpesaReceiptNumber) && a.Payment!.TenantId == target.TenantId).ToListAsync();
-        var rowIds = apps.Select(a => a.PaymentId).Append(target.Id).Distinct().ToList();
-        var rows = await _db.Payments.Include(p => p.Applications).Where(p => rowIds.Contains(p.Id) && !p.IsDeleted).ToListAsync();
-        var removedCheckouts = apps.Select(a => a.CheckoutRequestId ?? "").Concat(checkouts).Where(x => x != "").Distinct().ToList();
-
-        decimal reversed = 0m;
-        foreach (var row in rows)
-        {
-            var removed = apps.Where(a => a.PaymentId == row.Id).ToList();
-            var removedIds = removed.Select(a => a.Id).ToHashSet();
-            var remaining = row.Applications.Where(a => !removedIds.Contains(a.Id)).ToList();
-            var newPaid = row.Id == target.Id
-                ? (row.CreditApplied ?? 0m) + remaining.Sum(a => a.AmountApplied)
-                : Math.Max(0m, row.AmountPaid - removed.Sum(a => a.AmountApplied));
-            newPaid = Math.Min(newPaid, row.AmountPaid);
-            reversed += row.AmountPaid - newPaid;
-            _db.PaymentApplications.RemoveRange(removed);
-            row.AmountPaid = newPaid;
-            row.Balance = Math.Max(0m, row.Amount - newPaid);
-            row.PaymentStatus = newPaid <= 0 ? (row.DueDate < DateTime.UtcNow ? PaymentTransactionStatus.Overdue : PaymentTransactionStatus.Pending)
-                : row.Balance <= 0 ? PaymentTransactionStatus.Paid : PaymentTransactionStatus.PartiallyPaid;
-            if (remaining.Count == 0)
-            {
-                row.MpesaReceiptNumber = null;
-                if (newPaid <= 0) row.PaidAt = null;
-            }
-            else row.MpesaReceiptNumber = remaining.OrderBy(a => a.AppliedAt).Last().MpesaReceiptNumber;
-            row.UpdatedAt = DateTime.UtcNow;
-        }
-
-        // 3. the prompts that "succeeded", and the reward points earned from them
-        var attempts = await _db.PaymentCheckoutAttempts.IgnoreQueryFilters()
-            .Where(a => rowIds.Contains(a.PaymentId) && a.AttemptStatus == "Success" && removedCheckouts.Contains(a.CheckoutRequestId)).ToListAsync();
-        foreach (var a in attempts) { a.AttemptStatus = "Reversed"; a.ResultDesc = "Reversed by reconciliation"; }
-
-        decimal pointsReversed = 0m;
-        var earned = await _db.RewardTransactions.Where(t => t.RelatedPaymentId == target.Id && t.TransactionType == "Earned").ToListAsync();
-        foreach (var t in earned)
-        {
-            if (target.Tenant != null) target.Tenant.PointsBalance = Math.Max(0m, target.Tenant.PointsBalance - t.Points);
-            pointsReversed += t.Points;
-            t.TransactionType = "Reversed";
-        }
-
-        // 4. the house shows the current month's status; only touch it when this is the current month
-        var nowUtc = DateTime.UtcNow;
-        if (target.House != null && target.Month == nowUtc.Month && target.Year == nowUtc.Year)
-        {
-            target.House.PaymentStatus = target.AmountPaid > 0 ? PaymentStatus.PartiallyPaid
-                : target.DueDate < nowUtc ? PaymentStatus.Overdue : PaymentStatus.NotPaid;
-            target.House.UpdatedAt = nowUtc;
-        }
-
-        var info = (await PaymentInfoAsync(new List<Guid> { target.Id })).GetValueOrDefault(target.Id);
-        var summary = $"Reversed KES {reversed:N2} across {rows.Count} payment record(s)" + (pointsReversed > 0 ? $" and {pointsReversed:N0} reward points" : "") + ". " + mpesaNote;
-        _db.ReconciliationReviews.Add(new ReconciliationReview
-        {
-            IssueKey = key, IssueType = r.Type, Source = Cut(r.Source, 60), Reference = Cut(r.Reference, 200), Amount = r.Amount,
-            Detail = Cut(r.Detail, 1000), IssueAt = r.At, PaymentId = target.Id, CheckoutRequestId = Cut(r.CheckoutRequestId, 100) is { Length: > 0 } c2 ? c2 : null,
-            TenantId = target.TenantId, TenantName = info?.Name, House = info?.House,
-            Outcome = "Reversed", Note = reason, MpesaAnswer = Cut(summary, 500),
-            ReviewedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier), ReviewedByName = WhoName(), ReviewedByRole = User.FindFirstValue(ClaimTypes.Role),
-            ReviewedAt = nowUtc
-        });
+            PaymentId = r.PaymentId, IssueKey = key, IssueType = r.Type, Source = Cut(r.Source, 60), Reference = Cut(r.Reference, 200), Amount = r.Amount,
+            Detail = Cut(r.Detail, 1000), IssueAt = r.At, CheckoutRequestId = string.IsNullOrWhiteSpace(r.CheckoutRequestId) ? null : Cut(r.CheckoutRequestId, 100),
+            TenantId = info?.TenantId, TenantName = info?.Name, House = info?.House, Reason = reason,
+            CurrentStepOrder = first.StepOrder, RequestedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier), RequestedByName = WhoName()
+        };
+        _db.ReversalRequests.Add(req);
         await _db.SaveChangesAsync();
-
-        await _events.RecordAsync("Payments", "PaymentReversed", "Warning",
-            $"Payment {target.Month:00}/{target.Year} (KES {reversed:N2}) was reversed as not received. Reason: {Cut(reason, 200)}",
-            User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Role));
-
-        // 5. tell everyone involved
-        var houseLabel = info?.House ?? "";
+        await _events.RecordAsync("Payments", "ReversalRequested", "Info",
+            $"Reversal of payment {Cut(r.Reference, 60)} requested. Reason: {Cut(reason, 200)}", User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Role));
         try
         {
-            await _notify.SendForcedToUserAsync(target.TenantId.ToString(),
-                $"A payment of KES {reversed:N2} recorded for House {houseLabel} ({target.Month:00}/{target.Year}) has been reversed because M-Pesa shows the money was not received. Your balance has been corrected. If you did pay, please contact the office with your M-Pesa message.",
-                "payment", "PaymentReversed", target.Id.ToString());
-            if (target.LandlordId.HasValue)
-                await _notify.SendToUserAsync(target.LandlordId.Value.ToString(),
-                    $"A rent payment of KES {reversed:N2} recorded for House {houseLabel} ({target.Month:00}/{target.Year}) was reversed: M-Pesa shows it was not received.",
-                    "payment", "PaymentReversed", target.Id.ToString());
-            await _notify.SendToRolesAsync(new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin, NotificationAudience.Manager, NotificationAudience.Accountant, NotificationAudience.Secretary },
-                $"Payment reversed by {WhoName()}: KES {reversed:N2} for {info?.Name} (House {houseLabel}, {target.Month:00}/{target.Year}). Reason: {Cut(reason, 200)}"
-                + (target.IsInitialPayment ? " This was the tenant's initial payment, so check their account setup by hand." : ""),
-                "payment", "PaymentReversed", target.Id.ToString());
+            await _notify.SendToUserAsync(first.ApproverId.ToString(),
+                $"A payment reversal for {info?.Name} (KES {r.Amount:N2}) needs your approval. Requested by {WhoName()}.", "payment", "Reversal", req.Id.ToString());
         }
-        catch (Exception) { /* the reversal is saved; a failed notification must not undo it */ }
-
-        return Ok(new
-        {
-            success = true, message = summary, reversed, rows = rows.Count, pointsReversed,
-            needsManualCheck = target.IsInitialPayment
-        });
+        catch { }
+        return Ok(new { success = true, message = "Reversal requested. It will run once the approvers in the sequence have approved it.", id = req.Id });
     }
 
     private record Att(string Source, string Checkout, string Status, string? Desc, string? Receipt, DateTime? ProcessedAt, DateTime CreatedAt, Guid? PaymentId, bool PaymentSettled, bool PaymentDeleted);

@@ -174,6 +174,9 @@ builder.Services.Configure<MpesaB2CConfig>(builder.Configuration.GetSection("Mpe
 builder.Services.AddHttpClient("Mpesa", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<IMpesaService, MpesaService>();
 builder.Services.AddSingleton<IMpesaB2CService, MpesaB2CService>();
+builder.Services.AddScoped<IReversalService, ReversalService>();
+builder.Services.AddScoped<IPayoutService, PayoutService>();
+builder.Services.AddScoped<IStepUpService, StepUpService>();
 builder.Services.AddScoped<IPaymentDistributionService, PaymentDistributionService>();
 builder.Services.AddScoped<VacateOwedCalculator>();
 builder.Services.AddScoped<VacateClosureService>();

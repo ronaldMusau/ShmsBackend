@@ -54,6 +54,8 @@ public class ShmsDbContext : DbContext
     public DbSet<SecuritySettings> SecuritySettings { get; set; }
     public DbSet<ReconciliationReview> ReconciliationReviews { get; set; }
     public DbSet<B2CPayout> B2CPayouts { get; set; }
+    public DbSet<ReversalRequest> ReversalRequests { get; set; }
+    public DbSet<MoneyApprovalAction> MoneyApprovalActions { get; set; }
     public DbSet<BlockedIp> BlockedIps { get; set; }
     public DbSet<LoginActivity> LoginActivities { get; set; }
     public DbSet<LoginChallenge> LoginChallenges { get; set; }
@@ -573,6 +575,37 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
         });
 
+        // ── ReversalRequest / MoneyApprovalAction Configuration ──────────────
+        modelBuilder.Entity<ReversalRequest>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.IssueKey).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.IssueType).IsRequired().HasMaxLength(40);
+            entity.Property(e => e.Source).IsRequired().HasMaxLength(60);
+            entity.Property(e => e.Reference).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.Detail).IsRequired().HasMaxLength(1000);
+            entity.Property(e => e.CheckoutRequestId).HasMaxLength(100);
+            entity.Property(e => e.TenantName).HasMaxLength(200);
+            entity.Property(e => e.House).HasMaxLength(60);
+            entity.Property(e => e.Reason).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.RequestedByUserId).HasMaxLength(64);
+            entity.Property(e => e.RequestedByName).HasMaxLength(150);
+            entity.Property(e => e.ResultMessage).HasMaxLength(500);
+            entity.HasIndex(e => e.IssueKey);
+            entity.HasIndex(e => e.Status);
+        });
+        modelBuilder.Entity<MoneyApprovalAction>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.ApproverName).IsRequired().HasMaxLength(150);
+            entity.Property(e => e.Decision).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Notes).HasMaxLength(300);
+            entity.HasIndex(e => new { e.Kind, e.SubjectId });
+        });
+
         // ── B2CPayout Configuration ──────────────────────────────────────────
         modelBuilder.Entity<B2CPayout>(entity =>
         {
@@ -588,6 +621,8 @@ public class ShmsDbContext : DbContext
             entity.Property(e => e.ApprovedByUserId).HasMaxLength(64);
             entity.Property(e => e.ApprovedByName).HasMaxLength(150);
             entity.Property(e => e.RejectReason).HasMaxLength(300);
+            entity.Property(e => e.SentByUserId).HasMaxLength(64);
+            entity.Property(e => e.SentByName).HasMaxLength(150);
             entity.Property(e => e.ConversationId).HasMaxLength(100);
             entity.Property(e => e.ResultCode).HasMaxLength(40);
             entity.Property(e => e.ResultDesc).HasMaxLength(500);

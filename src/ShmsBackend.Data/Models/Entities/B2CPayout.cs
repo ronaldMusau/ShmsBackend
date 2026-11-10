@@ -13,7 +13,7 @@ public class B2CPayout
     public string ReceiverPhone { get; set; } = string.Empty;  // 2547XXXXXXXX
     public decimal Amount { get; set; }
     public string Reason { get; set; } = string.Empty;
-    public string Status { get; set; } = "PendingApproval";    // PendingApproval | Submitting | Submitted | Succeeded | Failed | Rejected | TimedOut
+    public string Status { get; set; } = "PendingApproval";    // PendingApproval | Approved | Submitting | Submitted | Succeeded | Failed | Rejected | TimedOut
     public string? RequestedByUserId { get; set; }
     public string? RequestedByName { get; set; }
     public DateTime RequestedAt { get; set; } = DateTime.UtcNow;
@@ -21,6 +21,10 @@ public class B2CPayout
     public string? ApprovedByName { get; set; }
     public DateTime? ApprovedAt { get; set; }
     public string? RejectReason { get; set; }
+    public int CurrentStepOrder { get; set; }
+    /// <summary>Who entered their authenticator code and sent the approved payout.</summary>
+    public string? SentByUserId { get; set; }
+    public string? SentByName { get; set; }
     public string? ConversationId { get; set; }
     public string? ResultCode { get; set; }
     public string? ResultDesc { get; set; }

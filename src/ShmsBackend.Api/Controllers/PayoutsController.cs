@@ -15,7 +15,7 @@ namespace ShmsBackend.Api.Controllers;
 
 /// <summary>
 /// Payouts (M-Pesa Business to Customer): refunds and similar money going out.
-/// Staff request a payout; a DIFFERENT Admin or SuperAdmin approves it; only then is anything sent to M-Pesa.
+/// Staff request a payout; it goes through the "Payout" approval sequence (Setups, Approvals); only after the last approver approves is anything sent to M-Pesa.
 /// Per-payout and daily limits apply, and M-Pesa's answer comes back on the callbacks below.
 /// </summary>
 [ApiController]
@@ -30,10 +30,12 @@ public class PayoutsController : ControllerBase
     private readonly ISecurityEventService _events;
     private readonly INotificationService _notify;
     private readonly ILogger<PayoutsController> _log;
+    private readonly IPayoutService _payouts;
+    private readonly IStepUpService _stepUp;
 
     public PayoutsController(ShmsDbContext db, IMpesaB2CService b2c, IOptions<MpesaB2CConfig> cfg, ISecurityEventService events,
-        INotificationService notify, ILogger<PayoutsController> log)
-    { _db = db; _b2c = b2c; _cfg = cfg.Value; _events = events; _notify = notify; _log = log; }
+        INotificationService notify, ILogger<PayoutsController> log, IPayoutService payouts, IStepUpService stepUp)
+    { _db = db; _b2c = b2c; _cfg = cfg.Value; _events = events; _notify = notify; _log = log; _payouts = payouts; _stepUp = stepUp; }
 
     private string? Uid => User.FindFirstValue(ClaimTypes.NameIdentifier);
     private string Who => User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
@@ -54,12 +56,11 @@ public class PayoutsController : ControllerBase
         {
             success = true, configured = ok, configProblem = ok ? null : problem,
             maxPerPayout = _cfg.MaxPerPayout, maxPerDay = _cfg.MaxPerDay, usedToday = today,
-            canApprove = User.IsInRole("SuperAdmin") || User.IsInRole("Admin"),
             currentUserId = Uid,
             payouts = rows.Select(p => new
             {
                 p.Id, p.Purpose, p.TenantId, p.TenantName, phone = Mask(p.ReceiverPhone), p.Amount, p.Reason, p.Status,
-                p.RequestedByUserId, p.RequestedByName, p.RequestedAt, p.ApprovedByName, p.ApprovedAt, p.RejectReason,
+                p.RequestedByUserId, p.RequestedByName, p.RequestedAt, p.CurrentStepOrder, p.SentByName, p.ApprovedByName, p.ApprovedAt, p.RejectReason,
                 p.ResultDesc, p.MpesaReceipt, p.SubmittedAt, p.CompletedAt
             })
         });
@@ -92,8 +93,13 @@ public class PayoutsController : ControllerBase
         if (!System.Text.RegularExpressions.Regex.IsMatch(phone, @"^254(7|1)\d{8}$"))
             return BadRequest(new { success = false, message = "Enter a valid Safaricom number, for example 0712345678." });
 
+        var first = await _db.ApprovalSequenceSteps.Where(x => x.Module == "Payout").OrderBy(x => x.StepOrder).FirstOrDefaultAsync();
+        if (first == null)
+            return BadRequest(new { success = false, message = "No approval sequence has been set up for Payouts. Add one in Setups, under Approvals." });
+
         var p = new B2CPayout
         {
+            CurrentStepOrder = first.StepOrder,
             Purpose = r.Purpose, TenantId = r.TenantId, TenantName = tenantName, ReceiverPhone = phone, Amount = r.Amount, Reason = reason,
             RequestedByUserId = Uid, RequestedByName = Who
         };
@@ -102,65 +108,36 @@ public class PayoutsController : ControllerBase
         await _events.RecordAsync("Payments", "PayoutRequested", "Info", $"Payout of KES {p.Amount:N0} to {Mask(phone)} requested ({p.Purpose}).", Uid, User.FindFirstValue(ClaimTypes.Role));
         try
         {
-            await _notify.SendToRolesAsync(new[] { NotificationAudience.SuperAdmin, NotificationAudience.Admin },
-                $"A payout of KES {p.Amount:N0}{(tenantName != null ? " to " + tenantName : "")} is waiting for approval. Requested by {Who}.", "payment", "Payout", p.Id.ToString());
+            await _notify.SendToUserAsync(first.ApproverId.ToString(),
+                $"A payout of KES {p.Amount:N0}{(tenantName != null ? " to " + tenantName : "")} needs your approval. Requested by {Who}.", "payment", "Payout", p.Id.ToString());
         }
         catch { }
-        return Ok(new { success = true, message = "Payout requested. A different Admin or SuperAdmin must approve it before it is sent.", id = p.Id });
+        return Ok(new { success = true, message = "Payout requested. It is sent once the approvers in the sequence have approved it.", id = p.Id });
     }
 
-    public record RejectRequest(string Reason);
+    public record PayRequest(string Code);
 
-    [HttpPost("{id:guid}/reject")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
-    public async Task<IActionResult> Reject(Guid id, [FromBody] RejectRequest r)
-    {
-        var reason = (r?.Reason ?? "").Trim();
-        if (reason.Length < 5 || reason.Length > 300) return BadRequest(new { success = false, message = "Give a reason of 5 to 300 characters." });
-        var rows = await _db.B2CPayouts.Where(p => p.Id == id && p.Status == "PendingApproval")
-            .ExecuteUpdateAsync(s => s.SetProperty(p => p.Status, "Rejected").SetProperty(p => p.RejectReason, reason)
-                .SetProperty(p => p.ApprovedByUserId, Uid).SetProperty(p => p.ApprovedByName, Who).SetProperty(p => p.ApprovedAt, DateTime.UtcNow));
-        if (rows == 0) return Conflict(new { success = false, message = "This payout is no longer waiting for approval." });
-        await _events.RecordAsync("Payments", "PayoutRejected", "Info", $"Payout {id} was rejected: {reason}", Uid, User.FindFirstValue(ClaimTypes.Role));
-        return Ok(new { success = true, message = "Payout rejected." });
-    }
-
-    [HttpPost("{id:guid}/approve")]
-    [Authorize(Roles = "SuperAdmin,Admin")]
+    /// <summary>
+    /// Pays a fully approved payout. Only the person who raised it can do this, and only with a current code from their
+    /// authenticator app. This is the moment money leaves.
+    /// </summary>
+    [HttpPost("{id:guid}/pay")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
     [EnableRateLimiting("payment")]
-    public async Task<IActionResult> Approve(Guid id)
+    public async Task<IActionResult> Pay(Guid id, [FromBody] PayRequest r)
     {
-        if (!_b2c.IsConfigured(out var problem)) return BadRequest(new { success = false, message = "Payouts are not set up yet. " + problem });
         var p = await _db.B2CPayouts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         if (p == null) return NotFound(new { success = false, message = "Payout not found." });
-        if (p.Status != "PendingApproval") return Conflict(new { success = false, message = "This payout is no longer waiting for approval." });
-        if (!string.IsNullOrEmpty(p.RequestedByUserId) && p.RequestedByUserId == Uid)
-            return StatusCode(403, new { success = false, message = "You requested this payout, so someone else must approve it." });
-        if (p.Amount > _cfg.MaxPerPayout) return BadRequest(new { success = false, message = $"One payout can be at most KES {_cfg.MaxPerPayout:N0}." });
+        if (p.Status != "Approved") return Conflict(new { success = false, message = "This payout is not approved, or has already been sent." });
+        if (string.IsNullOrEmpty(p.RequestedByUserId) || p.RequestedByUserId != Uid)
+            return StatusCode(403, new { success = false, message = "Only the person who raised this payout can pay it." });
 
-        var since = DateTime.UtcNow.Date;
-        var sentToday = await _db.B2CPayouts.Where(x => x.ApprovedAt >= since && x.Id != id && (x.Status == "Submitting" || x.Status == "Submitted" || x.Status == "Succeeded" || x.Status == "TimedOut"))
-            .SumAsync(x => (decimal?)x.Amount) ?? 0m;
-        if (sentToday + p.Amount > _cfg.MaxPerDay)
-            return BadRequest(new { success = false, message = $"This would pass the daily limit of KES {_cfg.MaxPerDay:N0} (KES {sentToday:N0} already approved today)." });
+        var step = await _stepUp.VerifyAsync(Uid, r?.Code, $"payout {id}");
+        if (!step.Ok) return BadRequest(new { success = false, message = step.Message });
 
-        // claim it: only one approval can move it out of PendingApproval, so it can never be sent twice
-        var claimed = await _db.B2CPayouts.Where(x => x.Id == id && x.Status == "PendingApproval")
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, "Submitting").SetProperty(x => x.ApprovedByUserId, Uid)
-                .SetProperty(x => x.ApprovedByName, Who).SetProperty(x => x.ApprovedAt, DateTime.UtcNow));
-        if (claimed == 0) return Conflict(new { success = false, message = "This payout was just handled by someone else." });
-
-        var res = await _b2c.SendAsync(p.Id, p.ReceiverPhone, p.Amount, $"{p.Purpose} refund");
-        var status = res.Accepted ? "Submitted" : res.Code == "ERROR" ? "TimedOut" : "Failed";
-        await _db.B2CPayouts.Where(x => x.Id == id).ExecuteUpdateAsync(s => s
-            .SetProperty(x => x.Status, status).SetProperty(x => x.ConversationId, res.ConversationId)
-            .SetProperty(x => x.SubmittedAt, DateTime.UtcNow).SetProperty(x => x.ResultCode, res.Code).SetProperty(x => x.ResultDesc, res.Message)
-            .SetProperty(x => x.CompletedAt, status == "Failed" ? DateTime.UtcNow : (DateTime?)null));
-        await _events.RecordAsync("Payments", "PayoutApproved", status == "Failed" ? "Warning" : "Info",
-            $"Payout {id} of KES {p.Amount:N0} to {Mask(p.ReceiverPhone)} approved by {Who}: {status}.", Uid, User.FindFirstValue(ClaimTypes.Role));
-        if (status == "Failed") return BadRequest(new { success = false, message = "M-Pesa did not accept the payout: " + res.Message });
-        if (status == "TimedOut") return Ok(new { success = true, message = "M-Pesa did not confirm. Check with M-Pesa before trying again so the customer is not paid twice." });
-        return Ok(new { success = true, message = "Sent to M-Pesa. The result will appear here in a moment." });
+        var res = await _payouts.SendApprovedAsync(id, Uid!, Who, User.FindFirstValue(ClaimTypes.Role));
+        if (!res.Ok) return StatusCode(res.HttpStatus, new { success = false, message = res.Message });
+        return Ok(new { success = true, message = res.Message });
     }
 
     // ---- M-Pesa callbacks (no login: protected by the secret in the URL; the path contains /mpesa/callback/ so the app's body-encryption and terms checks let it through) ----
