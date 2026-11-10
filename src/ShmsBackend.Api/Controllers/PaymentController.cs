@@ -352,7 +352,13 @@ public class PaymentController : ControllerBase
             _context.MpesaCallbackLogs.Add(callbackLog);
             await _context.SaveChangesAsync();
         }
-        catch (Exception logEx) { _logger.LogError(logEx, "Could not store the M-Pesa callback copy"); callbackLog = null; }
+        catch (Exception logEx)
+        {
+            _logger.LogError(logEx, "Could not store the M-Pesa callback copy");
+            // A failed insert must not stay queued on the context, or the payment's own save below would retry it and fail too.
+            if (callbackLog != null) _context.Entry(callbackLog).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+            callbackLog = null;
+        }
 
         try
         {
