@@ -2151,6 +2151,10 @@ namespace ShmsBackend.Data.Migrations
                     b.Property<DateTime?>("ProcessedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<decimal?>("RequestedAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<string>("ResultCode")
                         .HasColumnType("nvarchar(max)");
 

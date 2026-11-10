@@ -324,7 +324,8 @@ public class PaymentService : IPaymentService
             PaymentId = payment.Id,
             CheckoutRequestId = stkResponse.CheckoutRequestID,
             AttemptStatus = "Processing",
-            ServiceChargeAmount = payment.ServiceChargeAmount
+            ServiceChargeAmount = payment.ServiceChargeAmount,
+            RequestedAmount = chargeAmount
         });
 
         await _context.SaveChangesAsync();

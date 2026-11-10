@@ -339,6 +339,7 @@ public class ShmsDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.Property(e => e.CheckoutRequestId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.RequestedAmount).HasPrecision(18, 2);
             entity.Property(e => e.ServiceChargeAmount).HasPrecision(18, 2);
             entity.HasOne(e => e.Payment)
                   .WithMany()

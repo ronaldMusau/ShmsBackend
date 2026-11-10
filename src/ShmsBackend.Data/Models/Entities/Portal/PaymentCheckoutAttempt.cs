@@ -12,6 +12,8 @@ public class PaymentCheckoutAttempt
     public int RetryCount { get; set; } = 0;
     /// <summary>Service charge carried by THIS push (set at push time, counts as collected only when the attempt succeeds).</summary>
     public decimal? ServiceChargeAmount { get; set; }
+    /// <summary>The full amount of money asked for in THIS push (rent part plus service charge), kept so the attempt can be checked or recorded later without guessing.</summary>
+    public decimal? RequestedAmount { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ProcessedAt { get; set; }
 }

@@ -205,13 +205,17 @@ public class ReconciliationController : ControllerBase, Microsoft.AspNetCore.Mvc
 
         // what was actually prompted, and for which kind of payment
         decimal expected; string phone = "";
+        PaymentCheckoutAttempt? rentAttempt = null;
         var rent = await _db.PaymentCheckoutAttempts.IgnoreQueryFilters().Include(a => a.Payment).FirstOrDefaultAsync(a => a.CheckoutRequestId == cid);
         if (rent != null)
         {
             if (rent.AttemptStatus == "Success" || rent.Payment == null) return BadRequest(new { success = false, message = "This prompt is already recorded as paid." });
+            rentAttempt = rent;
             var p = rent.Payment;
-            var rentPart = p.RequestedDistributionAmount ?? (p.Balance > 0 ? p.Balance : p.Amount);
-            expected = rentPart + (rent.ServiceChargeAmount ?? p.ServiceChargeAmount ?? 0m);
+            // the amount asked for in THIS prompt: stored on the attempt; older prompts did not store it, so the person recording must state it
+            if (rent.RequestedAmount.HasValue) expected = rent.RequestedAmount.Value;
+            else if (r.Amount.HasValue && r.Amount.Value > 0) expected = r.Amount.Value;
+            else return BadRequest(new { success = false, needsAmount = true, message = "This prompt was sent before amounts were kept on it. Enter the amount that was prompted (the KES amount in the M-Pesa message)." });
             phone = p.PhoneNumber ?? "";
         }
         else
@@ -274,7 +278,35 @@ public class ReconciliationController : ControllerBase, Microsoft.AspNetCore.Mvc
         });
         await _db.SaveChangesAsync();
 
+        // A rent row keeps only its newest prompt as "current". When recording an older prompt that was really paid, make it the
+        // current one for the moment (with its own charge and amount) so the normal payment code applies it. Never do this while a
+        // newer prompt on the same row is still waiting for its PIN.
+        if (rentAttempt != null && rentAttempt.Payment != null && rentAttempt.Payment.CheckoutRequestId != cid)
+        {
+            var pay = rentAttempt.Payment;
+            var waiting = await _db.PaymentCheckoutAttempts.IgnoreQueryFilters()
+                .AnyAsync(a => a.PaymentId == pay.Id && a.CheckoutRequestId != cid && a.AttemptStatus == "Processing" && a.CreatedAt > DateTime.UtcNow.AddMinutes(-5));
+            if (waiting) return BadRequest(new { success = false, message = "A newer prompt on this payment is still waiting for a PIN. Try again in a few minutes." });
+            var charge = rentAttempt.ServiceChargeAmount ?? 0m;
+            pay.CheckoutRequestId = cid;
+            pay.ServiceChargeAmount = charge;
+            pay.RequestedDistributionAmount = expected - charge;
+            await _db.SaveChangesAsync();
+        }
+
         await _payments.ProcessCallbackAsync(cb);
+
+        // success is only reported when the prompt really ended up recorded
+        _db.ChangeTracker.Clear();
+        var recorded = await _db.PaymentCheckoutAttempts.IgnoreQueryFilters().AnyAsync(a => a.CheckoutRequestId == cid && a.AttemptStatus == "Success")
+                       || await _db.ComplaintCheckoutAttempts.AnyAsync(a => a.CheckoutRequestId == cid && a.AttemptStatus == "Success")
+                       || await _db.VacateCheckoutAttempts.AnyAsync(a => a.CheckoutRequestId == cid && a.AttemptStatus == "Success");
+        if (!recorded)
+        {
+            var failedLog = await _db.MpesaCallbackLogs.Where(l => l.CheckoutRequestId == cid && !l.Applied).OrderByDescending(l => l.ReceivedAt).FirstOrDefaultAsync();
+            if (failedLog != null) { failedLog.Error = "Could not be recorded from Reconciliation"; await _db.SaveChangesAsync(); }
+            return StatusCode(409, new { success = false, message = "The payment could not be recorded. Nothing was changed; check the notification that was sent." });
+        }
 
         var log = await _db.MpesaCallbackLogs.Where(l => l.CheckoutRequestId == cid && !l.Applied).OrderByDescending(l => l.ReceivedAt).FirstOrDefaultAsync();
         if (log != null) { log.Applied = true; log.AppliedAt = DateTime.UtcNow; await _db.SaveChangesAsync(); }
