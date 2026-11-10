@@ -30,9 +30,10 @@ public class ReconciliationController : ControllerBase, Microsoft.AspNetCore.Mvc
     private readonly INotificationService _notify;
     private readonly IReversalService _reversal;
     private readonly ReconciliationScanner _scanner;
+    private readonly IPaymentService _payments;
 
-    public ReconciliationController(ShmsDbContext db, IMpesaService mpesa, ISecurityEventService events, INotificationService notify, IReversalService reversal, ReconciliationScanner scanner)
-    { _db = db; _mpesa = mpesa; _events = events; _notify = notify; _reversal = reversal; _scanner = scanner; }
+    public ReconciliationController(ShmsDbContext db, IMpesaService mpesa, ISecurityEventService events, INotificationService notify, IReversalService reversal, ReconciliationScanner scanner, IPaymentService payments)
+    { _db = db; _mpesa = mpesa; _events = events; _notify = notify; _reversal = reversal; _scanner = scanner; _payments = payments; }
 
     public record Issue(string Type, string Severity, string Source, string Reference, decimal? Amount,
         string Detail, DateTime At, Guid? PaymentId, string? CheckoutRequestId,
@@ -181,6 +182,107 @@ public class ReconciliationController : ControllerBase, Microsoft.AspNetCore.Mvc
         }
         catch { }
         return Ok(new { success = true, message = "Reversal requested. It will run once the approvers in the sequence have approved it.", id = req.Id });
+    }
+
+
+    public record ApplyRequest(string CheckoutRequestId, string ReceiptNumber, decimal? Amount);
+
+    /// <summary>
+    /// Records a payment that M-Pesa took but the app never received the callback for. The accountant gives the receipt number from the
+    /// M-Pesa message; the app asks M-Pesa again to confirm the prompt was paid, works out the amount that was prompted, and then applies it
+    /// through the same path a live callback uses, so the payment, receipts, rewards and balances are all recorded normally.
+    /// </summary>
+    [HttpPost("apply")]
+    [EnableRateLimiting("payment")]
+    public async Task<IActionResult> Apply([FromBody] ApplyRequest r)
+    {
+        var cid = (r.CheckoutRequestId ?? "").Trim();
+        var receipt = (r.ReceiptNumber ?? "").Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(cid) || cid.Length > 100 || !cid.All(c => char.IsLetterOrDigit(c) || c is '_' or '-'))
+            return BadRequest(new { success = false, message = "That request id is not valid." });
+        if (!System.Text.RegularExpressions.Regex.IsMatch(receipt, "^[A-Z0-9]{10}$"))
+            return BadRequest(new { success = false, message = "The M-Pesa receipt number is 10 letters and digits, for example UKAQG1LYYX." });
+
+        // what was actually prompted, and for which kind of payment
+        decimal expected; string phone = "";
+        var rent = await _db.PaymentCheckoutAttempts.IgnoreQueryFilters().Include(a => a.Payment).FirstOrDefaultAsync(a => a.CheckoutRequestId == cid);
+        if (rent != null)
+        {
+            if (rent.AttemptStatus == "Success" || rent.Payment == null) return BadRequest(new { success = false, message = "This prompt is already recorded as paid." });
+            var p = rent.Payment;
+            var rentPart = p.RequestedDistributionAmount ?? (p.Balance > 0 ? p.Balance : p.Amount);
+            expected = rentPart + (rent.ServiceChargeAmount ?? p.ServiceChargeAmount ?? 0m);
+            phone = p.PhoneNumber ?? "";
+        }
+        else
+        {
+            var cmp = await _db.ComplaintCheckoutAttempts.FirstOrDefaultAsync(a => a.CheckoutRequestId == cid);
+            if (cmp != null)
+            {
+                if (cmp.AttemptStatus == "Success") return BadRequest(new { success = false, message = "This prompt is already recorded as paid." });
+                expected = cmp.Amount + (cmp.ServiceChargeAmount ?? 0m); phone = cmp.PhoneNumber;
+            }
+            else
+            {
+                var vac = await _db.VacateCheckoutAttempts.FirstOrDefaultAsync(a => a.CheckoutRequestId == cid);
+                if (vac == null) return NotFound(new { success = false, message = "No payment prompt with that id." });
+                if (vac.AttemptStatus == "Success") return BadRequest(new { success = false, message = "This prompt is already recorded as paid." });
+                var st = await _db.VacateSettlements.FirstOrDefaultAsync(s => s.Id == vac.VacateSettlementId);
+                if (st == null) return BadRequest(new { success = false, message = "The settlement for this prompt was not found." });
+                expected = st.Amount + (vac.ServiceChargeAmount ?? 0m);
+            }
+        }
+        if (r.Amount.HasValue && Math.Abs(r.Amount.Value - expected) > 0.01m)
+            return BadRequest(new { success = false, message = $"That amount does not match what was prompted (KES {expected:N2})." });
+
+        // the receipt must not already belong to another payment
+        var used = await _db.PaymentApplications.AnyAsync(a => a.MpesaReceiptNumber == receipt)
+                || await _db.Payments.IgnoreQueryFilters().AnyAsync(p => p.MpesaReceiptNumber == receipt)
+                || await _db.ComplaintCheckoutAttempts.AnyAsync(a => a.MpesaReceiptNumber == receipt)
+                || await _db.VacateCheckoutAttempts.AnyAsync(a => a.MpesaReceiptNumber == receipt);
+        if (used) return BadRequest(new { success = false, message = "That receipt number is already recorded on another payment." });
+
+        // M-Pesa itself must confirm the prompt was paid
+        var q = await _mpesa.QuerySTKStatusAsync(cid);
+        if (q.ResultCode != "0")
+            return BadRequest(new { success = false, message = string.IsNullOrEmpty(q.ResultCode) ? "M-Pesa has no confirmed answer for this prompt, so it cannot be recorded yet." : $"M-Pesa says this prompt was not paid ({q.ResultDesc})." });
+
+        var cb = new MpesaCallback
+        {
+            Body = new MpesaCallbackBody
+            {
+                stkCallback = new MpesaStkCallback
+                {
+                    CheckoutRequestID = cid, ResultCode = 0, ResultDesc = "Recorded by staff after M-Pesa confirmed it was paid",
+                    CallbackMetadata = new MpesaCallbackMetadata
+                    {
+                        Item = new List<MpesaCallbackItem>
+                        {
+                            new() { Name = "Amount", Value = System.Text.Json.JsonSerializer.SerializeToElement(expected) },
+                            new() { Name = "MpesaReceiptNumber", Value = System.Text.Json.JsonSerializer.SerializeToElement(receipt) },
+                            new() { Name = "TransactionDate", Value = System.Text.Json.JsonSerializer.SerializeToElement(DateTime.UtcNow.AddHours(3).ToString("yyyyMMddHHmmss")) },
+                            new() { Name = "PhoneNumber", Value = System.Text.Json.JsonSerializer.SerializeToElement(phone) }
+                        }
+                    }
+                }
+            }
+        };
+        _db.MpesaCallbackLogs.Add(new MpesaCallbackLog
+        {
+            CheckoutRequestId = cid, ResultCode = 0, RawJson = System.Text.Json.JsonSerializer.Serialize(cb),
+            Applied = false, Error = Cut($"Recorded by {WhoName()} with receipt {receipt}", 500)
+        });
+        await _db.SaveChangesAsync();
+
+        await _payments.ProcessCallbackAsync(cb);
+
+        var log = await _db.MpesaCallbackLogs.Where(l => l.CheckoutRequestId == cid && !l.Applied).OrderByDescending(l => l.ReceivedAt).FirstOrDefaultAsync();
+        if (log != null) { log.Applied = true; log.AppliedAt = DateTime.UtcNow; await _db.SaveChangesAsync(); }
+
+        await _events.RecordAsync("Payments", "ReconciliationApply", "Warning",
+            $"{WhoName()} recorded M-Pesa receipt {receipt} (KES {expected:N2}) against prompt {cid} after M-Pesa confirmed it was paid.",
+            User.FindFirstValue(ClaimTypes.NameIdentifier), User.FindFirstValue(ClaimTypes.Role));
+        return Ok(new { success = true, message = $"Payment of KES {expected:N2} recorded with receipt {receipt}.", amount = expected, receipt });
     }
 
     /// <summary>Asks M-Pesa what really happened to one prompt. Read-only: it does not change any payment.</summary>
