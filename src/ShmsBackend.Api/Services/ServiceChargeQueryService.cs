@@ -98,17 +98,17 @@ public class ServiceChargeQueryService
         var charged = await (from a in _context.PaymentCheckoutAttempts
                              where a.AttemptStatus == "Success"
                              join p in _context.Payments on a.PaymentId equals p.Id
-                             where p.ServiceChargeAmount > 0
+                             where (a.ServiceChargeAmount ?? p.ServiceChargeAmount) > 0
                                    && (!f.TenantId.HasValue || p.TenantId == f.TenantId.Value)
                                    && (!f.HouseId.HasValue || p.HouseId == f.HouseId.Value)
                                    && (!f.FlatId.HasValue || p.FlatId == f.FlatId.Value)
                                    && (month == null || p.Month == month)
                                    && (year == null || p.Year == year)
-                                   && (minA == null || p.ServiceChargeAmount >= minA)
-                                   && (maxA == null || p.ServiceChargeAmount <= maxA)
+                                   && (minA == null || (a.ServiceChargeAmount ?? p.ServiceChargeAmount) >= minA)
+                                   && (maxA == null || (a.ServiceChargeAmount ?? p.ServiceChargeAmount) <= maxA)
                                    && (fromD == null || (a.ProcessedAt ?? p.PaidAt) >= fromD)
                                    && (toExcl == null || (a.ProcessedAt ?? p.PaidAt) < toExcl)
-                             select new { a.CheckoutRequestId, a.ProcessedAt, Payment = p }).ToListAsync();
+                             select new { a.CheckoutRequestId, a.ProcessedAt, Charge = a.ServiceChargeAmount, Payment = p }).ToListAsync();
 
         var cids = charged.Select(x => x.CheckoutRequestId).Distinct().ToList();
         var apps = await _context.PaymentApplications
@@ -128,7 +128,7 @@ public class ServiceChargeQueryService
                 Month = p.Month, Year = p.Year,
                 Reference = new DateTime(p.Year, Math.Clamp(p.Month, 1, 12), 1).ToString("MMM yyyy"),
                 BaseAmount = funded > 0 ? funded : p.RentAmount,
-                ServiceChargeAmount = p.ServiceChargeAmount ?? 0m,
+                ServiceChargeAmount = x.Charge ?? p.ServiceChargeAmount ?? 0m,
                 MpesaReceiptNumber = list?.FirstOrDefault()?.MpesaReceiptNumber ?? p.MpesaReceiptNumber,
                 PaidAt = x.ProcessedAt ?? p.PaidAt, CreatedAt = p.CreatedAt
             });

@@ -323,7 +323,8 @@ public class PaymentService : IPaymentService
         {
             PaymentId = payment.Id,
             CheckoutRequestId = stkResponse.CheckoutRequestID,
-            AttemptStatus = "Processing"
+            AttemptStatus = "Processing",
+            ServiceChargeAmount = payment.ServiceChargeAmount
         });
 
         await _context.SaveChangesAsync();
