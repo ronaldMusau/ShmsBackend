@@ -176,7 +176,7 @@ builder.Services.AddSingleton<IMpesaService, MpesaService>();
 builder.Services.AddSingleton<IMpesaB2CService, MpesaB2CService>();
 builder.Services.AddScoped<IReversalService, ReversalService>();
 builder.Services.AddScoped<IPayoutService, PayoutService>();
-builder.Services.AddScoped<IStepUpService, StepUpService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Security.IStepUpService, ShmsBackend.Api.Services.Security.StepUpService>();
 builder.Services.AddScoped<IPaymentDistributionService, PaymentDistributionService>();
 builder.Services.AddScoped<VacateOwedCalculator>();
 builder.Services.AddScoped<VacateClosureService>();

@@ -86,9 +86,7 @@ public class ReversalService : IReversalService
             .FirstOrDefaultAsync(p => p.Id == req.PaymentId && !p.IsDeleted);
         var bad = Validate(target, req.IssueType, req.Source);
         if (bad != null) return bad;
-        target = target!;
-
-        var (receipts, checkouts) = Ids(target);
+        var (receipts, checkouts) = Ids(target!);
         // ask M-Pesa again: if any prompt really was paid, the record is right and must not be reversed
         var g = await AskMpesaAsync(checkouts);
         if (g.Error != null) return new(false, g.Status, g.Error);
