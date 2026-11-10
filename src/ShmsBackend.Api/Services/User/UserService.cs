@@ -235,6 +235,12 @@ public class UserService : IUserService
         if (!string.IsNullOrEmpty(updateUserDto.PhoneNumber))
             user.PhoneNumber = updateUserDto.PhoneNumber;
 
+        if (!string.IsNullOrWhiteSpace(updateUserDto.NationalId))
+            user.NationalId = updateUserDto.NationalId.Trim();
+
+        if (updateUserDto.DateOfBirth.HasValue)
+            user.DateOfBirth = updateUserDto.DateOfBirth.Value;
+
         if (updateUserDto.IsActive.HasValue)
             user.IsActive = updateUserDto.IsActive.Value;
 

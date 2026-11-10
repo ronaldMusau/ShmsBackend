@@ -16,6 +16,11 @@ public class UpdateUserDto
     [Phone]
     public string? PhoneNumber { get; set; }
 
+    [StringLength(50)]
+    public string? NationalId { get; set; }
+
+    public DateTime? DateOfBirth { get; set; }
+
     public bool? IsActive { get; set; }
 
     // Only SuperAdmin can update UserType

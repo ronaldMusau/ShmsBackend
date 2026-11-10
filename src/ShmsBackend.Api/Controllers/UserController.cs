@@ -101,6 +101,8 @@ public class UserController : ControllerBase
                 user.PhoneNumber,
                 user.UserType,
                 user.IsActive,
+                user.NationalId,
+                user.DateOfBirth,
                 user.IsEmailVerified,
                 user.CreatedAt,
                 user.UpdatedAt
