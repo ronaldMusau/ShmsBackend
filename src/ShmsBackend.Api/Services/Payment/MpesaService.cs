@@ -302,7 +302,7 @@ public class MpesaService : IMpesaService
             {
                 _logger.LogWarning("STK query for {CheckoutRequestId} not final yet (HTTP {Status}): {Body}",
                     checkoutRequestId, (int)response.StatusCode, content.Length > 300 ? content[..300] : content);
-                return new STKQueryResponse { CheckoutRequestID = checkoutRequestId, ResultDesc = "Status not available yet" };
+                return new STKQueryResponse { CheckoutRequestID = checkoutRequestId, ResultDesc = response.StatusCode == System.Net.HttpStatusCode.TooManyRequests ? "RATE_LIMITED" : "Status not available yet" };
             }
 
             var result = JsonSerializer.Deserialize<STKQueryResponse>(content,

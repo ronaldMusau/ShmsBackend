@@ -298,6 +298,8 @@ public class ReconciliationController : ControllerBase, Microsoft.AspNetCore.Mvc
         if (!known) return NotFound(new { success = false, message = "No payment prompt with that id." });
 
         var r = await _mpesa.QuerySTKStatusAsync(checkoutRequestId);
+        if (r.ResultDesc == "RATE_LIMITED")
+            return Ok(new { success = true, answered = false, paid = false, resultCode = "", message = "M-Pesa is limiting how often it can be asked. Wait a minute and check again." });
         var paid = r.ResultCode == "0";
         var answered = !string.IsNullOrEmpty(r.ResultCode);
         await _events.RecordAsync("Payments", "ReconciliationCheck", "Info",

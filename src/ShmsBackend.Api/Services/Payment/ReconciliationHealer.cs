@@ -67,7 +67,9 @@ public class ReconciliationHealer
                 if (i.Type is "StuckPrompt" or "NoResult" && queries < maxMpesaQueries)
                 {
                     queries++;
+                    if (queries > 1) await Task.Delay(1500); // M-Pesa limits how fast it can be asked
                     var r = await _mpesa.QuerySTKStatusAsync(cid);
+                    if (r.ResultDesc == "RATE_LIMITED") { _log.LogWarning("M-Pesa is rate limiting status checks; the rest wait for the next run"); queries = maxMpesaQueries; continue; }
                     // 4999 means M-Pesa is still processing it: that is no answer yet, never a failure
                     if (r.ResultCode == "0") PaidAtMpesa.Add(i);
                     if (!string.IsNullOrEmpty(r.ResultCode) && r.ResultCode != "0" && r.ResultCode != "4999")

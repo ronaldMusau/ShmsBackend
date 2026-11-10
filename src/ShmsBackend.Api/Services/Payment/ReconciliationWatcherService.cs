@@ -69,7 +69,7 @@ public class ReconciliationWatcherService : BackgroundService
         // fix what can be fixed safely first; only what is left needs a person
         var healer = scope.ServiceProvider.GetRequiredService<ReconciliationHealer>();
         // the first run after a start looks harder: the server may have been down while payments were made
-        var healed = await healer.HealAsync(scan.Open, _first ? 60 : 10);
+        var healed = await healer.HealAsync(scan.Open, _first ? 30 : 10);
         _first = false;
         await AnnouncePaidAsync(db, notify, healer.PaidAtMpesa, ct);
         var open = scan.Open.Where(i => !healed.Contains(i.Key)).ToList();
