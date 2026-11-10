@@ -81,7 +81,7 @@ public class LandlordController : ControllerBase
 
     // Staff only: no per-caller scoping, and the profile includes the national ID.
     [HttpGet("{id}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetById(Guid id)
     {
         try
@@ -335,7 +335,7 @@ public class LandlordController : ControllerBase
     // Staff only. Never return the entity itself: it carries the password hash, the temporary initial
     // password and the refresh / email-verification / password-reset tokens.
     [HttpGet]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetAll()
     {
         try

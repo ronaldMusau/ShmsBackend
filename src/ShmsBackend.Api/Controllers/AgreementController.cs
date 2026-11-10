@@ -13,7 +13,7 @@ namespace ShmsBackend.Api.Controllers;
 
 [ApiController]
 [Route("api/agreements")]
-[Authorize(Roles = "SuperAdmin,Admin")]
+[Authorize(Roles = "SuperAdmin,Admin,Secretary")]
 public class AgreementController : ControllerBase
 {
     private readonly IAgreementService _agreementService;
@@ -30,6 +30,7 @@ public class AgreementController : ControllerBase
 
     // POST /api/agreements/template/{role}
     [HttpPost("template/{role:int}")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     [RequestSizeLimit(20_000_000)]
     public async Task<IActionResult> UploadTemplate(int role, [FromForm] IFormFile file)
     {

@@ -616,7 +616,7 @@ public class PaymentController : ControllerBase
     }
 
     [HttpGet("all")]
-    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetAllPayments(
         [FromQuery] string? status,
         [FromQuery] string? type,

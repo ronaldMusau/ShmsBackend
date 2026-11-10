@@ -41,7 +41,7 @@ public class ComplaintTypeController : ControllerBase
 
     // POST /api/complainttype
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> Create([FromBody] ComplaintTypeDto dto)
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -65,7 +65,7 @@ public class ComplaintTypeController : ControllerBase
 
     // PUT /api/complainttype/{id}
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> Update(Guid id, [FromBody] ComplaintTypeDto dto)
     {
         var type = await _context.ComplaintTypes.FindAsync(id);
@@ -86,7 +86,7 @@ public class ComplaintTypeController : ControllerBase
 
     // DELETE /api/complainttype/{id}
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var type = await _context.ComplaintTypes.FindAsync(id);

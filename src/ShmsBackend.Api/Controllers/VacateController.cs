@@ -799,7 +799,7 @@ public class VacateController : ControllerBase
 
     // GET /api/vacate/all
     [HttpGet("all")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetAllVacateRequests(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
@@ -1017,7 +1017,7 @@ public class VacateController : ControllerBase
 
     // GET /api/vacate/{id}
     [HttpGet("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
+    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
     public async Task<IActionResult> GetVacateRequestById(Guid id)
     {
         var vacateRequest = await _context.VacateRequests
@@ -2060,7 +2060,7 @@ public class VacateController : ControllerBase
 
     // PATCH /api/vacate/refunds/{id}/mark-paid
     [HttpPatch("refunds/{id:guid}/mark-paid")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
     public async Task<IActionResult> MarkRefundPaid(Guid id)
     {
         var settlement = await _context.VacateSettlements

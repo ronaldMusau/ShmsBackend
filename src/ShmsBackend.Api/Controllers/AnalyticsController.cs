@@ -188,7 +188,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/complaints/breakdown
     [HttpGet("complaints/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetComplaintsBreakdown([FromQuery] ComplaintFilters filters)
     {
         filters.LandlordId = null;
@@ -199,7 +199,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/complaints/charges — Management only (landlord-scoped analytics never see charge handling)
     [HttpGet("complaints/charges")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetComplaintCharges([FromQuery] ComplaintFilters filters)
     {
         filters.LandlordId = null;
@@ -210,7 +210,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/complaints/by-type
     [HttpGet("complaints/by-type")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetComplaintsByType([FromQuery] ComplaintFilters filters)
     {
         filters.LandlordId = null;
@@ -221,7 +221,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/complaints/trend
     [HttpGet("complaints/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetComplaintsTrend([FromQuery] ComplaintFilters filters)
     {
         filters.LandlordId = null;
@@ -307,7 +307,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/refunds/breakdown
     [HttpGet("refunds/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetRefundsBreakdown([FromQuery] RefundFilters filters)
     {
         filters.LandlordId = null;
@@ -318,7 +318,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/refunds/trend
     [HttpGet("refunds/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetRefundsTrend([FromQuery] RefundFilters filters)
     {
         filters.LandlordId = null;
@@ -335,7 +335,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/deductions/by-category
     [HttpGet("deductions/by-category")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetDeductionsByCategory([FromQuery] DeductionFilters filters)
     {
         filters.LandlordId = null;
@@ -346,7 +346,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/deductions/trend
     [HttpGet("deductions/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetDeductionsTrend([FromQuery] DeductionFilters filters)
     {
         filters.LandlordId = null;
@@ -395,7 +395,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/service-charges/breakdown
     [HttpGet("service-charges/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetServiceChargesBreakdown([FromQuery] PaymentFilters filters)
     {
         filters.LandlordId = null;
@@ -406,7 +406,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/service-charges/trend
     [HttpGet("service-charges/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetServiceChargesTrend([FromQuery] PaymentFilters filters)
     {
         filters.LandlordId = null;
@@ -479,7 +479,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/bookings/breakdown
     [HttpGet("bookings/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetBookingsBreakdown([FromQuery] SessionFilters filters)
     {
         filters.LandlordId = null;
@@ -490,7 +490,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/bookings/trend
     [HttpGet("bookings/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetBookingsTrend([FromQuery] SessionFilters filters)
     {
         filters.LandlordId = null;
@@ -507,7 +507,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/explorer-interest/breakdown
     [HttpGet("explorer-interest/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetExplorerInterestBreakdown([FromQuery] ExplorerFilters filters)
     {
         ApplyDefaultDateRange(filters);
@@ -525,7 +525,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/rewards/by-type
     [HttpGet("rewards/by-type")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetRewardsByType([FromQuery] RewardTransactionFilters filters)
     {
         filters.LandlordId = null;
@@ -536,7 +536,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/rewards/trend
     [HttpGet("rewards/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetRewardsTrend([FromQuery] RewardTransactionFilters filters)
     {
         filters.LandlordId = null;
@@ -555,7 +555,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/forfeited-advances/breakdown
     [HttpGet("forfeited-advances/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetForfeitedAdvancesBreakdown([FromQuery] ForfeitedAdvanceFilters filters)
     {
         filters.LandlordId = null;
@@ -566,7 +566,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/forfeited-advances/trend
     [HttpGet("forfeited-advances/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetForfeitedAdvancesTrend([FromQuery] ForfeitedAdvanceFilters filters)
     {
         filters.LandlordId = null;
@@ -589,7 +589,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/agreements/status-breakdown
     [HttpGet("agreements/status-breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> GetAgreementsStatusBreakdown([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
@@ -599,7 +599,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/agreements/role-breakdown
     [HttpGet("agreements/role-breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> GetAgreementsRoleBreakdown([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
@@ -609,7 +609,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/agreements/trend
     [HttpGet("agreements/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> GetAgreementsTrend([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
@@ -623,7 +623,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/payments/breakdown
     [HttpGet("payments/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetPaymentsBreakdown([FromQuery] PaymentFilters filters)
     {
         filters.LandlordId = null;
@@ -634,7 +634,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/payments/trend
     [HttpGet("payments/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetPaymentsTrend([FromQuery] PaymentFilters filters)
     {
         filters.LandlordId = null;
@@ -680,7 +680,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/overdue/breakdown
     [HttpGet("overdue/breakdown")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetOverdueBreakdown([FromQuery] Guid? flatId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
@@ -690,7 +690,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/overdue/trend
     [HttpGet("overdue/trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetOverdueTrend([FromQuery] Guid? flatId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
@@ -732,7 +732,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/agents/performance?agentId=... (optional — omit for portfolio-wide)
     [HttpGet("agents/performance")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetAgentPerformance([FromQuery] Guid? agentId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);
@@ -742,7 +742,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/agents/sessions-trend?agentId=... (optional — omit for portfolio-wide)
     [HttpGet("agents/sessions-trend")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager")]
     public async Task<IActionResult> GetAgentSessionsTrend([FromQuery] Guid? agentId, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
         var (from, to) = ApplyDefaultDateRange(fromDate, toDate);

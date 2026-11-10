@@ -13,7 +13,7 @@ namespace ShmsBackend.Api.Controllers;
 
 [ApiController]
 [Route("api/overdue")]
-[Authorize(Roles = "SuperAdmin,Admin,Manager,Secretary")]
+[Authorize(Roles = "SuperAdmin,Admin,Manager,Secretary,Accountant")]
 public class OverdueController : ControllerBase
 {
     private readonly ShmsDbContext _context;
@@ -222,6 +222,7 @@ public class OverdueController : ControllerBase
 
     // POST /api/overdue/tenants/{tenantId}/warning
     [HttpPost("tenants/{tenantId:guid}/warning")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Secretary")]
     public async Task<IActionResult> SendWarning(Guid tenantId, [FromBody] SendTenantWarningDto dto)
     {
         if (dto.WarningNumber != 1 && dto.WarningNumber != 2)
@@ -296,6 +297,7 @@ public class OverdueController : ControllerBase
 
     // POST /api/overdue/tenants/{tenantId}/force-vacate
     [HttpPost("tenants/{tenantId:guid}/force-vacate")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Secretary")]
     public async Task<IActionResult> ForceVacate(Guid tenantId, [FromBody] ForceVacateDto dto)
     {
         if (string.IsNullOrWhiteSpace(dto.Reason))

@@ -39,7 +39,7 @@ public class HouseTypeController : ControllerBase
 
     // POST /api/housetype
     [HttpPost]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> Create([FromBody] HouseTypeDto dto)
     {
         var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -62,7 +62,7 @@ public class HouseTypeController : ControllerBase
 
     // PUT /api/housetype/{id}
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> Update(Guid id, [FromBody] HouseTypeDto dto)
     {
         var type = await _context.HouseTypes.FindAsync(id);
@@ -85,7 +85,7 @@ public class HouseTypeController : ControllerBase
 
     // DELETE /api/housetype/{id}
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> Delete(Guid id)
     {
         var type = await _context.HouseTypes.FindAsync(id);

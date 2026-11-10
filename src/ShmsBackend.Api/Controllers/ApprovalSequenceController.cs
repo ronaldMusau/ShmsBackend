@@ -8,7 +8,7 @@ namespace ShmsBackend.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "SuperAdmin,Admin,Secretary")]
+[Authorize(Roles = "SuperAdmin,Admin,Secretary,Manager")]
 public class ApprovalSequenceController : ControllerBase
 {
     private readonly ShmsDbContext _context;
@@ -31,6 +31,7 @@ public class ApprovalSequenceController : ControllerBase
 
     // PUT /api/approvalsequence/{module}
     [HttpPut("{module}")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
     public async Task<IActionResult> ReplaceSequence(string module, [FromBody] List<Guid> approverIds)
     {
         var existing = await _context.ApprovalSequenceSteps
