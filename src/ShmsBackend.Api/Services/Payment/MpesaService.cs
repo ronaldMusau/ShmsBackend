@@ -300,8 +300,8 @@ public class MpesaService : IMpesaService
             // That is "no answer yet", not a customer timeout — leave ResultCode empty so callers treat it as pending.
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("STK query for {CheckoutRequestId} not final yet (HTTP {Status})",
-                    checkoutRequestId, (int)response.StatusCode);
+                _logger.LogWarning("STK query for {CheckoutRequestId} not final yet (HTTP {Status}): {Body}",
+                    checkoutRequestId, (int)response.StatusCode, content.Length > 300 ? content[..300] : content);
                 return new STKQueryResponse { CheckoutRequestID = checkoutRequestId, ResultDesc = "Status not available yet" };
             }
 
