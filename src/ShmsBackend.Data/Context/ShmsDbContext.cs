@@ -52,6 +52,7 @@ public class ShmsDbContext : DbContext
     public DbSet<Notification> Notifications { get; set; }
     public DbSet<SecurityEvent> SecurityEvents { get; set; }
     public DbSet<SecuritySettings> SecuritySettings { get; set; }
+    public DbSet<ReconciliationReview> ReconciliationReviews { get; set; }
     public DbSet<BlockedIp> BlockedIps { get; set; }
     public DbSet<LoginActivity> LoginActivities { get; set; }
     public DbSet<LoginChallenge> LoginChallenges { get; set; }
@@ -569,6 +570,29 @@ public class ShmsDbContext : DbContext
         {
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        // ── ReconciliationReview Configuration ───────────────────────────────
+        modelBuilder.Entity<ReconciliationReview>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.IssueKey).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.IssueType).IsRequired().HasMaxLength(40);
+            entity.Property(e => e.Source).IsRequired().HasMaxLength(60);
+            entity.Property(e => e.Reference).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.Detail).IsRequired().HasMaxLength(1000);
+            entity.Property(e => e.TenantName).HasMaxLength(200);
+            entity.Property(e => e.House).HasMaxLength(60);
+            entity.Property(e => e.CheckoutRequestId).HasMaxLength(100);
+            entity.Property(e => e.Outcome).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.Note).HasMaxLength(1000);
+            entity.Property(e => e.MpesaAnswer).HasMaxLength(500);
+            entity.Property(e => e.ReviewedByUserId).HasMaxLength(64);
+            entity.Property(e => e.ReviewedByRole).HasMaxLength(40);
+            entity.Property(e => e.ReviewedByName).HasMaxLength(150);
+            entity.HasIndex(e => e.IssueKey).IsUnique();
+            entity.HasIndex(e => e.ReviewedAt);
         });
 
         // ── RewardTransaction Configuration ──────────────────────────────────
