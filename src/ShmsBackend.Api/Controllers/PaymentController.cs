@@ -345,7 +345,7 @@ public class PaymentController : ControllerBase
         {
             callbackLog = new ShmsBackend.Data.Models.Entities.MpesaCallbackLog
             {
-                CheckoutRequestId = (callback.Body.stkCallback.CheckoutRequestID ?? "").Length > 100 ? callback.Body.stkCallback.CheckoutRequestID![..100] : callback.Body.stkCallback.CheckoutRequestID ?? "",
+                CheckoutRequestId = CapText(callback.Body.stkCallback.CheckoutRequestID, 100),
                 ResultCode = callback.Body.stkCallback.ResultCode,
                 RawJson = System.Text.Json.JsonSerializer.Serialize(callback)
             };
@@ -417,6 +417,8 @@ public class PaymentController : ControllerBase
             return Ok(new { ResultCode = 0, ResultDesc = "Accepted" });
         }
     }
+
+    private static string CapText(string value, int max) => value.Length <= max ? value : value[..max];
 
     // GET /api/payments/status/{checkoutRequestId} — poll payment status
     [HttpGet("status/{checkoutRequestId}")]
