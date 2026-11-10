@@ -339,6 +339,21 @@ public class PaymentController : ControllerBase
             return NotFound();
         }
 
+        // Keep a copy of the callback as received, so reconciliation can apply it again if processing fails below.
+        ShmsBackend.Data.Models.Entities.MpesaCallbackLog? callbackLog = null;
+        try
+        {
+            callbackLog = new ShmsBackend.Data.Models.Entities.MpesaCallbackLog
+            {
+                CheckoutRequestId = (callback.Body.stkCallback.CheckoutRequestID ?? "").Length > 100 ? callback.Body.stkCallback.CheckoutRequestID![..100] : callback.Body.stkCallback.CheckoutRequestID ?? "",
+                ResultCode = callback.Body.stkCallback.ResultCode,
+                RawJson = System.Text.Json.JsonSerializer.Serialize(callback)
+            };
+            _context.MpesaCallbackLogs.Add(callbackLog);
+            await _context.SaveChangesAsync();
+        }
+        catch (Exception logEx) { _logger.LogError(logEx, "Could not store the M-Pesa callback copy"); callbackLog = null; }
+
         try
         {
             _logger.LogInformation("M-Pesa callback received: {ResultCode}",
@@ -361,6 +376,11 @@ public class PaymentController : ControllerBase
             }
 
             await _paymentService.ProcessCallbackAsync(callback);
+            if (callbackLog != null)
+            {
+                try { callbackLog.Applied = true; callbackLog.AppliedAt = DateTime.UtcNow; await _context.SaveChangesAsync(); }
+                catch (Exception markEx) { _logger.LogError(markEx, "Could not mark the stored callback as applied"); }
+            }
 
             // A leaving tenant whose last balance this payment just cleared moves to Vacated right away
             // (no wait for the 15-minute sweep). No-op for everyone else.
@@ -384,6 +404,16 @@ public class PaymentController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing M-Pesa callback");
+            if (callbackLog != null)
+            {
+                try
+                {
+                    _context.ChangeTracker.Clear();
+                    var stored = await _context.MpesaCallbackLogs.FirstOrDefaultAsync(l => l.Id == callbackLog.Id);
+                    if (stored != null) { stored.Error = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message; await _context.SaveChangesAsync(); }
+                }
+                catch { /* best effort */ }
+            }
             return Ok(new { ResultCode = 0, ResultDesc = "Accepted" });
         }
     }

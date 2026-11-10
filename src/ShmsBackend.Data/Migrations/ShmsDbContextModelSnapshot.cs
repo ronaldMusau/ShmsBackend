@@ -3325,6 +3325,44 @@ namespace ShmsBackend.Data.Migrations
                     b.ToTable("MoneyApprovalActions");
                 });
 
+            modelBuilder.Entity("ShmsBackend.Data.Models.Entities.MpesaCallbackLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Applied")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CheckoutRequestId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("RawJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ResultCode")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CheckoutRequestId");
+
+                    b.ToTable("MpesaCallbackLogs");
+                });
+
             modelBuilder.Entity("ShmsBackend.Data.Models.Entities.ReconciliationReview", b =>
                 {
                     b.Property<Guid>("Id")

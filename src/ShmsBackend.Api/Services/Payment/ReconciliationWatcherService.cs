@@ -46,12 +46,21 @@ public class ReconciliationWatcherService : BackgroundService
         var scan = await scanner.ScanAsync(end.AddDays(-31), end);
         if (scan.Open.Count == 0) return;
 
-        var ids = scan.Open.Select(i => IdFor(i.Key)).Distinct().ToList();
+        // fix what can be fixed safely first; only what is left needs a person
+        var healer = scope.ServiceProvider.GetRequiredService<ReconciliationHealer>();
+        var healed = await healer.HealAsync(scan.Open);
+        var open = scan.Open.Where(i => !healed.Contains(i.Key)).ToList();
+        if (healed.Count > 0) _log.LogInformation("Reconciliation auto-fixed {Count} findings", healed.Count);
+
+        await RemindAboutExpiringAsync(db, notify, open, ct);
+        if (open.Count == 0) return;
+
+        var ids = open.Select(i => IdFor(i.Key)).Distinct().ToList();
         var told = (await db.Notifications.IgnoreQueryFilters().AsNoTracking()
             .Where(n => n.EntityType == EntityType && n.EntityId != null && ids.Contains(n.EntityId.Value))
             .Select(n => n.EntityId!.Value).ToListAsync(ct)).ToHashSet();
 
-        var fresh = scan.Open.Where(i => !told.Contains(IdFor(i.Key))).ToList();
+        var fresh = open.Where(i => !told.Contains(IdFor(i.Key))).ToList();
         if (fresh.Count == 0) return;
 
         foreach (var i in fresh.Take(20))
@@ -66,5 +75,24 @@ public class ReconciliationWatcherService : BackgroundService
                 $"Reconciliation: {fresh.Count - 20} more payments need checking. Open Reconciliation to see them.",
                 "payment", EntityType, IdFor("overflow|" + DateTime.UtcNow.Ticks).ToString());
         _log.LogInformation("Reconciliation watcher told the accountants about {Count} new findings", fresh.Count);
+    }
+
+    /// <summary>
+    /// Once a day (from 08:00 East Africa time) tells the accountants about open findings that are within a day of falling out of
+    /// M-Pesa's 3-day lookup, after which M-Pesa can no longer be asked about them.
+    /// </summary>
+    private async Task RemindAboutExpiringAsync(ShmsDbContext db, INotificationService notify, List<Controllers.ReconciliationController.Issue> open, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        if (now.Hour < 5) return;
+        var reminderId = IdFor("reminder|" + now.ToString("yyyy-MM-dd"));
+        if (await db.Notifications.IgnoreQueryFilters().AnyAsync(n => n.EntityType == "ReconciliationReminder" && n.EntityId == reminderId, ct)) return;
+
+        var expiring = open.Where(i => !string.IsNullOrEmpty(i.CheckoutRequestId) && now - i.At >= TimeSpan.FromHours(48) && now - i.At <= TimeSpan.FromDays(3)).OrderBy(i => i.At).ToList();
+        if (expiring.Count == 0) return;
+        var sample = string.Join("; ", expiring.Take(3).Select(i => $"{i.Source} {i.Reference}"));
+        await notify.SendToRoleAsync(NotificationAudience.Accountant,
+            $"Reconciliation reminder: {expiring.Count} payment{(expiring.Count == 1 ? "" : "s")} still need checking and will soon be too old for M-Pesa to look up ({sample}{(expiring.Count > 3 ? "…" : "")}). Please check {(expiring.Count == 1 ? "it" : "them")} today.",
+            "payment", "ReconciliationReminder", reminderId.ToString());
     }
 }

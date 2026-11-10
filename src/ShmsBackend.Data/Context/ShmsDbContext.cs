@@ -53,6 +53,7 @@ public class ShmsDbContext : DbContext
     public DbSet<SecurityEvent> SecurityEvents { get; set; }
     public DbSet<SecuritySettings> SecuritySettings { get; set; }
     public DbSet<ReconciliationReview> ReconciliationReviews { get; set; }
+    public DbSet<MpesaCallbackLog> MpesaCallbackLogs { get; set; }
     public DbSet<B2CPayout> B2CPayouts { get; set; }
     public DbSet<ReversalRequest> ReversalRequests { get; set; }
     public DbSet<MoneyApprovalAction> MoneyApprovalActions { get; set; }
@@ -634,6 +635,14 @@ public class ShmsDbContext : DbContext
         });
 
         // ── ReconciliationReview Configuration ───────────────────────────────
+        modelBuilder.Entity<MpesaCallbackLog>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.CheckoutRequestId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Error).HasMaxLength(500);
+            entity.HasIndex(e => e.CheckoutRequestId);
+        });
+
         modelBuilder.Entity<ReconciliationReview>(entity =>
         {
             entity.HasKey(e => e.Id);
