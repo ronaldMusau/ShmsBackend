@@ -85,8 +85,8 @@ public class ReversalService : IReversalService
         var target = await _db.Payments.Include(p => p.Applications).Include(p => p.Tenant).Include(p => p.House)
             .FirstOrDefaultAsync(p => p.Id == req.PaymentId && !p.IsDeleted);
         var bad = Validate(target, req.IssueType, req.Source);
-        if (bad != null) return bad;
-        var (receipts, checkouts) = Ids(target!);
+        if (bad != null || target == null) return bad ?? new(false, 404, "Payment not found.");
+        var (receipts, checkouts) = Ids(target);
         // ask M-Pesa again: if any prompt really was paid, the record is right and must not be reversed
         var g = await AskMpesaAsync(checkouts);
         if (g.Error != null) return new(false, g.Status, g.Error);
