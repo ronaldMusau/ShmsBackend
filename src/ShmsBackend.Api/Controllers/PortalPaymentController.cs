@@ -298,7 +298,7 @@ public class PortalPaymentController : ControllerBase
                     return VacateCapExceeded(vacateOwed);
             }
 
-            await _paymentService.EnsureServiceChargeAsync(payment, distributionAmount);
+            await _paymentService.EnsureServiceChargeAsync(payment, distributionAmount ?? (payment.Balance > 0 ? payment.Balance : payment.Amount));
             decimal? actualChargeAmount = null;
             if (distributionAmount.HasValue)
             {

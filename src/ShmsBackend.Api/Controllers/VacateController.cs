@@ -1836,7 +1836,7 @@ public class VacateController : ControllerBase
         var houseNumber = house?.HouseNumber ?? "";
 
         var reference = $"VAC-{settlementId.ToString().Substring(0, 8).ToUpper()}";
-        var settlementServiceCharge = await ServiceChargeLookup.ForHouseAsync(_context, settlement.HouseId);
+        var settlementServiceCharge = await ServiceChargeLookup.ForRentAsync(_context, settlement.Amount);
 
         STKPushResponse stkResponse;
         try

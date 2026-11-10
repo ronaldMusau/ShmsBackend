@@ -8,8 +8,8 @@ namespace ShmsBackend.Api.Helpers;
 
 /// <summary>
 /// Platform service charge for payments that are not monthly rent (complaint charges, vacate settlements).
-/// Same band table (ServiceChargeSettings) rent payments use, keyed on the tenant's house rent so a tenant
-/// pays the same flat charge on every transaction. The charge is ADDED on top of the amount owed and is
+/// Same band table (ServiceChargeSettings) rent payments use, keyed on the amount being prompted (the
+/// transaction), not on the house rent. The charge is ADDED on top of the amount owed and is
 /// never exposed to tenants, landlords or agents.
 /// </summary>
 public static class ServiceChargeLookup

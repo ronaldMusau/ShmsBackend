@@ -40,7 +40,7 @@ public static class ComplaintChargeHelper
             return (null, "A payment is already being processed for this complaint. Please wait a moment or check the phone.");
 
         var amount = complaint.BillableAmount!.Value;
-        var serviceCharge = await ServiceChargeLookup.ForHouseAsync(ctx, complaint.HouseId);
+        var serviceCharge = await ServiceChargeLookup.ForRentAsync(ctx, amount);
         STKPushResponse stk;
         try
         {
