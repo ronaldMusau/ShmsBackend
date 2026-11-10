@@ -183,6 +183,8 @@ builder.Services.AddScoped<VacateClosureService>();
 builder.Services.AddScoped<IRewardService, RewardService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddHostedService<PaymentSchedulerService>();
+builder.Services.AddScoped<ShmsBackend.Api.Services.Payment.ReconciliationScanner>();
+builder.Services.AddHostedService<ShmsBackend.Api.Services.Payment.ReconciliationWatcherService>();
 builder.Services.AddSingleton<ComplaintReminderSchedulerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ComplaintReminderSchedulerService>());
 builder.Services.AddSingleton<SessionSchedulerService>();
