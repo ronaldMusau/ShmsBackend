@@ -101,10 +101,9 @@ public class PaymentService : IPaymentService
             return;
         }
 
-        if ((payment.ServiceChargeAmount ?? 0m) > 0m) return;
-        var basis = (payment.RentAmount ?? 0m) > 0m ? payment.RentAmount!.Value : payment.Amount;
-        var charge = await GetServiceChargeAsync(basis);
-        if (charge > 0m) payment.ServiceChargeAmount = charge;
+        // No typed amount: the push is for what the row still owes, so that is the amount the charge keys on.
+        var prompted = payment.Balance > 0m ? payment.Balance : payment.Amount;
+        payment.ServiceChargeAmount = await GetServiceChargeAsync(prompted);
     }
 
     public async Task<PaymentRecord> CreateInitialPaymentAsync(Guid tenantId, Guid houseId, string phoneNumber)
@@ -145,7 +144,6 @@ public class PaymentService : IPaymentService
         var effectiveRentFee = applicableRentChange?.NewRentFee ?? house.RentFee;
         var effectiveDepositFee = applicableRentChange?.NewDepositFee ?? house.DepositFee;
 
-        var serviceCharge = await GetServiceChargeAsync(effectiveRentFee);
         var totalAmount = effectiveDepositFee + effectiveRentFee;
         // The initial payment covers the tenant's real move-in month (a pre-registered tenant may move in
         // months after this row is created) — same Month/Year/DueDate derivation as TenantService's
@@ -165,7 +163,7 @@ public class PaymentService : IPaymentService
             Balance = totalAmount,
             RentAmount = effectiveRentFee,
             DepositAmount = effectiveDepositFee,
-            ServiceChargeAmount = serviceCharge,
+            ServiceChargeAmount = 0m,
             PaymentStatus = PaymentTransactionStatus.Pending,
             PaymentType = PaymentType.InitialPayment,
             PaymentMethod = PaymentMethod.Mpesa,
@@ -243,7 +241,6 @@ public class PaymentService : IPaymentService
         // CreateInitialPaymentAsync) rather than always billing today's rate.
         var rentChange = await _vacateOwedCalculator.GetApplicableRentChangeAsync(house.Id, cursorMonth, cursorYear);
         var totalDue = rentChange?.NewRentFee ?? house.RentFee;
-        var serviceCharge = await GetServiceChargeAsync(totalDue);
 
         var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(cursorYear, cursorMonth));
         var newPayment = new PaymentRecord
@@ -257,7 +254,7 @@ public class PaymentService : IPaymentService
             AmountPaid = 0,
             Balance = totalDue,
             RentAmount = totalDue,
-            ServiceChargeAmount = serviceCharge,
+            ServiceChargeAmount = 0m,
             PaymentStatus = PaymentTransactionStatus.Pending,
             PaymentType = PaymentType.Rent,
             PhoneNumber = tenant.PhoneNumber,
@@ -288,7 +285,9 @@ public class PaymentService : IPaymentService
         var flat = house.Flat!;
 
         payment.PhoneNumber = phoneNumber;
-        await EnsureServiceChargeAsync(payment);
+        // A typed amount already had its charge set by the caller from the amount prompted; otherwise key it on
+        // what the row owes.
+        if (!overrideAmount.HasValue) await EnsureServiceChargeAsync(payment);
 
         // Every caller that sets RequestedDistributionAmount also passes the matching override; a push
         // without one charges the row's own balance, so any lump-sum/advance intent left by an earlier
@@ -1125,7 +1124,6 @@ public class PaymentService : IPaymentService
 
                 var house = tenant.House!;
                 var flat = house.Flat!;
-                var serviceCharge = await GetServiceChargeAsync(house.RentFee);
                 var rentDueDay = Math.Min(flat.RentDueDay, DateTime.DaysInMonth(now.Year, now.Month));
                 var dueDate = new DateTime(now.Year, now.Month, rentDueDay);
 
@@ -1149,7 +1147,7 @@ public class PaymentService : IPaymentService
                     AmountPaid = creditApplied,
                     Balance = totalDue - creditApplied,
                     RentAmount = house.RentFee,
-                    ServiceChargeAmount = serviceCharge,
+                    ServiceChargeAmount = 0m,
                     CreditApplied = creditApplied > 0 ? creditApplied : null,
                     PaymentStatus = creditApplied >= totalDue
                         ? PaymentTransactionStatus.Paid

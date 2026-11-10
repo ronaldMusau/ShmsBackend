@@ -190,7 +190,6 @@ public class PaymentDistributionService : IPaymentDistributionService
                 // is tiered by rent amount, so it's recomputed from the effective rate too, not house.RentFee.
                 var rentChange = await _vacateOwedCalculator.GetApplicableRentChangeAsync(houseId, cursorMonth, cursorYear);
                 var monthlyTotal = rentChange?.NewRentFee ?? house.RentFee;
-                var monthlyServiceCharge = await GetServiceChargeAsync(monthlyTotal);
                 var applyAmount = Math.Min(remaining, monthlyTotal);
                 var newPayment = new PaymentRecord
                 {
@@ -204,7 +203,7 @@ public class PaymentDistributionService : IPaymentDistributionService
                     AmountPaid = applyAmount,
                     Balance = monthlyTotal - applyAmount,
                     RentAmount = monthlyTotal,
-                    ServiceChargeAmount = monthlyServiceCharge,
+                    ServiceChargeAmount = 0m,
                     Month = cursorMonth,
                     Year = cursorYear,
                     IsInitialPayment = false,

@@ -425,7 +425,6 @@ public class TenantService : ITenantService
                     .FirstOrDefaultAsync();
                 var effectiveRentFee = applicableRentChange?.NewRentFee ?? house.RentFee;
 
-                var serviceCharge = await _paymentService.GetServiceChargeAsync(effectiveRentFee);
                 var rentDueDay = house.Flat != null
                     ? Math.Min(house.Flat.RentDueDay, DateTime.DaysInMonth(paymentYear, paymentMonth))
                     : DateTime.DaysInMonth(paymentYear, paymentMonth);
@@ -443,7 +442,7 @@ public class TenantService : ITenantService
                     AmountPaid = 0,
                     Balance = effectiveRentFee,
                     RentAmount = effectiveRentFee,
-                    ServiceChargeAmount = serviceCharge,
+                    ServiceChargeAmount = 0m,
                     Month = paymentMonth,
                     Year = paymentYear,
                     IsInitialPayment = false,

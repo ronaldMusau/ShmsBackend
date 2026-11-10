@@ -401,7 +401,6 @@ public class VacateController : ControllerBase
                     // by this month, else the house's current rent.
                     var applicableRentChange = await _vacateOwedCalculator.GetApplicableRentChangeAsync(house.Id, cursorMonth, cursorYear);
                     var effectiveRentFee = applicableRentChange?.NewRentFee ?? house.RentFee;
-                    var serviceCharge = await _paymentService.GetServiceChargeAsync(effectiveRentFee);
                     var totalDue = effectiveRentFee;
 
                     _context.Payments.Add(new Payment
@@ -415,7 +414,7 @@ public class VacateController : ControllerBase
                         AmountPaid = 0,
                         Balance = totalDue,
                         RentAmount = effectiveRentFee,
-                        ServiceChargeAmount = serviceCharge,
+                        ServiceChargeAmount = 0m,
                         PaymentStatus = PaymentTransactionStatus.Pending,
                         PaymentType = PaymentType.Rent,
                         PhoneNumber = tenant.PhoneNumber,
