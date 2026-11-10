@@ -279,7 +279,7 @@ public class AnalyticsController : ControllerBase
 
     // GET /api/analytics/financial-standing — admin-wide (LandlordId never bound; null = whole portfolio)
     [HttpGet("financial-standing")]
-    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    [Authorize(Roles = "SuperAdmin,Admin,Manager,Accountant")]
     public async Task<IActionResult> GetFinancialStanding([FromQuery] FinancialStandingFilters filters)
     {
         filters.LandlordId = null;
