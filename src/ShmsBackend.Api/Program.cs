@@ -170,8 +170,10 @@ builder.Services.AddScoped<IAgreementService, AgreementService>();
 
 // M-Pesa
 builder.Services.Configure<MpesaConfig>(builder.Configuration.GetSection("Mpesa"));
+builder.Services.Configure<MpesaB2CConfig>(builder.Configuration.GetSection("MpesaB2C"));
 builder.Services.AddHttpClient("Mpesa", c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<IMpesaService, MpesaService>();
+builder.Services.AddSingleton<IMpesaB2CService, MpesaB2CService>();
 builder.Services.AddScoped<IPaymentDistributionService, PaymentDistributionService>();
 builder.Services.AddScoped<VacateOwedCalculator>();
 builder.Services.AddScoped<VacateClosureService>();

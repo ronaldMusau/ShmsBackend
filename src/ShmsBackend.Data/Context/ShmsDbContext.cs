@@ -53,6 +53,7 @@ public class ShmsDbContext : DbContext
     public DbSet<SecurityEvent> SecurityEvents { get; set; }
     public DbSet<SecuritySettings> SecuritySettings { get; set; }
     public DbSet<ReconciliationReview> ReconciliationReviews { get; set; }
+    public DbSet<B2CPayout> B2CPayouts { get; set; }
     public DbSet<BlockedIp> BlockedIps { get; set; }
     public DbSet<LoginActivity> LoginActivities { get; set; }
     public DbSet<LoginChallenge> LoginChallenges { get; set; }
@@ -570,6 +571,30 @@ public class ShmsDbContext : DbContext
         {
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
             entity.Property(e => e.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+        });
+
+        // ── B2CPayout Configuration ──────────────────────────────────────────
+        modelBuilder.Entity<B2CPayout>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Purpose).IsRequired().HasMaxLength(30);
+            entity.Property(e => e.TenantName).HasMaxLength(200);
+            entity.Property(e => e.ReceiverPhone).IsRequired().HasMaxLength(15);
+            entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
+            entity.Property(e => e.Reason).IsRequired().HasMaxLength(300);
+            entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.RequestedByUserId).HasMaxLength(64);
+            entity.Property(e => e.RequestedByName).HasMaxLength(150);
+            entity.Property(e => e.ApprovedByUserId).HasMaxLength(64);
+            entity.Property(e => e.ApprovedByName).HasMaxLength(150);
+            entity.Property(e => e.RejectReason).HasMaxLength(300);
+            entity.Property(e => e.ConversationId).HasMaxLength(100);
+            entity.Property(e => e.ResultCode).HasMaxLength(40);
+            entity.Property(e => e.ResultDesc).HasMaxLength(500);
+            entity.Property(e => e.MpesaReceipt).HasMaxLength(40);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.RequestedAt);
+            entity.HasIndex(e => e.ConversationId);
         });
 
         // ── ReconciliationReview Configuration ───────────────────────────────
