@@ -41,6 +41,7 @@ public class PayoutsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filter
     private string? _who;
     private string Who => _who ?? User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
 
+    [NonAction]
     public async Task OnActionExecutionAsync(Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
     {
         _who = await StaffName.ResolveAsync(_db, User);

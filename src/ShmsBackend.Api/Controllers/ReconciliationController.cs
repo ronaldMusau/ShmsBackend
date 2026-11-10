@@ -194,6 +194,7 @@ public class ReconciliationController : ControllerBase, Microsoft.AspNetCore.Mvc
     private string? _who;
     private string WhoName() => _who ?? User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue(ClaimTypes.Role) ?? "staff";
 
+    [NonAction]
     public async Task OnActionExecutionAsync(Microsoft.AspNetCore.Mvc.Filters.ActionExecutingContext context, Microsoft.AspNetCore.Mvc.Filters.ActionExecutionDelegate next)
     {
         _who = await StaffName.ResolveAsync(_db, User);
