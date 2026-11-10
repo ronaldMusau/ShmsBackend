@@ -76,7 +76,7 @@ public class PayoutsController : ControllerBase
         if (r == null || !Purposes.Contains(r.Purpose)) return BadRequest(new { success = false, message = "Choose what the payout is for." });
         var reason = (r.Reason ?? "").Trim();
         if (reason.Length < 10 || reason.Length > 300) return BadRequest(new { success = false, message = "Give a reason of 10 to 300 characters." });
-        if (r.Amount < 1 || r.Amount != decimal.Truncate(r.Amount)) return BadRequest(new { success = false, message = "The amount must be a whole number of shillings, at least 1." });
+        if (r.Amount < 10 || r.Amount != decimal.Truncate(r.Amount)) return BadRequest(new { success = false, message = "The amount must be a whole number of shillings, at least 10 (M-Pesa minimum)." });
         if (r.Amount > _cfg.MaxPerPayout) return BadRequest(new { success = false, message = $"One payout can be at most KES {_cfg.MaxPerPayout:N0}." });
 
         string? tenantName = null; var phoneRaw = r.Phone;
