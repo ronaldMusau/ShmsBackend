@@ -40,8 +40,10 @@ public class ReconciliationHealer
             try
             {
                 // 1. replay a stored success callback that was never applied
+                // a callback received in the last 2 minutes may still be mid-processing by the live callback; leave it alone
+                var settled = now.AddMinutes(-2);
                 var stored = await _db.MpesaCallbackLogs
-                    .Where(l => l.CheckoutRequestId == cid && l.ResultCode == 0 && !l.Applied)
+                    .Where(l => l.CheckoutRequestId == cid && l.ResultCode == 0 && !l.Applied && l.ReceivedAt < settled)
                     .OrderByDescending(l => l.ReceivedAt).FirstOrDefaultAsync();
                 if (stored != null)
                 {
