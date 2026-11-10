@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using ShmsBackend.Api.Models.DTOs.Auth;
 using ShmsBackend.Api.Models.Responses;
 using ShmsBackend.Api.Services.Email;
@@ -42,6 +43,7 @@ public class EmailVerificationController : ControllerBase
     /// </summary>
     [AllowAnonymous]
     [HttpPost("verify")]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> VerifyEmail([FromBody] VerifyEmailDto verifyEmailDto)
     {
         try
@@ -103,6 +105,7 @@ public class EmailVerificationController : ControllerBase
     /// </summary>
     [AllowAnonymous]
     [HttpPost("set-password")]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> SetPassword([FromBody] SetPasswordDto setPasswordDto)
     {
         try
@@ -183,6 +186,7 @@ public class EmailVerificationController : ControllerBase
     /// </summary>
     [AllowAnonymous]
     [HttpPost("resend")]
+    [EnableRateLimiting("auth-sensitive")]
     public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationDto resendDto)
     {
         try
