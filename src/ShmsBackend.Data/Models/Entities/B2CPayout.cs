@@ -9,6 +9,8 @@ public class B2CPayout
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Purpose { get; set; } = "Other";            // AdvanceRefund | DepositRefund | Other
     public Guid? TenantId { get; set; }
+    /// <summary>The vacate refund (VacateSettlement) this payout pays. When it succeeds, that refund is marked paid.</summary>
+    public Guid? SettlementId { get; set; }
     public string? TenantName { get; set; }
     public string ReceiverPhone { get; set; } = string.Empty;  // 2547XXXXXXXX
     public decimal Amount { get; set; }

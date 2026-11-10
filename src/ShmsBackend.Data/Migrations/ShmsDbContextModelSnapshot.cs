@@ -3151,6 +3151,9 @@ namespace ShmsBackend.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<Guid?>("SettlementId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -3171,6 +3174,8 @@ namespace ShmsBackend.Data.Migrations
                     b.HasIndex("ConversationId");
 
                     b.HasIndex("RequestedAt");
+
+                    b.HasIndex("SettlementId");
 
                     b.HasIndex("Status");
 

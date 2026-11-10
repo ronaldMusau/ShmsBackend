@@ -2013,11 +2013,20 @@ public class VacateController : ControllerBase
             .Where(t => tenantIds.Contains(t.Id) && t.IsDeleted)
             .Select(t => t.Id).ToListAsync()).ToHashSet();
 
+        var settlementIds = paged.Select(s => s.Id).ToList();
+        var payoutRows = await _context.B2CPayouts.AsNoTracking()
+            .Where(p => p.SettlementId != null && settlementIds.Contains(p.SettlementId.Value) && p.Status != "Rejected" && p.Status != "Failed")
+            .OrderByDescending(p => p.RequestedAt)
+            .Select(p => new { SettlementId = p.SettlementId!.Value, p.Id, p.Status }).ToListAsync();
+        var payoutBySettlement = payoutRows.GroupBy(p => p.SettlementId).ToDictionary(g => g.Key, g => g.First());
+
         var data = paged.Select(s => new
         {
             s.Id,
             s.TenantId,
             s.VacateRequestId,
+            payoutId = payoutBySettlement.TryGetValue(s.Id, out var po) ? (Guid?)po.Id : null,
+            payoutStatus = payoutBySettlement.TryGetValue(s.Id, out var po2) ? po2.Status : null,
             tenantName = tenants.GetValueOrDefault(s.TenantId, "-"),
             tenantVacated = tenantVacatedIds.Contains(s.TenantId),
             tenantPhone = tenantContacts.ContainsKey(s.TenantId) ? tenantContacts[s.TenantId].PhoneNumber : null,
@@ -2074,6 +2083,9 @@ public class VacateController : ControllerBase
 
         if (settlement.PaidAt != null)
             return BadRequest(new { success = false, message = "This refund has already been marked as paid." });
+
+        if (await _context.B2CPayouts.AnyAsync(p => p.SettlementId == id && (p.Status == "PendingApproval" || p.Status == "Approved" || p.Status == "Submitting" || p.Status == "Submitted" || p.Status == "TimedOut")))
+            return BadRequest(new { success = false, message = "An M-Pesa payout is in progress for this refund. Wait for it to finish, or reject it on the Payouts page, before marking it paid by hand." });
 
         settlement.PaidAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();

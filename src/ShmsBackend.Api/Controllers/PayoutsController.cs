@@ -22,7 +22,7 @@ namespace ShmsBackend.Api.Controllers;
 [Route("api/payouts")]
 public class PayoutsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filters.IAsyncActionFilter
 {
-    private static readonly string[] Purposes = { "AdvanceRefund", "DepositRefund", "Other" };
+    private static readonly string[] ActiveStatuses = { "PendingApproval", "Approved", "Submitting", "Submitted", "TimedOut", "Succeeded" };
 
     private readonly ShmsDbContext _db;
     private readonly IMpesaB2CService _b2c;
@@ -32,10 +32,11 @@ public class PayoutsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filter
     private readonly ILogger<PayoutsController> _log;
     private readonly IPayoutService _payouts;
     private readonly IStepUpService _stepUp;
+    private readonly VacateClosureService _closure;
 
     public PayoutsController(ShmsDbContext db, IMpesaB2CService b2c, IOptions<MpesaB2CConfig> cfg, ISecurityEventService events,
-        INotificationService notify, ILogger<PayoutsController> log, IPayoutService payouts, IStepUpService stepUp)
-    { _db = db; _b2c = b2c; _cfg = cfg.Value; _events = events; _notify = notify; _log = log; _payouts = payouts; _stepUp = stepUp; }
+        INotificationService notify, ILogger<PayoutsController> log, IPayoutService payouts, IStepUpService stepUp, VacateClosureService closure)
+    { _db = db; _b2c = b2c; _cfg = cfg.Value; _events = events; _notify = notify; _log = log; _payouts = payouts; _stepUp = stepUp; _closure = closure; }
 
     private string? Uid => User.FindFirstValue(ClaimTypes.NameIdentifier);
     private string? _who;
@@ -68,35 +69,62 @@ public class PayoutsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filter
             currentUserId = Uid,
             payouts = rows.Select(p => new
             {
-                p.Id, p.Purpose, p.TenantId, p.TenantName, phone = Mask(p.ReceiverPhone), p.Amount, p.Reason, p.Status,
+                p.Id, p.Purpose, p.TenantId, p.SettlementId, p.TenantName, phone = Mask(p.ReceiverPhone), p.Amount, p.Reason, p.Status,
                 p.RequestedByUserId, p.RequestedByName, p.RequestedAt, p.CurrentStepOrder, p.SentByName, p.ApprovedByName, p.ApprovedAt, p.RejectReason,
                 p.ResultDesc, p.MpesaReceipt, p.SubmittedAt, p.CompletedAt
             })
         });
     }
 
-    public record CreateRequest(Guid? TenantId, string? Phone, decimal Amount, string Purpose, string Reason);
+    /// <summary>What the payout form is filled with when started from a refund.</summary>
+    [HttpGet("prefill/{settlementId:guid}")]
+    [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
+    public async Task<IActionResult> Prefill(Guid settlementId)
+    {
+        var s = await _db.VacateSettlements.AsNoTracking().FirstOrDefaultAsync(x => x.Id == settlementId && !x.IsVoided);
+        if (s == null || s.Direction != "ManagementOwes") return NotFound(new { success = false, message = "That refund was not found." });
+        if (s.PaidAt != null) return BadRequest(new { success = false, message = "This refund is already marked as paid." });
+        var t = await _db.Tenants.IgnoreQueryFilters().AsNoTracking().Where(x => x.Id == s.TenantId)
+            .Select(x => new { x.FirstName, x.LastName, x.PhoneNumber }).FirstOrDefaultAsync();
+        var house = await _db.Houses.AsNoTracking().Where(h => h.Id == s.HouseId).Select(h => h.HouseNumber).FirstOrDefaultAsync();
+        var existing = await _db.B2CPayouts.AsNoTracking().Where(p => p.SettlementId == settlementId && ActiveStatuses.Contains(p.Status))
+            .OrderByDescending(p => p.RequestedAt).Select(p => new { p.Id, p.Status }).FirstOrDefaultAsync();
+        return Ok(new
+        {
+            success = true,
+            settlementId = s.Id, tenantId = s.TenantId, tenantName = t == null ? null : $"{t.FirstName} {t.LastName}".Trim(),
+            phone = t?.PhoneNumber, amount = s.Amount, house, description = s.Description,
+            reason = $"Vacate refund for house {house}",
+            existingPayoutId = existing?.Id, existingStatus = existing?.Status
+        });
+    }
+
+    public record CreateRequest(Guid? SettlementId, string? Phone, string? Reason);
 
     [HttpPost]
     [Authorize(Roles = "SuperAdmin,Admin,Accountant")]
     [EnableRateLimiting("payment")]
     public async Task<IActionResult> Create([FromBody] CreateRequest r)
     {
-        if (r == null || !Purposes.Contains(r.Purpose)) return BadRequest(new { success = false, message = "Choose what the payout is for." });
+        if (r == null || r.SettlementId == null) return BadRequest(new { success = false, message = "Start a payout from the refund it pays, on the Refunds page." });
         var reason = (r.Reason ?? "").Trim();
         if (reason.Length < 10 || reason.Length > 300) return BadRequest(new { success = false, message = "Give a reason of 10 to 300 characters." });
-        if (r.Amount < 10 || r.Amount != decimal.Truncate(r.Amount)) return BadRequest(new { success = false, message = "The amount must be a whole number of shillings, at least 10 (M-Pesa minimum)." });
-        if (r.Amount > _cfg.MaxPerPayout) return BadRequest(new { success = false, message = $"One payout can be at most KES {_cfg.MaxPerPayout:N0}." });
 
-        string? tenantName = null; var phoneRaw = r.Phone;
-        if (r.TenantId.HasValue)
-        {
-            var t = await _db.Tenants.AsNoTracking().Where(x => x.Id == r.TenantId.Value)
-                .Select(x => new { x.FirstName, x.LastName, x.PhoneNumber }).FirstOrDefaultAsync();
-            if (t == null) return NotFound(new { success = false, message = "That tenant was not found." });
-            tenantName = $"{t.FirstName} {t.LastName}".Trim();
-            if (string.IsNullOrWhiteSpace(phoneRaw)) phoneRaw = t.PhoneNumber;
-        }
+        var s = await _db.VacateSettlements.FirstOrDefaultAsync(x => x.Id == r.SettlementId && !x.IsVoided);
+        if (s == null || s.Direction != "ManagementOwes") return NotFound(new { success = false, message = "That refund was not found." });
+        if (s.PaidAt != null) return BadRequest(new { success = false, message = "This refund is already marked as paid." });
+        if (await _db.B2CPayouts.AnyAsync(p => p.SettlementId == s.Id && ActiveStatuses.Contains(p.Status)))
+            return BadRequest(new { success = false, message = "A payout for this refund already exists. Check the Payouts page." });
+
+        var amount = s.Amount;   // the figure comes from the refund, never typed in
+        if (amount < 10 || amount != decimal.Truncate(amount)) return BadRequest(new { success = false, message = "M-Pesa pays whole shillings, at least 10. Adjust this refund amount first." });
+        if (amount > _cfg.MaxPerPayout) return BadRequest(new { success = false, message = $"One payout can be at most KES {_cfg.MaxPerPayout:N0}." });
+
+        var t = await _db.Tenants.IgnoreQueryFilters().AsNoTracking().Where(x => x.Id == s.TenantId)
+            .Select(x => new { x.FirstName, x.LastName, x.PhoneNumber }).FirstOrDefaultAsync();
+        if (t == null) return NotFound(new { success = false, message = "The tenant for this refund was not found." });
+        var tenantName = $"{t.FirstName} {t.LastName}".Trim();
+        var phoneRaw = string.IsNullOrWhiteSpace(r.Phone) ? t.PhoneNumber : r.Phone;
         var digits = new string((phoneRaw ?? "").Where(char.IsDigit).ToArray());
         var phone = digits.StartsWith("0") ? "254" + digits[1..] : digits.StartsWith("254") ? digits : "254" + digits;
         if (!System.Text.RegularExpressions.Regex.IsMatch(phone, @"^254(7|1)\d{8}$"))
@@ -109,7 +137,7 @@ public class PayoutsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filter
         var p = new B2CPayout
         {
             CurrentStepOrder = first.StepOrder,
-            Purpose = r.Purpose, TenantId = r.TenantId, TenantName = tenantName, ReceiverPhone = phone, Amount = r.Amount, Reason = reason,
+            Purpose = "VacateRefund", TenantId = s.TenantId, SettlementId = s.Id, TenantName = tenantName, ReceiverPhone = phone, Amount = amount, Reason = reason,
             RequestedByUserId = Uid, RequestedByName = Who
         };
         _db.B2CPayouts.Add(p);
@@ -118,7 +146,7 @@ public class PayoutsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filter
         try
         {
             await _notify.SendToUserAsync(first.ApproverId.ToString(),
-                $"A payout of KES {p.Amount:N0}{(tenantName != null ? " to " + tenantName : "")} needs your approval. Requested by {Who}.", "payment", "Payout", p.Id.ToString());
+                $"A payout of KES {p.Amount:N0} to {tenantName} needs your approval. Requested by {Who}.", "payment", "Payout", p.Id.ToString());
         }
         catch { }
         return Ok(new { success = true, message = "Payout requested. It is sent once the approvers in the sequence have approved it.", id = p.Id });
@@ -178,7 +206,17 @@ public class PayoutsController : ControllerBase, Microsoft.AspNetCore.Mvc.Filter
             p.Status = ok ? "Succeeded" : "Failed";
             p.ResultCode = code; p.ResultDesc = desc; p.MpesaReceipt = ok ? receipt : p.MpesaReceipt; p.CompletedAt = DateTime.UtcNow;
             if (!string.IsNullOrEmpty(conv)) p.ConversationId = conv;
+            if (ok && p.SettlementId.HasValue)
+            {
+                var st = await _db.VacateSettlements.FirstOrDefaultAsync(x => x.Id == p.SettlementId.Value);
+                if (st != null && st.PaidAt == null) st.PaidAt = DateTime.UtcNow;
+            }
             await _db.SaveChangesAsync();
+            if (ok && p.SettlementId.HasValue && p.TenantId.HasValue)
+            {
+                try { await _closure.TryCloseForTenantAsync(p.TenantId.Value); }
+                catch (Exception ex) { _log.LogError(ex, "Auto-close after refund payout failed"); }
+            }
             await _events.RecordAsync("Payments", ok ? "PayoutSucceeded" : "PayoutFailed", ok ? "Info" : "Warning",
                 $"Payout {p.Id} of KES {p.Amount:N0} to {Mask(p.ReceiverPhone)}: {(ok ? "paid, receipt " + receipt : "failed, " + desc)}", null, null);
             try

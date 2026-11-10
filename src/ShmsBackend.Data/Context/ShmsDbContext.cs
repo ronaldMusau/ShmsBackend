@@ -612,6 +612,7 @@ public class ShmsDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Purpose).IsRequired().HasMaxLength(30);
             entity.Property(e => e.TenantName).HasMaxLength(200);
+            entity.HasIndex(e => e.SettlementId);
             entity.Property(e => e.ReceiverPhone).IsRequired().HasMaxLength(15);
             entity.Property(e => e.Amount).HasColumnType("decimal(18,2)");
             entity.Property(e => e.Reason).IsRequired().HasMaxLength(300);
