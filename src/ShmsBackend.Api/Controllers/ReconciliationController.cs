@@ -23,6 +23,7 @@ public class ReconciliationController : ControllerBase
     private const decimal Tolerance = 0.01m;
     private const int MaxIssues = 500;
     private static readonly TimeSpan StuckAfter = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan LookupWindow = TimeSpan.FromDays(3);
 
     private readonly ShmsDbContext _db;
     private readonly IMpesaService _mpesa;
@@ -43,6 +44,7 @@ public class ReconciliationController : ControllerBase
         if (start >= end || (end - start).TotalDays > 366) return BadRequest(new { success = false, message = "Choose a period of up to one year." });
         var now = DateTime.UtcNow;
         var issues = new List<Issue>();
+        var olderUnresolved = 0;
 
         // ---- rent / deposit payments (M-Pesa) ----
         var pays = await _db.Payments.AsNoTracking()
@@ -50,7 +52,7 @@ public class ReconciliationController : ControllerBase
             .Select(p => new
             {
                 p.Id, p.Amount, p.AmountPaid, p.Balance, p.PaymentStatus, p.PaymentMethod, p.MpesaReceiptNumber, p.CheckoutRequestId,
-                p.TenantId, p.CreatedAt, p.PaidAt, p.Month, p.Year,
+                p.TenantId, p.CreatedAt, p.PaidAt, p.Month, p.Year, p.CreditApplied, p.RedemptionReference,
                 AppliedSum = p.Applications.Sum(a => (decimal?)a.AmountApplied) ?? 0m,
                 AppCount = p.Applications.Count()
             }).ToListAsync();
@@ -68,9 +70,11 @@ public class ReconciliationController : ControllerBase
                 issues.Add(new("AmountMismatch", "High", "Rent payment", label, p.Amount,
                     $"Amount {p.Amount:N2} minus paid {p.AmountPaid:N2} should leave {(p.Amount - p.AmountPaid):N2}, but the balance is {p.Balance:N2}.", p.CreatedAt, p.Id, p.CheckoutRequestId));
 
-            if (p.AppCount > 0 && Math.Abs(p.AppliedSum - p.AmountPaid) > Tolerance && paidish.Contains(p.PaymentStatus))
+            // Credit from an earlier overpayment and points redemptions legitimately make up part of what was paid, so they are allowed for.
+            var explained = p.AppliedSum + (p.CreditApplied ?? 0m);
+            if (p.AppCount > 0 && p.PaymentMethod == PaymentMethod.Mpesa && Math.Abs(explained - p.AmountPaid) > Tolerance && paidish.Contains(p.PaymentStatus) && p.RedemptionReference == null)
                 issues.Add(new("AmountMismatch", "High", "Rent payment", label, p.AmountPaid,
-                    $"Receipts applied add up to {p.AppliedSum:N2} but the payment says {p.AmountPaid:N2} was paid.", p.PaidAt ?? p.CreatedAt, p.Id, p.CheckoutRequestId));
+                    $"M-Pesa receipts applied add up to {p.AppliedSum:N2}{((p.CreditApplied ?? 0m) > 0 ? $" plus credit {p.CreditApplied:N2}" : "")}, but the payment says {p.AmountPaid:N2} was paid.", p.PaidAt ?? p.CreatedAt, p.Id, p.CheckoutRequestId));
 
             if (p.AmountPaid > p.Amount + Tolerance && p.PaymentStatus != PaymentTransactionStatus.Cancelled)
                 issues.Add(new("AmountMismatch", "Medium", "Rent payment", label, p.AmountPaid,
@@ -87,18 +91,19 @@ public class ReconciliationController : ControllerBase
                 $"The same M-Pesa receipt was applied to {g.Select(x => x.TenantId).Distinct().Count()} different tenants.", g.Max(x => x.AppliedAt), g.First().PaymentId, null));
 
         // ---- the prompts (checkout attempts) of all three kinds ----
-        var rentRaw = await _db.PaymentCheckoutAttempts.AsNoTracking()
+        var rentRaw = await _db.PaymentCheckoutAttempts.IgnoreQueryFilters().AsNoTracking()
             .Where(a => a.CreatedAt >= start && a.CreatedAt < end)
-            .Select(a => new { a.CheckoutRequestId, a.AttemptStatus, a.ResultDesc, a.ProcessedAt, a.CreatedAt, a.PaymentId, PayStatus = (PaymentTransactionStatus?)a.Payment!.PaymentStatus })
+            .Select(a => new { a.CheckoutRequestId, a.AttemptStatus, a.ResultDesc, a.ProcessedAt, a.CreatedAt, a.PaymentId,
+                PayStatus = (PaymentTransactionStatus?)a.Payment!.PaymentStatus, PayPaid = (decimal?)a.Payment!.AmountPaid, PayDeleted = (bool?)a.Payment!.IsDeleted })
             .ToListAsync();
         var rent = rentRaw.Select(a => new Att("Rent payment", a.CheckoutRequestId, a.AttemptStatus, a.ResultDesc, null, a.ProcessedAt, a.CreatedAt, a.PaymentId,
-            a.PayStatus.HasValue && paidish.Contains(a.PayStatus.Value))).ToList();
+            a.PayDeleted != true && ((a.PayStatus.HasValue && paidish.Contains(a.PayStatus.Value)) || (a.PayPaid ?? 0m) > 0m), a.PayDeleted == true)).ToList();
         var cmp = await _db.ComplaintCheckoutAttempts.AsNoTracking()
             .Where(a => a.CreatedAt >= start && a.CreatedAt < end)
-            .Select(a => new Att("Complaint charge", a.CheckoutRequestId, a.AttemptStatus, a.ResultDesc, a.MpesaReceiptNumber, a.ProcessedAt, a.CreatedAt, null, true)).ToListAsync();
+            .Select(a => new Att("Complaint charge", a.CheckoutRequestId, a.AttemptStatus, a.ResultDesc, a.MpesaReceiptNumber, a.ProcessedAt, a.CreatedAt, null, true, false)).ToListAsync();
         var vac = await _db.VacateCheckoutAttempts.AsNoTracking()
             .Where(a => a.CreatedAt >= start && a.CreatedAt < end)
-            .Select(a => new Att("Vacate settlement", a.CheckoutRequestId, a.AttemptStatus, a.ResultDesc, a.MpesaReceiptNumber, a.ProcessedAt, a.CreatedAt, null, true)).ToListAsync();
+            .Select(a => new Att("Vacate settlement", a.CheckoutRequestId, a.AttemptStatus, a.ResultDesc, a.MpesaReceiptNumber, a.ProcessedAt, a.CreatedAt, null, true, false)).ToListAsync();
 
         foreach (var a in rent.Concat(cmp).Concat(vac))
         {
@@ -106,9 +111,16 @@ public class ReconciliationController : ControllerBase
             if (a.Status == "Processing" && age > StuckAfter)
                 issues.Add(new("StuckPrompt", "Medium", a.Source, a.Checkout, null, "The payment prompt is still waiting for a result after more than 10 minutes.", a.CreatedAt, a.PaymentId, a.Checkout));
             else if (a.Status == "Failed" && a.ProcessedAt == null && (a.Desc ?? "").StartsWith("Timed out", StringComparison.OrdinalIgnoreCase) && age > StuckAfter)
-                issues.Add(new("NoResult", "Medium", a.Source, a.Checkout, null, "No result ever came back from M-Pesa. The customer may or may not have paid: check with M-Pesa.", a.CreatedAt, a.PaymentId, a.Checkout));
-            if (a.Status == "Success" && !a.PaymentSettled)
-                issues.Add(new("SuccessNotApplied", "High", a.Source, a.Checkout, null, "M-Pesa reported success but the payment is not marked as paid.", a.ProcessedAt ?? a.CreatedAt, a.PaymentId, a.Checkout));
+            {
+                // M-Pesa can only be asked about recent prompts; older ones are counted but not listed one by one.
+                if (age <= LookupWindow)
+                    issues.Add(new("NoResult", "Medium", a.Source, a.Checkout, null, "No result came back from M-Pesa. The customer may or may not have paid: check with M-Pesa.", a.CreatedAt, a.PaymentId, a.Checkout));
+                else olderUnresolved++;
+            }
+            if (a.Status == "Success" && a.PaymentDeleted)
+                issues.Add(new("PaymentRemoved", "Medium", a.Source, a.Checkout, null, "M-Pesa money was received for this prompt, but the payment record was later deleted.", a.ProcessedAt ?? a.CreatedAt, a.PaymentId, a.Checkout));
+            else if (a.Status == "Success" && !a.PaymentSettled)
+                issues.Add(new("SuccessNotApplied", "High", a.Source, a.Checkout, null, "M-Pesa reported success but nothing is recorded as paid on the payment.", a.ProcessedAt ?? a.CreatedAt, a.PaymentId, a.Checkout));
             if (a.Status == "Success" && a.Source != "Rent payment" && string.IsNullOrWhiteSpace(a.Receipt))
                 issues.Add(new("PaidNoReceipt", "High", a.Source, a.Checkout, null, "Marked successful but has no M-Pesa receipt number.", a.ProcessedAt ?? a.CreatedAt, a.PaymentId, a.Checkout));
         }
@@ -123,13 +135,14 @@ public class ReconciliationController : ControllerBase
             from = start, to = end.AddDays(-1),
             checkedPayments = pays.Count,
             checkedPrompts = rent.Count + cmp.Count + vac.Count,
+            olderUnresolved,
             total = ordered.Count, truncated = ordered.Count > MaxIssues,
             counts = ordered.GroupBy(i => i.Type).ToDictionary(g => g.Key, g => g.Count()),
             issues = shown
         });
     }
 
-    private record Att(string Source, string Checkout, string Status, string? Desc, string? Receipt, DateTime? ProcessedAt, DateTime CreatedAt, Guid? PaymentId, bool PaymentSettled);
+    private record Att(string Source, string Checkout, string Status, string? Desc, string? Receipt, DateTime? ProcessedAt, DateTime CreatedAt, Guid? PaymentId, bool PaymentSettled, bool PaymentDeleted);
 
     /// <summary>Asks M-Pesa what really happened to one prompt. Read-only: it does not change any payment.</summary>
     [HttpPost("check/{checkoutRequestId}")]
